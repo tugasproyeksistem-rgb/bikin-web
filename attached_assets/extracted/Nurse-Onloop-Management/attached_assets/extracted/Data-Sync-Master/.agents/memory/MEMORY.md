@@ -1,0 +1,1 @@
+- [Kamar Bedah App](kamar-bedah-app.md) — single-file React app (App.tsx ~3400 lines) in artifacts/kamar-bedah; all features in one file, localStorage-backed.

@@ -1,0 +1,2 @@
+- [Kamar Bedah proxy workaround](kamar-bedah-proxy.md) — Replit proxy only reads `artifacts/*/` artifact.toml; extracted artifact workaround uses Express static serving
+- [Express 5 catch-all route](express5-catchall.md) — Use `/{*splat}` not `*` for catch-all routes in Express 5 + path-to-regexp v8
