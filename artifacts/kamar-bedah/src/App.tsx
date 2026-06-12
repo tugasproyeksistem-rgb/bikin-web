@@ -1246,12 +1246,24 @@ function ViewStaf({staff,setStaff,roster,setRoster,showToast}: any) {
     const csv = "\"Tanggal\",\"Dokter Anestesi Jaga\",\"Dokter Anestesi Cyto\",\"Perawat Siaga 1\",\"Perawat Siaga 2\",\"Perawat Siaga 3\",\"Pembawa HP\"\n\"01/06/2025\",\"dr. Anestesi Jaga Sp.An\",\"dr. Anestesi Cyto Sp.An\",\"Ns. Perawat 1\",\"Ns. Perawat 2\",\"Ns. Perawat 3\",\"Ns. Katim Jaga\"";
     downloadBlob(csv,"template_jadwal_siaga_bulanan.csv"); showToast("✓ Template Jadwal Siaga diunduh",C.s);
   };
+  const readFileRows = async (f: File): Promise<string[][]> => {
+    const isXlsx = f.name.match(/\.xlsx?$/i);
+    if(isXlsx) {
+      const buf = await f.arrayBuffer();
+      const wb2 = XLSX.read(new Uint8Array(buf),{type:"array"});
+      const ws2 = wb2.Sheets[wb2.SheetNames[0]];
+      const raw: any[][] = XLSX.utils.sheet_to_json(ws2,{header:1,defval:""});
+      return raw.map((r:any[])=>r.map((c:any)=>String(c??"")));
+    }
+    return parseCSV(await f.text());
+  };
+
   const handleStaffFile = async (ev: any) => {
     const f=ev.target.files[0]; if(!f)return; ev.target.value="";
     try {
-      const rows=parseCSV(await f.text());
+      const rows = await readFileRows(f);
       if(rows.length<2){showToast("File kosong atau format tidak sesuai",C.d);return;}
-      const h=rows[0].map((x:string)=>x.toLowerCase());
+      const h=rows[0].map((x:string)=>x.toLowerCase().trim());
       const ni=h.findIndex((x:string)=>x.includes("nama")), ti=h.findIndex((x:string)=>x.includes("jabatan")||x.includes("type")), pi=h.findIndex((x:string)=>x.includes("wa")||x.includes("phone")||x.includes("nomor"));
       if(ni<0){showToast("Kolom 'nama' tidak ditemukan. Gunakan template.",C.d);return;}
       const imp=rows.slice(1).map((c:string[])=>({id:gId(),name:sanitize(c[ni]||""),type:ti>=0?(c[ti]||"circulating"):"circulating",phone:(pi>=0?c[pi]||"":"").replace(/[^0-9]/g,"")})).filter((s:any)=>s.name);
@@ -1262,9 +1274,9 @@ function ViewStaf({staff,setStaff,roster,setRoster,showToast}: any) {
   const handleRosterFile = async (ev: any) => {
     const f=ev.target.files[0]; if(!f)return; ev.target.value="";
     try {
-      const rows=parseCSV(await f.text());
+      const rows = await readFileRows(f);
       if(rows.length<2){showToast("File kosong",C.d);return;}
-      const h=rows[0].map((x:string)=>x.toLowerCase());
+      const h=rows[0].map((x:string)=>x.toLowerCase().trim());
       const di=h.findIndex((x:string)=>x.includes("tanggal")||x.includes("date")), ai=h.findIndex((x:string)=>x.includes("jaga")&&!x.includes("cyto")), ci=h.findIndex((x:string)=>x.includes("cyto")), pi=h.findIndex((x:string)=>x.includes("perawat")||x.includes("nurse")), hpi=h.findIndex((x:string)=>x.includes("pembawa")||x.includes("hp"));
       if(di<0){showToast("Kolom 'Tanggal' tidak ditemukan. Gunakan template.",C.d);return;}
       const imp=rows.slice(1).map((r:string[])=>{
@@ -1284,10 +1296,10 @@ function ViewStaf({staff,setStaff,roster,setRoster,showToast}: any) {
       <Row title="Manajemen Staf & Roster" right={<Btn sm onClick={()=>{setForm({name:"",type:"surgeon",phone:""});setEd(null);setErr({});setShow(true);}}>+ Tambah Staf</Btn>}/>
       <Card style={{background:C.iBg,border:"1px solid #1565C033"}}>
         <SH label="📋 Upload Data Master Staf" color={C.i}/>
-        <div style={{fontSize:12,color:C.tL,marginBottom:10,lineHeight:1.6}}>Format: <b>CSV</b> · Kolom: nama, jabatan, nomor_wa</div>
+        <div style={{fontSize:12,color:C.tL,marginBottom:10,lineHeight:1.6}}>Format: <b>CSV</b> atau <b>Excel (.xlsx)</b> · Kolom: nama, jabatan, nomor_wa</div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          <input ref={sfRef} type="file" accept=".csv,.txt" onChange={handleStaffFile} style={{display:"none"}}/>
-          <Btn sm outline color={C.i} onClick={()=>sfRef.current&&sfRef.current.click()}>📂 Upload CSV Staf</Btn>
+          <input ref={sfRef} type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleStaffFile} style={{display:"none"}}/>
+          <Btn sm outline color={C.i} onClick={()=>sfRef.current&&sfRef.current.click()}>📂 Upload CSV/Excel Staf</Btn>
           <Btn sm outline color={C.g} onClick={dlStaff}>⬇ Template</Btn>
         </div>
         {staff.length>0 && <div style={{marginTop:8,fontSize:12,color:C.i,fontWeight:600}}>✓ {staff.length} staf terdaftar</div>}
@@ -1299,8 +1311,8 @@ function ViewStaf({staff,setStaff,roster,setRoster,showToast}: any) {
           Kolom wajib: Tanggal (DD/MM/YYYY), Dokter Anestesi Jaga, Dokter Anestesi Cyto, Perawat Siaga 1–3, Pembawa HP
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          <input ref={rsfRef} type="file" accept=".csv,.txt" onChange={handleRosterFile} style={{display:"none"}}/>
-          <Btn sm color="#7B1FA2" onClick={()=>rsfRef.current&&rsfRef.current.click()}>📂 Upload Jadwal Siaga (CSV)</Btn>
+          <input ref={rsfRef} type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleRosterFile} style={{display:"none"}}/>
+          <Btn sm color="#7B1FA2" onClick={()=>rsfRef.current&&rsfRef.current.click()}>📂 Upload Jadwal Siaga (CSV/Excel)</Btn>
           <Btn sm outline color={C.g} onClick={dlRoster}>⬇ Template</Btn>
         </div>
         {roster.length>0 && (
@@ -2253,7 +2265,7 @@ const BULAN_ID = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agus
 const nowYM = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
 const ymLabel = (ym:string) => { const [y,m]=ym.split("-"); return `${BULAN_ID[parseInt(m)-1]} ${y}`; };
 
-function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData, showToast, supaCfg}: any) {
+function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData, showToast, supaCfg, dbxCfg}: any) {
   const [sub, setSub]         = useState<"catat"|"rekap"|"pegawai">("catat");
   const [selPeg, setSelPeg]   = useState<string>("");
   const [selYM,  setSelYM]    = useState(nowYM());
@@ -2266,6 +2278,9 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
   const fileRef = useRef<HTMLInputElement>(null);
   const [supaLemburBusy, setSupaLemburBusy] = useState(false);
   const [supaLemburYM, setSupaLemburYM] = useState(nowYM());
+  const [dbxLemburBusy, setDbxLemburBusy] = useState(false);
+  const [dbxLemburYM, setDbxLemburYM]     = useState(nowYM());
+  const [dbxLemburPegId, setDbxLemburPegId] = useState<string>("__all__");
 
   const peg = lemburPegawai.find((p:any)=>p.id===selPeg);
   const key = selPeg && selYM ? `${selPeg}_${selYM}` : null;
@@ -2531,6 +2546,49 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     setSupaLemburBusy(false);
   };
 
+  const downloadLemburFromDropbox = async () => {
+    if(!dbxCfg?.token){showToast("Access Token Dropbox belum diisi. Atur di tab Arsip → Setelan.",C.d);return;}
+    setDbxLemburBusy(true);
+    try {
+      const res = await dropboxDownload(dbxCfg);
+      if(!res.ok||!res.data) throw new Error(res.msg||"Gagal mengambil data dari Dropbox");
+      const ld: any = res.data.lemburData||{};
+      const lp: any[] = res.data.lemburPegawai||lemburPegawai;
+      const pegList = dbxLemburPegId==="__all__" ? lp : lp.filter((p:any)=>p.id===dbxLemburPegId);
+      const wb = XLSX.utils.book_new(); let found = false;
+      pegList.forEach((p:any)=>{
+        const k=`${p.id}_${dbxLemburYM}`;
+        if(ld[k]){
+          found = true;
+          const ents: any[] = ld[k].entries||[];
+          if(!ents.length) return;
+          const totalMins = ents.reduce((s:number,e:any)=>{
+            if(!e.jamMasuk||!e.jamKeluar) return s;
+            const [h1,m1]=e.jamMasuk.split(":").map(Number);
+            const [h2,m2]=e.jamKeluar.split(":").map(Number);
+            let m=(h2*60+m2)-(h1*60+m1); if(m<0) m+=24*60; return s+(m>0?m:0);
+          },0);
+          const rows = ents.map((e:any,i:number)=>[i+1,e.tanggalAwal||"",e.tanggalAkhir||"",e.jamMasuk||"",e.jamKeluar||"",e.keperluanLembur||"",e.keterangan||"",e.ttd||""]);
+          rows.push(["","","","","","TOTAL",`${Math.floor(totalMins/60)} jam ${totalMins%60} menit`,""]);
+          const ws=XLSX.utils.aoa_to_sheet([
+            [`PENCATATAN LEMBUR — ${HOSPITAL}`],
+            [`Nama: ${p.name}   NIK: ${p.nik||"-"}   Bulan: ${ymLabel(dbxLemburYM)}`],
+            [],
+            ["No","Tgl Awal","Tgl Akhir","Jam Masuk","Jam Keluar","Keperluan Lembur","Keterangan","TTD"],
+            ...rows
+          ]);
+          ws["!cols"]=[{wch:4},{wch:14},{wch:14},{wch:10},{wch:10},{wch:28},{wch:20},{wch:14}];
+          XLSX.utils.book_append_sheet(wb,ws,p.name.slice(0,28));
+        }
+      });
+      if(!found){showToast("Tidak ada data lembur "+ymLabel(dbxLemburYM)+" di Dropbox",C.w);setDbxLemburBusy(false);return;}
+      const label = dbxLemburPegId==="__all__"?"Semua":pegList[0]?.name||"";
+      XLSX.writeFile(wb,`Lembur_Dropbox_${label}_${dbxLemburYM}.xlsx`);
+      showToast("✓ Data lembur "+ymLabel(dbxLemburYM)+" dari Dropbox diunduh",C.s);
+    } catch(err:any){showToast("Gagal: "+(err?.message||"Error Dropbox"),C.d);}
+    setDbxLemburBusy(false);
+  };
+
   return (
     <div>
       {/* Sub-tabs */}
@@ -2754,6 +2812,29 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
             {!supaCfg?.url && <div style={{fontSize:11,color:"#EF4444",marginTop:8}}>⚠ Supabase belum dikonfigurasi — atur di tab Arsip → Setelan.</div>}
           </Card>
 
+          {/* ── Dropbox cloud download ── */}
+          <Card style={{background:"#EFF6FF",border:"1.5px solid #0061FF33",marginBottom:14}}>
+            <SH label="📦 Download Lembur dari Dropbox" color="#0061FF"/>
+            <div style={{fontSize:12,color:"#64748B",marginBottom:10}}>Unduh data lembur langsung dari backup Dropbox. Pilih bulan dan karyawan spesifik atau semua sekaligus.</div>
+            <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap",marginBottom:10}}>
+              <div style={{flex:1,minWidth:140}}>
+                <LF label="Pilih Bulan"><input style={iS} type="month" value={dbxLemburYM} onChange={e=>setDbxLemburYM(e.target.value)} disabled={dbxLemburBusy}/></LF>
+              </div>
+              <div style={{flex:2,minWidth:180}}>
+                <LF label="Karyawan">
+                  <select style={{...iS,appearance:"none"} as React.CSSProperties} value={dbxLemburPegId} onChange={e=>setDbxLemburPegId(e.target.value)} disabled={dbxLemburBusy}>
+                    <option value="__all__">— Semua Karyawan —</option>
+                    {lemburPegawai.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </LF>
+              </div>
+            </div>
+            <Btn full onClick={downloadLemburFromDropbox} disabled={dbxLemburBusy} style={{background:dbxLemburBusy?"#94A3B8":"#0061FF",color:"#fff",border:"none"}}>
+              {dbxLemburBusy?"⏳ Mengunduh...":"📦 Download Excel dari Dropbox"}
+            </Btn>
+            {!dbxCfg?.token && <div style={{fontSize:11,color:"#EF4444",marginTop:8}}>⚠ Dropbox belum dikonfigurasi — atur di tab Arsip → Setelan.</div>}
+          </Card>
+
           {lemburPegawai.length===0 ? (
             <Card><div style={{textAlign:"center",padding:32,color:C.tL}}>
               <div style={{fontSize:32,marginBottom:8}}>👤</div>
@@ -2954,11 +3035,13 @@ function monXlsx(entries:MonitoringEntry[], cfg:MonitoringCfg, ym:string, type:"
   showToast("✓ Monitoring "+(type==="harian"?"Harian":type==="rekap"?"Rekap":"Akreditasi")+" "+mName+" "+year+" diunduh",MC.ok);
 }
 
-function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,setMonitoringCfg,showToast,supaCfg}:any) {
+function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,setMonitoringCfg,showToast,supaCfg,dbxCfg}:any) {
   const [subTab,setSubTab]=useState("harian");
   const [selMonth,setSelMonth]=useState(todayDate().slice(0,7));
   const [supaMonBusy,setSupaMonBusy]=useState(false);
   const [supaMonYM,setSupaMonYM]=useState(todayDate().slice(0,7));
+  const [dbxMonBusy,setDbxMonBusy]=useState(false);
+  const [dbxMonYM,setDbxMonYM]=useState(todayDate().slice(0,7));
   const [formDate,setFormDate]=useState(todayDate());
   type SL={suhu:string;kelembaban:string;petugas:string};
   const ES:SL={suhu:"",kelembaban:"",petugas:""};
@@ -2996,6 +3079,35 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
     } catch(err:any){showToast("Gagal: "+(err?.message||"Error Supabase"),MC.err);}
     setSupaMonBusy(false);
   };
+
+  const downloadMonFromDropbox = async (type:"harian"|"rekap"|"akreditasi") => {
+    if(!dbxCfg?.token){showToast("Access Token Dropbox belum diisi. Atur di tab Arsip → Setelan.",MC.err);return;}
+    setDbxMonBusy(true);
+    try {
+      const res = await dropboxDownload(dbxCfg);
+      if(!res.ok||!res.data) throw new Error(res.msg||"Gagal mengambil data dari Dropbox");
+      const me2:MonitoringEntry[] = (res.data.monitoringEntries||[]).filter((e:MonitoringEntry)=>e.tanggal?.startsWith(dbxMonYM));
+      const cfg2:MonitoringCfg = res.data.monitoringCfg||monitoringCfg;
+      if(!me2.length){showToast("Tidak ada data monitoring "+dbxMonYM+" di Dropbox",MC.err);setDbxMonBusy(false);return;}
+      monXlsx(me2, cfg2, dbxMonYM, type, showToast);
+      showToast("✓ Monitoring dari Dropbox ("+dbxMonYM+") diunduh",MC.ok);
+    } catch(err:any){showToast("Gagal: "+(err?.message||"Error Dropbox"),MC.err);}
+    setDbxMonBusy(false);
+  };
+
+  const downloadGrafikExcel = () => {
+    if(!me.length){showToast("Tidak ada data untuk bulan ini","#E65100");return;}
+    const wb = XLSX.utils.book_new();
+    const rows = me.map((e:MonitoringEntry)=>[e.tanggal,e.jam,e.suhu,e.kelembaban,monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas]);
+    const ws = XLSX.utils.aoa_to_sheet([["Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"],...rows,
+      [],[`Rata-rata Suhu: ${avgS}°C`,`Rata-rata RH: ${avgR}%`,`Kepatuhan: ${cmpPct}%`,"","",""]
+    ]);
+    ws["!cols"]=[{wch:14},{wch:8},{wch:12},{wch:14},{wch:16},{wch:22}];
+    XLSX.utils.book_append_sheet(wb,ws,"Data Grafik");
+    XLSX.writeFile(wb,`Grafik_Monitoring_${selMonth}.xlsx`);
+    showToast("✓ Data grafik "+mLabel+" diunduh",MC.ok);
+  };
+
   const me=monitoringEntries.filter((e:MonitoringEntry)=>e.tanggal.startsWith(selMonth)).sort((a:MonitoringEntry,b:MonitoringEntry)=>a.tanggal.localeCompare(b.tanggal)||a.jam.localeCompare(b.jam));
   const suhuV=me.map((e:MonitoringEntry)=>e.suhu).filter((v:number)=>v>0);
   const rhV=me.map((e:MonitoringEntry)=>e.kelembaban).filter((v:number)=>v>0);
@@ -3091,6 +3203,18 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
       {/* ── GRAFIK ── */}
       {subTab==="grafik"&&(
         <div>
+          {/* Month selector + today shortcut + download */}
+          <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:14,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:160}}>
+              <input style={{padding:"7px 12px",border:"1px solid #D1D5DB",borderRadius:8,fontSize:13,width:"100%",background:"#fff",fontFamily:"inherit"}} type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}/>
+            </div>
+            <button onClick={()=>setSelMonth(todayDate().slice(0,7))} style={{padding:"7px 14px",background:selMonth===todayDate().slice(0,7)?"#0EA5E9":"#F0F9FF",color:selMonth===todayDate().slice(0,7)?"#fff":"#0369A1",border:"1px solid #BAE6FD",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
+              📅 Bulan Ini
+            </button>
+            <button onClick={downloadGrafikExcel} style={{padding:"7px 14px",background:"#ECFDF5",color:MC.ok,border:"1px solid #BBF7D0",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
+              ⬇ Download Excel
+            </button>
+          </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,marginBottom:20}}>
             {([{l:"Rata-rata Suhu",v:avgS+"°C",ico:"🌡",bg:"#DBEAFE",c:"#1D4ED8"},{l:"Rata-rata RH",v:avgR+"%",ico:"💧",bg:"#DCFCE7",c:"#16A34A"},{l:"Total Ukur",v:String(me.length),ico:"📊",bg:"#FEF3C7",c:"#B45309"},{l:"Tidak Sesuai",v:String(tidakS),ico:"⚠️",bg:"#FEE2E2",c:"#DC2626"},{l:"Kepatuhan",v:cmpPct+"%",ico:"✅",bg:"#F0FDF4",c:"#16A34A"}] as {l:string;v:string;ico:string;bg:string;c:string}[]).map(s=>(
               <div key={s.l} style={{background:s.bg,borderRadius:12,padding:"12px 10px",textAlign:"center",border:"1px solid "+s.c+"20"}}>
@@ -3171,6 +3295,29 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
               ))}
             </div>
             {!supaCfg?.url && <div style={{fontSize:11,color:"#EF4444",marginTop:10}}>⚠ Supabase belum dikonfigurasi — atur di tab Arsip → Setelan.</div>}
+          </div>
+
+          {/* ── Dropbox download ── */}
+          <div style={{background:"#EFF6FF",border:"1.5px solid #0061FF33",borderRadius:14,padding:"16px 16px 14px",marginTop:14}}>
+            <div style={{fontWeight:700,color:"#0061FF",fontSize:14,marginBottom:6}}>📦 Download Monitoring dari Dropbox</div>
+            <div style={{fontSize:12,color:"#64748B",marginBottom:12}}>Unduh data monitoring dari backup Dropbox sesuai pilihan bulan dan format laporan.</div>
+            <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+              <div style={{flex:1,minWidth:160}}>
+                <div style={{fontSize:12,fontWeight:700,color:"#64748B",marginBottom:4}}>Pilih Bulan</div>
+                <input style={iS} type="month" value={dbxMonYM} onChange={e=>setDbxMonYM(e.target.value)} disabled={dbxMonBusy}/>
+              </div>
+            </div>
+            <div style={{display:"grid",gap:8}}>
+              {([{type:"harian" as const,ico:"📋",title:"Harian",c:"#0369A1"},{type:"rekap" as const,ico:"📊",title:"Rekap Bulanan",c:"#7C3AED"},{type:"akreditasi" as const,ico:"🏅",title:"Akreditasi",c:"#B45309"}]).map(r=>(
+                <div key={r.type} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(255,255,255,.7)",borderRadius:10,padding:"10px 14px",gap:10}}>
+                  <div style={{fontWeight:600,color:r.c,fontSize:13}}>{r.ico} {r.title}</div>
+                  <button onClick={()=>downloadMonFromDropbox(r.type)} disabled={dbxMonBusy} style={{background:dbxMonBusy?"#9CA3AF":"#0061FF",color:"#fff",border:"none",borderRadius:8,padding:"6px 14px",cursor:dbxMonBusy?"not-allowed":"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                    {dbxMonBusy?"⏳ ...":"📦 Download Excel"}
+                  </button>
+                </div>
+              ))}
+            </div>
+            {!dbxCfg?.token && <div style={{fontSize:11,color:"#EF4444",marginTop:10}}>⚠ Dropbox belum dikonfigurasi — atur di tab Arsip → Setelan.</div>}
           </div>
         </div>
       )}
@@ -3779,8 +3926,8 @@ export default function App() {
       {tab==="wa"         && <ViewKirimWA ops={ops} staff={staff} setNotifs={setNotifs} showToast={showToast}/>}
       {tab==="statistik"  && <ViewStatistik ops={ops} archive={archive}/>}
       {tab==="staf"       && <ViewStaf staff={staff} setStaff={setStaff} roster={roster} setRoster={setRoster} showToast={showToast}/>}
-      {tab==="lembur"     && <ViewLembur lemburPegawai={lemburPegawai} setLemburPegawai={setLemburPegawai} lemburData={lemburData} setLemburData={setLemburData} showToast={showToast} supaCfg={supaCfg}/>}
-      {tab==="monitoring" && <ViewMonitoring monitoringEntries={monitoringEntries} setMonitoringEntries={setMonitoringEntries} monitoringCfg={monitoringCfg} setMonitoringCfg={setMonitoringCfg} showToast={showToast} supaCfg={supaCfg}/>}
+      {tab==="lembur"     && <ViewLembur lemburPegawai={lemburPegawai} setLemburPegawai={setLemburPegawai} lemburData={lemburData} setLemburData={setLemburData} showToast={showToast} supaCfg={supaCfg} dbxCfg={dbxCfg}/>}
+      {tab==="monitoring" && <ViewMonitoring monitoringEntries={monitoringEntries} setMonitoringEntries={setMonitoringEntries} monitoringCfg={monitoringCfg} setMonitoringCfg={setMonitoringCfg} showToast={showToast} supaCfg={supaCfg} dbxCfg={dbxCfg}/>}
       {tab==="arsip"      && <ViewArsip ops={ops} setOps={setOps} notifs={notifs} archive={archive} showToast={showToast} privacyMode={privacyMode} setPrivacyMode={setPM} supaCfg={supaCfg} setSupaCfg={setSupaCfg} onSupaBackup={handleSupaBackup} onSupaRestoreOps={handleSupaRestoreOps} onSupaRestoreLembur={handleSupaRestoreLembur} onSupaRestoreMonitoring={handleSupaRestoreMonitoring} onSupaRestoreAll={handleSupaRestoreAll} supaStatus={supaStatus} supaBackingUp={supaBackingUp} auditLog={auditLog} rtStatus={rtStatus} rtEnabled={rtEnabled} setRtEnabled={setRtEnabled} dbxCfg={dbxCfg} setDbxCfg={setDbxCfg} onDbxBackup={handleDropboxBackup} onDbxRestoreOps={handleDropboxRestoreOps} onDbxRestoreLembur={handleDropboxRestoreLembur} dbxStatus={dbxStatus} dbxBacking={dbxBacking} onDbxBackupOpsXls={handleDropboxBackupOpsXls} onDbxBackupLemburXls={handleDropboxBackupLemburXls} onDbxBackupMonitoringXls={handleDropboxBackupMonitoringXls} lemburData={lemburData} lemburPegawai={lemburPegawai} monitoringEntries={monitoringEntries} monitoringCfg={monitoringCfg}/>}
     </ErrorBoundary>
   );
