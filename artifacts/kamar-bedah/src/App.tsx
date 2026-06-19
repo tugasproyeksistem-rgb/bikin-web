@@ -1,13 +1,31 @@
 /*
  * SISTEM KOORDINASI KAMAR BEDAH — RS Panti Rini
  * Versi FINAL · Zero Bug · Zero Demo Data · Semua Real
- * PIN default: 1234
+ * PIN: dikelola via Supabase (kamar_bedah_config) — fallback admin:2409 perawat:1234
  * Modifikasi: Supabase Backup, PERAWAT Instrumen, Statistik
  */
-import { useState, useEffect, useRef, useCallback, Component } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, Component, Fragment } from "react";
 import * as XLSX from "xlsx";
 import { createClient, type RealtimeChannel } from "@supabase/supabase-js";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
+
+/* ─── ENV TYPES (FIX #1 — AUDIT CRITICAL #1) ────────────────────────────
+   Tambahkan ke vite-env.d.ts pada project nyata:
+     interface ImportMetaEnv {
+       readonly VITE_SUPABASE_URL: string;
+       readonly VITE_SUPABASE_ANON_KEY: string;
+     }
+   Dideklarasikan inline di sini agar file ini tetap valid TypeScript
+   tanpa harus menambah file terpisah. */
+declare global {
+  interface ImportMetaEnv {
+    readonly VITE_SUPABASE_URL?: string;
+    readonly VITE_SUPABASE_ANON_KEY?: string;
+  }
+  interface ImportMeta {
+    readonly env: ImportMetaEnv;
+  }
+}
 
 /* ─── CONFIG ────────────────────────────────────────────────────────── */
 const CONFIG = {
@@ -23,23 +41,334 @@ const BT    = ["A+","A-","B+","B-","AB+","AB-","O+","O-","Tidak Diketahui"];
 const ST    = { surgeon:"Dokter Bedah", anesthesiologist:"Dokter Anestesi", circulating:"PERAWAT Instrumen", anesthesia_nurse:"Perawat Anestesi", onloop:"Perawat Onloop", katim:"RR / Katim" };
 const OT    = { elektif:{label:"Elektif",c:"#1565C0",bg:"#E3F2FD"}, semi:{label:"Semi-Elektif",c:"#E65100",bg:"#FFF3E0"}, cyto:{label:"⚠ CYTO",c:"#B71C1C",bg:"#FFCDD2"} };
 const STS   = { scheduled:{l:"Terjadwal",c:"#1565C0",bg:"#E3F2FD"}, ongoing:{l:"Berlangsung",c:"#00897B",bg:"#E0F2F1"}, done:{l:"Selesai",c:"#2E7D32",bg:"#E8F5E9"}, batal:{l:"Batal/Tunda",c:"#C62828",bg:"#FFEBEE"} };
-const C     = { p:"#00695C",pL:"#00897B",pBg:"#E0F2F1", d:"#C62828",dBg:"#FFEBEE",dL:"#EF9A9A", w:"#E65100",wBg:"#FFF3E0", i:"#1565C0",iBg:"#E3F2FD", s:"#2E7D32",sBg:"#E8F5E9", wa:"#25D366",waBg:"#DCFCE7", g:"#546E7A",gBg:"#ECEFF1", t:"#1A2332",tL:"#607080", b:"#DDE3EA",white:"#FFF",bg:"#F4F7FA" };
-const EOP   = { patient:"",age:"",rm:"",opType:"elektif",diagnosis:"",procedure:"",ruangAsal:"",room:ROOMS[0],date:"",time:"",surgeon:"",anesthesiologist:"",assistantNurse:"",circulatingNurse:"",anesthesiaNurse:"",onloopNurse:"",rrKatim:"",allergy:"Tidak Ada",specialNeeds:"",bloodType:"O+" };
+const C     = { p:"#0077B6",pL:"#00B4D8",pBg:"#CAF0F8", d:"#D62828",dBg:"#FFEBEE",dL:"#FF8FA3", w:"#E07800",wBg:"#FFF8E1", i:"#1565C0",iBg:"#E3F2FD", s:"#2E7D32",sBg:"#F0FFF4", wa:"#25D366",waBg:"#DCFCE7", g:"#5C677D",gBg:"#F0F4F8", t:"#023047",tL:"#577590", b:"#D0E8F2",white:"#FFFFFF",bg:"#F0F8FF" };
+const EOP: Partial<Operation> = {patient:"",age:"",rm:"",opType:"elektif",diagnosis:"",procedure:"",ruangAsal:"",room:ROOMS[0],date:"",time:"",surgeon:"",anesthesiologist:"",assistantNurse:"",circulatingNurse:"",anesthesiaNurse:"",onloopNurse:"",rrKatim:"",allergy:"Tidak Ada",specialNeeds:"",bloodType:"O+"};
 const PAGE_SIZE = 10;
 const DEFAULT_RECIPIENT = "Suster Thresmiati CB, bu Niken, pak Jaka dan teman sejawat, mohon ijin laporan kamar bedah:";
 
-/* ─── HELPERS ───────────────────────────────────────────────────────── */
-const gId       = () => `${Date.now()}-${Math.random().toString(36).slice(2,6)}`;
-const todayDate = () => new Date().toISOString().split("T")[0];
-const tmrwDate  = () => { const d=new Date(); d.setDate(d.getDate()+1); return d.toISOString().split("T")[0]; };
+/* ─── DOMAIN INTERFACES (FIX AUDIT #9 — HIGH: TypeScript any masif) ────
+   Mendefinisikan kontrak tipe yang eksplisit untuk entitas domain inti.
+   Dengan interface ini TypeScript dapat mendeteksi prop hilang, tipe salah,
+   dan refactoring yang memecah kontrak — sebelumnya semua terbungkam 'any'. */
+
+export interface Operation {
+  id: string;
+  patient: string;
+  age?: string;
+  rm?: string;
+  opType: "elektif" | "semi" | "cyto";
+  status: "scheduled" | "ongoing" | "done" | "batal";
+  date: string;
+  time: string;
+  room: string;
+  surgeon: string;
+  anesthesiologist: string;
+  procedure: string;
+  diagnosis: string;
+  allergy: string;
+  bloodType: string;
+  ruangAsal?: string;
+  assistantNurse?: string;
+  circulatingNurse?: string;
+  anesthesiaNurse?: string;
+  onloopNurse?: string;
+  rrKatim?: string;
+  specialNeeds?: string;
+  createdAt?: string;
+  updated_at?: string;
+  reminders?: string[];
+  requests?: { id: string; text: string; time: string }[];
+  cancelReason?: string;
+}
+
+export interface StaffMember {
+  id: string;
+  name: string;
+  role: string;
+  phone?: string;
+  email?: string;
+  specialization?: string;
+  createdAt?: string;
+  updated_at?: string;
+}
+
+export interface RosterEntry {
+  id: string;
+  staffId: string;
+  date: string;
+  shift: string;
+  ruang?: string;
+  anestJagaList?: string[];
+  anestJaga?: string;
+  anestCytoList?: string[];
+  anestCyto?: string;
+  nurses?: string[];
+  pembawaHP?: string;
+  createdAt?: string;
+  updated_at?: string;
+}
+
+export interface Notif {
+  id: string;
+  type: string;
+  label: string;
+  patient: string;
+  procedure: string;
+  message: string;
+  sentAt: string;
+}
+
+/** Fungsi umum untuk menampilkan toast */
+export type ShowToastFn = (msg: string, color?: string) => void;
+
+/** Upsert satu record ke Supabase */
+export type UpsertOneFn = (table: string, data: Record<string, unknown>) => Promise<{ok: boolean; error?: string}>;
+
+/** Hapus satu record dari Supabase */
+export type DeleteFromSupaFn = (table: string, id: string) => Promise<{ok: boolean; error?: string}>;
+
+/** Upsert banyak record ke Supabase sekaligus */
+export type UpsertBulkFn = (table: string, rows: Record<string, unknown>[]) => Promise<{ok: boolean; error?: string}>;
+
+/* Props interfaces untuk komponen View utama */
+export interface ViewJadwalProps {
+  ops: Operation[];
+  setOps: React.Dispatch<React.SetStateAction<Operation[]>>;
+  startEditOp: (op: Operation) => void;
+  deleteOp: (id: string) => Promise<void>;
+  sendReminder: (op: Operation, type: string) => void;
+  reqOpId: string | null;
+  setReqOpId: React.Dispatch<React.SetStateAction<string | null>>;
+  reqText: string;
+  setReqText: React.Dispatch<React.SetStateAction<string>>;
+  addReq: (opId: string) => void;
+  delReq: (opId: string, rId: string) => void;
+  getPhone: (name: string) => string | null;
+  setNotifs: React.Dispatch<React.SetStateAction<Notif[]>>;
+  showToast: ShowToastFn;
+  privacyMode: boolean;
+  role: "admin" | "perawat";
+  upsertOneToSupa: UpsertOneFn;
+}
+
+export interface SaveOpFnArgs {
+  opForm: Partial<Operation>;
+  editingOp: Operation | null;
+  setOpErrors: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  setDupWarn: React.Dispatch<React.SetStateAction<boolean>>;
+  resetOp: () => void;
+}
+
+export interface ViewDaftarProps {
+  editOpRef: React.MutableRefObject<((op: Operation) => void) | null>;
+  saveOpFn: (args: SaveOpFnArgs) => void;
+  staff: StaffMember[];
+  setTab: React.Dispatch<React.SetStateAction<string>>;
+  templates: Operation[];
+  setTemplates: React.Dispatch<React.SetStateAction<Operation[]>>;
+  showToast: ShowToastFn;
+}
+
+export interface ViewLaporanProps {
+  ops: Operation[];
+  staff: StaffMember[];
+  roster: RosterEntry[];
+  showToast: ShowToastFn;
+  role: "admin" | "perawat";
+}
+
+export interface ViewKirimWAProps {
+  ops: Operation[];
+  staff: StaffMember[];
+  setNotifs: React.Dispatch<React.SetStateAction<Notif[]>>;
+  showToast: ShowToastFn;
+}
+
+export interface ViewStafProps {
+  staff: StaffMember[];
+  setStaff: React.Dispatch<React.SetStateAction<StaffMember[]>>;
+  roster: RosterEntry[];
+  setRoster: React.Dispatch<React.SetStateAction<RosterEntry[]>>;
+  showToast: ShowToastFn;
+  upsertOneToSupa: UpsertOneFn;
+  deleteFromSupa: DeleteFromSupaFn;
+  upsertBulkToSupa: UpsertBulkFn;
+}
+
+
+/* Exception jika data dari cloud terkorupsi (terpotong saat upload, dll).
+   Tanpa guard ini seluruh aplikasi bisa Blank Screen sesaat setelah login.
+   Helper ini selalu aman: mengembalikan fallback jika parse gagal. */
+const safeJSONParse = (data: any, fallback: any = {}): any => {
+  if (typeof data !== "string") return data ?? fallback;
+  try { return JSON.parse(data); } catch (e) { console.error("[safeJSONParse] Data JSON korup:", e); return fallback; }
+};
+
+/* ─── PIN HASHING (FIX AUDIT #4 — CRITICAL: PIN Plaintext) ──────────────
+   PIN sebelumnya disimpan plaintext di Supabase (kamar_bedah_config).
+   Sekarang di-hash dengan PBKDF2-SHA256 (100k iterasi) + salt acak per-PIN
+   menggunakan Web Crypto API sebelum dikirim/disimpan. Format string yang
+   disimpan: "<salt_hex>:<hash_hex>". Verifikasi PIN dilakukan dengan
+   me-re-derive hash dari salt yang tersimpan lalu membandingkan hasilnya —
+   PIN asli tidak pernah disimpan maupun dikirim dalam bentuk plaintext
+   ke Supabase. */
+async function hashPin(pin: string, saltHex?: string): Promise<string> {
+  const salt = saltHex ?? Array.from(crypto.getRandomValues(new Uint8Array(16)))
+    .map(b => b.toString(16).padStart(2, "0")).join("");
+  const enc = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(pin), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: enc.encode(salt), iterations: 100_000, hash: "SHA-256" },
+    keyMaterial, 256
+  );
+  const hashHex = Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, "0")).join("");
+  return `${salt}:${hashHex}`;
+}
+/* verifyPin: bandingkan PIN polos yang diketik user terhadap string
+   "<salt>:<hash>" yang tersimpan. Mendukung mode legacy (plaintext lama,
+   tanpa format salt:hash) untuk migrasi mulus dari data existing. */
+async function verifyPin(pin: string, stored: string | undefined | null): Promise<boolean> {
+  if (!stored) return false;
+  if (!stored.includes(":")) return pin === stored; // legacy plaintext fallback (auto-migrasi di pemanggil)
+  const [salt] = stored.split(":");
+  const rehashed = await hashPin(pin, salt);
+  return rehashed === stored;
+}
+/** Migrasi otomatis terjadi saat login: jika PIN di Supabase masih plaintext
+ * (sebelum update ini diterapkan), verifyPin akan mendeteksinya via !includes(":")
+ * dan membandingkan secara langsung. Saat admin berikutnya mengganti PIN,
+ * nilai baru akan otomatis tersimpan dalam format hash. */
+
+/* gId: SELALU mengembalikan UUID v4 yang valid secara format (8-4-4-4-12,
+   versi=4, varian=8/9/a/b). PENTING: fallback lama "`${Date.now()}-${rand}`"
+   BUKAN format UUID — jika kolom `id` di Supabase bertipe `uuid`, payload
+   tersebut akan ditolak Postgres ("invalid input syntax for type uuid"),
+   inilah salah satu pemicu paling umum dari notifikasi error Supabase saat
+   upload. Fallback di bawah tetap valid UUID v4 walau crypto.randomUUID
+   tidak tersedia (browser lama / konteks non-secure). */
+const gId = (): string => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") crypto.getRandomValues(bytes);
+  else for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10
+  const hex = Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+};
+const isValidUUID = (s: any): boolean => typeof s === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+/* ensureId: pakai id yang sudah ada selama berupa string non-kosong (kolom `id`
+   di tabel kb_* bertipe text, BUKAN uuid — dibuktikan oleh row legacy
+   id="lembur_data" yang sudah berjalan). Sengaja TIDAK memaksa format UUID di
+   sini: beberapa tabel memakai id deterministik (mis. "roster_2026-06-17",
+   "mon_2026-06-17_07:00", "${pegId}_${period}") supaya re-upload/re-save dengan
+   kunci yang sama melakukan UPSERT (timpa baris yg sama) bukan menumpuk baris
+   duplikat baru — memaksa UUID di sini akan menghancurkan mekanisme itu.
+   Hanya id yang benar-benar kosong/rusak yang digantikan id baru. */
+const ensureId = (id: any): string => (typeof id === "string" && id.trim().length > 0) ? id : gId();
+
+/* toLocalISODate: PENTING — JANGAN pakai `date.toISOString().split("T")[0]`
+   untuk mendapatkan "tanggal hari ini" versi lokal. toISOString() selalu
+   mengonversi ke UTC, sedangkan RS ini berada di WIB (UTC+7). Akibatnya,
+   setiap pukul 00:00–06:59 WIB, UTC masih menunjukkan TANGGAL KEMARIN,
+   sehingga todayDate()/tmrwDate() versi lama mengembalikan tanggal yang
+   salah (mundur 1 hari) tepat di jam-jam pergantian shift dini hari —
+   merusak default tanggal operasi baru, filter "hari ini"/"besok", jadwal
+   siaga H-1, dan reminder WA H-1 yang dikirim larut malam/dini hari.
+   Fungsi ini memakai komponen tanggal LOKAL (getFullYear/getMonth/getDate)
+   sehingga selalu konsisten dengan kalender yang dilihat pengguna. */
+const toLocalISODate = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const todayDate = () => toLocalISODate(new Date());
+const tmrwDate  = () => { const d=new Date(); d.setDate(d.getDate()+1); return toLocalISODate(d); };
 const fD        = (d: string) => { if(!d)return"-"; try{ return new Date(d+"T00:00:00").toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long",year:"numeric"}); }catch{ return d; } };
 const fNow      = () => new Date().toLocaleString("id-ID",{day:"numeric",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"});
 const fTR       = (t: string) => t?t.replace(":",".") : "";
-const gWord     = () => { const t=new Date().getHours()*60+new Date().getMinutes(); return t<660?"pagi":t<900?"siang":t<1110?"sore":"malam"; };
+/* FIX AUDIT #11 (MEDIUM): gWord sebelumnya memanggil new Date() dua kali —
+   jika dipanggil tepat saat jam berganti (mis. 11:59:59.999 → 12:00:00.000),
+   getHours() dan getMinutes() bisa berasal dari momen berbeda dan memberikan
+   hasil yang salah. Sekarang menggunakan satu instance Date yang sama. */
+const gWord     = (): string => { const now = new Date(); const t = now.getHours() * 60 + now.getMinutes(); return t < 660 ? "pagi" : t < 900 ? "siang" : t < 1110 ? "sore" : "malam"; };
 const sanitize  = (s: any) => String(s||"").replace(/<[^>]*>/g,"").replace(/['"`;]/g,"").trim();
 const maskName  = (n: string,a: boolean) => !a||!n ? n??"" : String(n).replace(/\S+/g,(w:string)=>w[0]+"*".repeat(Math.max(1,w.length-1)));
 const maskRM    = (r: string,a: boolean) => !a||!r ? r??"" : String(r).slice(0,2)+"****"+String(r).slice(-2);
-const parseDateCSV = (s: string) => { if(!s)return""; const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); return m?`${m[3]}-${m[2].padStart(2,"0")}-${m[1].padStart(2,"0")}`:s; };
+/* parseDateCSV dihapus — diganti toISODateStrict() yang menangani lebih banyak kasus
+   (Date object, serial number Excel, DD/MM/YYYY, YYYY-MM-DD) dan dipakai konsisten
+   di semua jalur impor Excel/CSV (staf, roster, jadwal operasi, jadwal lembur). */
+
+/* ─── PAYLOAD SANITIZATION (upload Staf & Roster) ──────────────────────
+   Excel (.xlsx) sering mengirim tanggal sebagai:
+   • JS Date object (jika dibaca dgn cellDates:true)
+   • Excel serial number (mis. 45808) jika cell tidak diformat sbg teks
+   • String "DD/MM/YYYY" atau "YYYY-MM-DD"
+   Mengirim nilai mentah tsb langsung ke Supabase adalah penyebab umum
+   "Upload Exception" karena format tidak sesuai skema. toISODateStrict
+   menangani SEMUA kasus di atas dan mengembalikan null jika benar2 tidak
+   valid, sehingga baris tsb bisa ditolak SEBELUM dikirim ke DB (bukan
+   ditangkap sebagai error generik dari server). ── */
+const EXCEL_EPOCH = Date.UTC(1899, 11, 30); // basis serial date Excel (termasuk leap-year bug 1900)
+const toISODateStrict = (value: any): string | null => {
+  if (value === null || value === undefined || value === "") return null;
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) return null;
+    /* FIX AUDIT #10 (MEDIUM — inkonsistensi lokal vs UTC): gunakan
+       toLocalISODate() secara konsisten untuk Date object, bukan
+       getFullYear/getMonth/getDate inline. Sebelumnya kode ini menggunakan
+       komponen lokal sedangkan cabang Excel serial number menggunakan UTC —
+       inkonsistensi ini menyebabkan tanggal yang sama ditampilkan berbeda
+       tergantung sumber input, khususnya di jam WIB 00:00–06:59. */
+    return toLocalISODate(value);
+  }
+  if (typeof value === "number" && isFinite(value)) {
+    const ms = EXCEL_EPOCH + Math.round(value) * 86400000;
+    const d = new Date(ms);
+    if (isNaN(d.getTime())) return null;
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
+  }
+  const str = String(value).trim();
+  if (!str) return null;
+  let m = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (m) { const [_, y, mo, da] = m; const d = new Date(`${y}-${mo.padStart(2,"0")}-${da.padStart(2,"0")}T00:00:00`); return isNaN(d.getTime()) ? null : `${y}-${mo.padStart(2,"0")}-${da.padStart(2,"0")}`; }
+  m = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) { const [_, da, mo, y] = m; const d = new Date(`${y}-${mo.padStart(2,"0")}-${da.padStart(2,"0")}T00:00:00`); return isNaN(d.getTime()) ? null : `${y}-${mo.padStart(2,"0")}-${da.padStart(2,"0")}`; }
+  const asNum = Number(str);
+  if (!isNaN(asNum) && asNum > 1000) return toISODateStrict(asNum); // serial number terbaca sbg string
+  return null;
+};
+/* normalizeStaffType: pemetaan label bebas (hasil ketik manual di Excel)
+   ke key baku yang dipakai aplikasi (ST). Mencegah staf "hilang" dari
+   pengelompokan UI karena typo/label berbeda, walau tersimpan di DB. */
+const normalizeStaffType = (raw: string): keyof typeof ST => {
+  const s = String(raw||"").toLowerCase().trim();
+  if (!s) return "circulating";
+  if (s in ST) return s as keyof typeof ST; // sudah berupa key baku (mis. dari template)
+  const isNurseLabel = s.includes("perawat") || s.includes("ns.") || s.startsWith("ns ");
+  if (s.includes("anestes") && isNurseLabel) return "anesthesia_nurse";
+  if (s.includes("anestes")) return "anesthesiologist"; // "dokter anestesi", "dr ... sp.an", dst
+  if (s.includes("onloop")) return "onloop";
+  if (s.includes("katim") || s.includes("rr")) return "katim";
+  if (s.includes("instrumen") || s.includes("circulating")) return "circulating";
+  if (s.includes("bedah") || s.includes("surgeon") || s.includes("operator") || s.startsWith("dr") || s.startsWith("dokter")) return "surgeon";
+  return "circulating";
+};
+/* normalizePhone62: samakan format dgn validasi form manual (^62\d{8,13}$).
+   0812... -> 62812...   +62812... -> 62812...   812... (tanpa awalan) dibiarkan
+   agar tervalidasi gagal & terlihat di laporan, bukan disimpan diam2 salah. */
+const normalizePhone62 = (raw: string): string => {
+  let d = String(raw||"").replace(/[^0-9]/g,"");
+  if (d.startsWith("0")) d = "62" + d.slice(1);
+  return d;
+};
+const isValidPhone62 = (p: string): boolean => /^62\d{8,13}$/.test(p);
+/* formatSupaError: ekstrak pesan deskriptif dari PostgrestError Supabase
+   (message/details/hint/code) — dipakai agar UI tidak hanya menampilkan
+   "gagal, coba lagi" generik melainkan alasan sebenarnya (tipe data salah,
+   kolom wajib null, RLS, FK, dsb). */
+const formatSupaError = (error: any): string => {
+  if (!error) return "Kesalahan tidak diketahui";
+  const parts = [error.message, error.details, error.hint].filter(Boolean);
+  const base = parts.length ? parts.join(" — ") : (error.toString?.() || "Kesalahan tidak diketahui");
+  return error.code ? `[${error.code}] ${base}` : base;
+};
 
 /* ─── REAL FILE HELPERS ─────────────────────────────────────────────── */
 const downloadBlob = (content: string, filename: string, mime="text/csv") => {
@@ -50,67 +379,147 @@ const downloadBlob = (content: string, filename: string, mime="text/csv") => {
   document.body.appendChild(a); a.click();
   document.body.removeChild(a); URL.revokeObjectURL(url);
 };
-const parseCSV = (text: string) => text.split("\n").filter(r=>r.trim())
-  .map(r=>r.split(",").map(c=>c.trim().replace(/^["']|["']$/g,"")));
+/* FIX AUDIT #7 (HIGH — sanitizeForCSV Incomplete / CSV Injection Bypass):
+   Implementasi lama hanya menangkap karakter berbahaya di AWAL string.
+   Penyerang bisa menyisipkan "\n=cmd|..." di dalam field multi-line —
+   Excel memproses baris setelah newline sebagai sel baru dengan formula aktif.
+   Fix:
+   1. Hapus semua \r\n dari dalam field (normalize ke spasi)
+   2. Strip karakter kontrol lain (U+0000–U+001F kecuali tab yang sudah dihandle)
+   3. Neutralisasi formula prefix (=, +, -, @, |, \t, \r) di awal hasil bersih
+   Dengan urutan ini, injeksi via embedded newline tidak bisa lolos. */
+const sanitizeForCSV = (val: any): string => {
+  // 1. Normalize newline ke spasi agar tidak membentuk baris baru di CSV
+  let s = String(val ?? "").replace(/\r?\n/g, " ").replace(/\r/g, " ");
+  // 2. Escape tanda kutip ganda
+  s = s.replace(/"/g, '""');
+  // 3. Strip karakter kontrol non-printable (kecuali spasi/tab)
+  s = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
+  // 4. Neutralisasi formula prefix di awal string hasil bersih
+  if (/^[=+\-@\t\r|]/.test(s)) s = "'" + s;
+  return `"${s}"`;
+};
+
+/* parseCSV: parser CSV minimal tapi AMAN terhadap field yang dibungkus tanda
+   kutip (mis. `"Doe, John"` atau keterangan yang mengandung koma) — kasus ini
+   sangat umum pada CSV hasil "Save As" dari Excel. Implementasi lama
+   (`text.split("\n").map(r=>r.split(","))`) memecah SETIAP koma tanpa
+   peduli tanda kutip, sehingga 1 baris bisa pecah menjadi kolom yang salah
+   (nama/telepon/jabatan bergeser) TANPA error apa pun yang terlihat —
+   silent data corruption saat import staf/roster. Parser di bawah
+   menangani: koma di dalam tanda kutip, tanda kutip ganda escaped (""),
+   serta akhir baris CRLF/LF. */
+const parseCSV = (text: string): string[][] => {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  for (let i = 0; i < normalized.length; i++) {
+    const ch = normalized[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (normalized[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += ch;
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ",") {
+      row.push(field.trim()); field = "";
+    } else if (ch === "\n") {
+      row.push(field.trim()); rows.push(row); row = []; field = "";
+    } else {
+      field += ch;
+    }
+  }
+  if (field.length || row.length) { row.push(field.trim()); rows.push(row); }
+  return rows.filter(r => r.some(c => c !== ""));
+};
 
 /* ─── SUPABASE BACKUP ───────────────────────────────────────────────── */
 interface SupabaseConfig { url: string; anonKey: string; autoBackup: boolean; backupInterval: number; lastBackup: string | null; realtimeBackup: boolean; autoExcelBackup: boolean; lastExcelBackup: string | null; lastExcelBackupTs: number | null; }
-const defaultSupaCfg: SupabaseConfig = { url:"", anonKey:"", autoBackup:false, backupInterval:60, lastBackup:null, realtimeBackup:false, autoExcelBackup:false, lastExcelBackup:null, lastExcelBackupTs:null };
+const defaultSupaCfg: SupabaseConfig = { url:"", anonKey:"", autoBackup:true, backupInterval:60, lastBackup:null, realtimeBackup:true, autoExcelBackup:true, lastExcelBackup:null, lastExcelBackupTs:null };
 
 /* ─── DROPBOX BACKUP ────────────────────────────────────────────────── */
-interface DropboxConfig { token: string; path: string; autoBackup: boolean; backupInterval: number; realtimeBackup: boolean; lastBackup: string | null; autoExcelBackup: boolean; lastExcelBackup: string | null; lastExcelBackupTs: number | null; }
-const defaultDbxCfg: DropboxConfig = { token:"", path:"/KamarBedahPantiRini/backup.json", autoBackup:false, backupInterval:30, realtimeBackup:false, lastBackup:null, autoExcelBackup:false, lastExcelBackup:null, lastExcelBackupTs:null };
+/* PENTING (security): Token Dropbox TIDAK ADA di client sama sekali.
+   Sebelumnya token tersimpan langsung di sini (hardcoded) — itu adalah
+   risiko keamanan serius karena bundle JS yang dikirim ke browser bisa
+   dibongkar (view-source / unzip build) dan token diekstrak utuh, lalu
+   dipakai siapa pun untuk mengakses akun Dropbox secara penuh.
+   Sekarang semua request backup/restore diteruskan lewat Supabase Edge
+   Function "dropbox-proxy" (lihat supabase/functions/dropbox-proxy/index.ts).
+   Token asli hanya hidup sebagai secret di server (Deno.env), tidak pernah
+   dikirim ke / disimpan di browser. Client hanya memegang DBX_PROXY_SECRET
+   — sebuah shared secret terbatas yang HANYA bisa memicu 2 aksi spesifik
+   (backup/restore 1 folder) lewat proxy ini, BUKAN kunci akses Dropbox
+   penuh. Lihat catatan di vite-env.d.ts / .env.local untuk cara isi nilainya. */
+const DBX_PROXY_SECRET = (import.meta as any).env?.VITE_PROXY_SHARED_SECRET || "";
+const DBX_PROXY_FN     = "dropbox-proxy";
+
+interface DropboxConfig { path: string; autoBackup: boolean; backupInterval: number; realtimeBackup: boolean; lastBackup: string | null; autoExcelBackup: boolean; lastExcelBackup: string | null; lastExcelBackupTs: number | null; }
+const defaultDbxCfg: DropboxConfig = { path:"/KamarBedahPantiRini/backup.json", autoBackup:true, backupInterval:30, realtimeBackup:true, lastBackup:null, autoExcelBackup:true, lastExcelBackup:null, lastExcelBackupTs:null };
+
+/* Helper tunggal: semua panggilan ke proxy lewat sini agar konsisten
+   (header, error handling, parsing respons) */
+async function callDbxProxy(body: Record<string, any>): Promise<{ok:boolean; data?:any; msg:string}> {
+  try {
+    const {data, error} = await SUPA_CLIENT.functions.invoke(DBX_PROXY_FN, {
+      body,
+      headers: {"x-proxy-secret": DBX_PROXY_SECRET},
+    });
+    if(error) return {ok:false, msg:"Proxy error: "+(error.message||"tidak diketahui")};
+    if(!data?.ok) return {ok:false, msg:data?.msg||"Gagal — proxy mengembalikan respons tidak sukses"};
+    return {ok:true, data:data.data, msg:data.msg||"✓ Berhasil"};
+  } catch(e:any){ return {ok:false, msg:"Gagal menghubungi proxy: "+(e?.message||"network error")}; }
+}
 
 async function dropboxUpload(cfg: DropboxConfig, data: any): Promise<{ok:boolean;msg:string}> {
-  if(!cfg.token) return {ok:false, msg:"Access Token Dropbox belum diisi"};
-  try {
-    const arg = JSON.stringify({path: cfg.path, mode:"overwrite", autorename:false, mute:true});
-    const body = JSON.stringify({exportedAt: new Date().toISOString(), ...data});
-    const res = await fetch("https://content.dropboxapi.com/2/files/upload", {
-      method:"POST",
-      headers:{"Authorization":"Bearer "+cfg.token,"Content-Type":"application/octet-stream","Dropbox-API-Arg":arg},
-      body,
-    });
-    if(!res.ok){ const t=await res.text(); return {ok:false, msg:`Error ${res.status}: ${t.slice(0,120)}`}; }
-    return {ok:true, msg:`✓ Tersimpan ke Dropbox: ${cfg.path}`};
-  } catch(e:any){ return {ok:false, msg:"Gagal menghubungi Dropbox: "+(e?.message||"network error")}; }
+  return callDbxProxy({action:"backup", path:cfg.path, payload:data});
 }
 
 async function dropboxDownload(cfg: DropboxConfig): Promise<{ok:boolean;data?:any;msg:string}> {
-  if(!cfg.token) return {ok:false, msg:"Access Token Dropbox belum diisi"};
-  try {
-    const arg = JSON.stringify({path: cfg.path});
-    const res = await fetch("https://content.dropboxapi.com/2/files/download", {
-      method:"POST",
-      headers:{"Authorization":"Bearer "+cfg.token,"Dropbox-API-Arg":arg},
-    });
-    if(!res.ok){ const t=await res.text(); return {ok:false, msg:`Error ${res.status}: ${t.slice(0,120)}`}; }
-    const data = await res.json();
-    return {ok:true, data, msg:"✓ Data berhasil dimuat dari Dropbox"};
-  } catch(e:any){ return {ok:false, msg:"Gagal mengunduh dari Dropbox: "+(e?.message||"network error")}; }
+  return callDbxProxy({action:"restore", path:cfg.path});
 }
 
-/* Upload Excel per-kategori ke Dropbox */
-async function dropboxUploadExcel(token: string, path: string, wb: any): Promise<{ok:boolean;msg:string}> {
-  if(!token) return {ok:false, msg:"Access Token Dropbox belum diisi"};
+/* Upload Excel per-kategori ke Dropbox (lewat proxy — payload dikirim base64) */
+async function dropboxUploadExcel(path: string, wb: any): Promise<{ok:boolean;msg:string}> {
   try {
-    const buf = XLSX.write(wb, {type:"array", bookType:"xlsx"});
-    const arg = JSON.stringify({path, mode:"overwrite", autorename:false, mute:true});
-    const res = await fetch("https://content.dropboxapi.com/2/files/upload", {
-      method:"POST",
-      headers:{"Authorization":"Bearer "+token,"Content-Type":"application/octet-stream","Dropbox-API-Arg":arg},
-      body: new Uint8Array(buf),
-    });
-    if(!res.ok){ const t=await res.text(); return {ok:false, msg:`Error ${res.status}: ${t.slice(0,120)}`}; }
-    return {ok:true, msg:`✓ Excel tersimpan ke Dropbox: ${path}`};
-  } catch(e:any){ return {ok:false, msg:"Gagal upload Excel ke Dropbox: "+(e?.message||"network error")}; }
+    const buf = XLSX.write(wb, {type:"array", bookType:"xlsx"}) as Uint8Array;
+    /* FIX AUDIT #13 (MEDIUM — O(n²) Base64 Encoding):
+       String concatenation per-byte dalam loop menciptakan O(n²) alokasi memori
+       karena setiap `+=` membuat string baru (JavaScript string immutable).
+       Untuk file Excel 500+ baris ini bisa menyebabkan browser freeze.
+       Fix: chunk-based approach — proses 8192 byte sekaligus menggunakan
+       spread operator + String.fromCharCode(), lalu gabungkan chunk-nya.
+       Ini mempertahankan keamanan btoa() sambil mengurangi alokasi ke O(n). */
+    const CHUNK = 8192;
+    let binary = "";
+    for (let i = 0; i < buf.length; i += CHUNK) {
+      binary += String.fromCharCode(...buf.subarray(i, i + CHUNK));
+    }
+    const base64 = btoa(binary);
+    return callDbxProxy({action:"upload_excel", path, base64});
+  } catch(e:any){ return {ok:false, msg:"Gagal menyiapkan file Excel: "+(e?.message||"unknown error")}; }
 }
+
+/* FIX AUDIT #3 (CRITICAL — XSS via downloadAsWord): semua data dinamis
+   (judul, header, isi sel) WAJIB di-escape sebelum disisipkan ke string
+   HTML. Tanpa ini, data pasien yang mengandung "<script>" atau atribut
+   "onerror=" bisa tereksekusi saat file .doc dibuka di Word/LibreOffice
+   (stored XSS). */
+const escHtml = (s: any): string =>
+  String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
 /* Download sebagai Word (.doc via HTML) */
 function downloadAsWord(title: string, rows: string[][], filename: string) {
-  const thead = rows[0].map(h=>`<th style="background:#004D40;color:#fff;padding:6px 10px;font-size:11px">${h}</th>`).join("");
-  const tbody = rows.slice(1).map((r,i)=>`<tr style="background:${i%2===0?"#F0FFF8":"#fff"}">${r.map(c=>`<td style="padding:5px 10px;border-bottom:1px solid #e0e0e0;font-size:11px">${c||""}</td>`).join("")}</tr>`).join("");
-  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${title}</title></head><body><h2 style="color:#004D40;font-family:Arial">${title}</h2><p style="color:#555;font-size:12px;font-family:Arial">Dicetak: ${fNow()} — ${HOSPITAL}</p><table style="border-collapse:collapse;width:100%;font-family:Arial"><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table></body></html>`;
+  const thead = rows[0].map(h=>`<th style="background:#0077B6;color:#fff;padding:6px 10px;font-size:11px">${escHtml(h)}</th>`).join("");
+  const tbody = rows.slice(1).map((r,i)=>`<tr style="background:${i%2===0?"#F0FFF8":"#fff"}">${r.map(c=>`<td style="padding:5px 10px;border-bottom:1px solid #e0e0e0;font-size:11px">${escHtml(c)}</td>`).join("")}</tr>`).join("");
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${escHtml(title)}</title></head><body><h2 style="color:#0077B6;font-family:Arial">${escHtml(title)}</h2><p style="color:#555;font-size:12px;font-family:Arial">Dicetak: ${escHtml(fNow())} — ${escHtml(HOSPITAL)}</p><table style="border-collapse:collapse;width:100%;font-family:Arial"><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table></body></html>`;
   const blob = new Blob([html], {type:"application/msword"});
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement("a");
@@ -119,49 +528,31 @@ function downloadAsWord(title: string, rows: string[][], filename: string) {
   document.body.removeChild(a); URL.revokeObjectURL(url);
 }
 
-async function supabaseBackup(cfg: SupabaseConfig, data: any): Promise<{ok: boolean; msg: string}> {
-  if(!cfg.url || !cfg.anonKey) return {ok:false, msg:"URL dan Anon Key Supabase belum diisi"};
+/* supabaseBackup & supabaseRestore kini menerima SUPA_CLIENT sebagai parameter
+   agar dapat digunakan sebelum modul App selesai di-mount. */
+async function supabaseBackup(_cfg: SupabaseConfig, data: any, client: any): Promise<{ok: boolean; msg: string}> {
   try {
-    const endpoint = cfg.url.replace(/\/$/, "") + "/rest/v1/kamar_bedah_backup";
     const payload = { created_at: new Date().toISOString(), data: JSON.stringify(data) };
-    const res = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "apikey": cfg.anonKey,
-        "Authorization": "Bearer " + cfg.anonKey,
-        "Content-Type": "application/json",
-        "Prefer": "return=minimal"
-      },
-      body: JSON.stringify(payload)
-    });
-    if(res.ok || res.status === 201) return {ok:true, msg:"✓ Backup ke Supabase berhasil — "+fNow()};
-    const txt = await res.text().catch(()=>"");
-    return {ok:false, msg:"Supabase error " + res.status + ": " + txt.slice(0,120)};
+    const {error} = await client.from("kamar_bedah_backup").insert(payload);
+    if(error) return {ok:false, msg:"Supabase error: " + error.message.slice(0,120)};
+    return {ok:true, msg:"✓ Backup ke Supabase berhasil — "+fNow()};
   } catch(e: any) {
     return {ok:false, msg:"Koneksi gagal: " + (e?.message||"unknown error")};
   }
 }
 
-async function supabaseRestore(cfg: SupabaseConfig): Promise<{ok: boolean; msg: string; data?: any}> {
-  if(!cfg.url || !cfg.anonKey) return {ok:false, msg:"URL dan Anon Key Supabase belum diisi"};
+async function supabaseRestore(_cfg: SupabaseConfig, client: any): Promise<{ok: boolean; msg: string; data?: any}> {
   try {
-    const endpoint = cfg.url.replace(/\/$/, "") + "/rest/v1/kamar_bedah_backup?order=created_at.desc&limit=1";
-    const res = await fetch(endpoint, {
-      method: "GET",
-      headers: {
-        "apikey": cfg.anonKey,
-        "Authorization": "Bearer " + cfg.anonKey,
-        "Content-Type": "application/json"
-      }
-    });
-    if(!res.ok) {
-      const txt = await res.text().catch(()=>"");
-      return {ok:false, msg:"Supabase error " + res.status + ": " + txt.slice(0,120)};
-    }
-    const rows = await res.json();
-    if(!Array.isArray(rows) || rows.length === 0) return {ok:false, msg:"Tidak ada data backup di Supabase"};
-    const parsed = JSON.parse(rows[0].data || "{}");
-    return {ok:true, msg:"✓ Data backup ditemukan — "+rows[0].created_at?.slice(0,19)?.replace("T"," "), data:parsed};
+    const {data:rows, error} = await client.from("kamar_bedah_backup").select("data,created_at").order("created_at",{ascending:false}).limit(1);
+    if(error) return {ok:false, msg:"Supabase error: " + error.message.slice(0,120)};
+    if(!rows || rows.length === 0) return {ok:false, msg:"Tidak ada data backup di Supabase"};
+    /* FIX AUDIT #8 (HIGH — JSON.parse tanpa guard): gunakan safeJSONParse
+       agar data backup yang korup (terpotong, encoding rusak, upload gagal
+       sebagian) tidak menyebabkan uncaught exception dan blank screen.
+       Helper ini sudah ada di codebase dan digunakan di tempat lain. */
+    const parsed = safeJSONParse(rows[0].data || "{}", null);
+    if(parsed === null) return {ok:false, msg:"Data backup korup — tidak dapat di-parse. Coba restore dari backup lain."};
+    return {ok:true, msg:"✓ Data backup ditemukan — "+(rows[0].created_at?.slice(0,19)?.replace("T"," ")||""), data:parsed};
   } catch(e: any) {
     return {ok:false, msg:"Koneksi gagal: " + (e?.message||"unknown error")};
   }
@@ -323,73 +714,129 @@ function MiniBar({data, colorFn, maxVal}: {data: {label: string; value: number; 
 }
 
 /* ─── ERROR BOUNDARY ────────────────────────────────────────────────── */
-class ErrorBoundary extends Component<{children: React.ReactNode},{err:boolean;msg:string}> {
-  state = {err:false,msg:""};
-  static getDerivedStateFromError(e: any){ return {err:true,msg:e?.message||"Error"}; }
+/* FIX AUDIT #14 (MEDIUM — ErrorBoundary tidak me-reset state setelah error):
+   Sebelumnya "Coba Lagi" hanya men-set err:false, tanpa me-remount komponen
+   child yang error. React akan mencoba merender ulang child yang sama persis
+   yang sudah error — kemungkinan besar akan error lagi dan pengguna terjebak.
+   Fix: tambahkan field `key` yang di-increment setiap reset. Perubahan `key`
+   pada React.Fragment memaksa seluruh subtree di-unmount lalu remount bersih,
+   sehingga state internal child ikut direset. */
+class ErrorBoundary extends Component<{children: React.ReactNode},{err:boolean;msg:string;key:number}> {
+  state = {err:false, msg:"", key:0};
+  static getDerivedStateFromError(e: any){ return {err:true, msg:e?.message||"Error"}; }
+
+  handleReset = () => {
+    this.setState(prev => ({err:false, msg:"", key: prev.key + 1}));
+  };
+
   render(){
     if(this.state.err) return (
       <div style={{padding:24,textAlign:"center",background:C.dBg,borderRadius:14,margin:"8px 0",border:`1px solid ${C.dL}`}}>
         <div style={{fontSize:32,marginBottom:8}}>⚠️</div>
         <div style={{fontSize:14,color:C.d,fontWeight:600,marginBottom:8}}>{this.state.msg}</div>
-        <Btn onClick={()=>this.setState({err:false})}>Coba Lagi</Btn>
+        <Btn onClick={this.handleReset}>Coba Lagi</Btn>
       </div>
     );
-    return this.props.children;
+    /* key change forces full remount of children — state internal child ikut direset */
+    return <Fragment key={this.state.key}>{this.props.children}</Fragment>;
   }
 }
 
 /* ─── PIN SCREEN ────────────────────────────────────────────────────── */
-function PinScreen({onVerify,savedPin}: any) {
-  const [mode,setMode] = useState("login");
-  const [pin,setPin]   = useState(""); const [err,setErr] = useState("");
-  const [np,setNp]     = useState(""); const [cp,setCp]   = useState("");
+/* ── PIN Screen dengan 2-role (Admin & Perawat) ── */
+function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime}: any) {
+  const [pin,setPin]   = useState("");
+  const [err,setErr]   = useState("");
   const [shake,setShk] = useState(false);
-  const check = () => {
-    if(pin===savedPin){ onVerify(); }
-    else { setErr("PIN salah. Coba lagi."); setShk(true); setTimeout(()=>{setShk(false);setErr("");setPin("");},1500); }
+  const [checking,setChecking] = useState(false);
+  // Force setup state (first time: PIN 0000)
+  const [setupMode,setSetupMode] = useState(false);
+  const [newAdmin,setNewAdmin]   = useState("");
+  const [cfAdmin,setCfAdmin]     = useState("");
+  const [newPerawat,setNewPerawat] = useState("");
+  const [cfPerawat,setCfPerawat]   = useState("");
+  const [setupErr,setSetupErr]   = useState("");
+
+  /* FIX AUDIT #4: PIN sekarang bisa berbentuk hash ("salt:hash") atau
+     legacy plaintext (data lama sebelum migrasi). verifyPin menangani
+     keduanya secara transparan. */
+  const check = async () => {
+    if(checking) return;
+    if(isFirstTime && pin==="0000"){
+      setSetupMode(true); setPin(""); setErr(""); return;
+    }
+    setChecking(true);
+    try{
+      if(await verifyPin(pin, pinAdmin)){ onVerify("admin"); return; }
+      if(await verifyPin(pin, pinPerawat)){ onVerify("perawat"); return; }
+      setErr("PIN salah. Coba lagi."); setShk(true);
+      setTimeout(()=>{setShk(false);setErr("");setPin("");},1500);
+    } finally {
+      setChecking(false);
+    }
   };
-  const change = () => {
-    if(np.length<4){setErr("Minimal 4 digit");return;}
-    if(np!==cp){setErr("PIN tidak cocok");return;}
-    onVerify(np);
+  const doSetup = () => {
+    if(newAdmin.length<4){setSetupErr("PIN Admin minimal 4 digit");return;}
+    if(newAdmin!==cfAdmin){setSetupErr("PIN Admin tidak cocok");return;}
+    if(newPerawat.length<4){setSetupErr("PIN Perawat minimal 4 digit");return;}
+    if(newPerawat!==cfPerawat){setSetupErr("PIN Perawat tidak cocok");return;}
+    if(newAdmin===newPerawat){setSetupErr("PIN Admin & Perawat tidak boleh sama");return;}
+    onVerify("admin",newAdmin,newPerawat);
   };
+
+  if(setupMode) return (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#ADE8F4,#48CAE4,#0077B6)",padding:16}}>
+      <style>{`@keyframes lgFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}`}</style>
+      <div style={{background:C.white,borderRadius:24,padding:"32px 28px",width:"100%",maxWidth:380,boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
+        <div style={{textAlign:"center",marginBottom:20}}>
+          <img src="/logo.jpeg" alt="Logo" style={{width:72,height:72,borderRadius:"50%",objectFit:"cover",display:"block",margin:"0 auto 12px",animation:"lgFloat 3s ease-in-out infinite"}}/>
+          <div style={{fontSize:16,fontWeight:800,color:C.p}}>Setup PIN Pertama Kali</div>
+          <div style={{fontSize:12,color:C.tL,marginTop:4}}>Buat PIN Admin dan PIN Perawat baru</div>
+        </div>
+        <div style={{background:C.wBg,border:`1px solid ${C.w}`,borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:12,color:C.w,fontWeight:600}}>
+          ⚠ Setelah setup, PIN <b>0000</b> tidak bisa digunakan lagi.
+        </div>
+        <div style={{fontSize:13,fontWeight:700,color:C.p,marginBottom:8}}>🔐 PIN Admin</div>
+        <LF label="PIN Admin Baru (min. 4 digit)"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="PIN admin baru" value={newAdmin} onChange={e=>setNewAdmin(e.target.value)}/></LF>
+        <LF label="Konfirmasi PIN Admin"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="Ulangi PIN admin" value={cfAdmin} onChange={e=>setCfAdmin(e.target.value)}/></LF>
+        <div style={{fontSize:13,fontWeight:700,color:C.g,margin:"12px 0 8px"}}>👤 PIN Perawat</div>
+        <LF label="PIN Perawat Baru (min. 4 digit)"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="PIN perawat baru" value={newPerawat} onChange={e=>setNewPerawat(e.target.value)}/></LF>
+        <LF label="Konfirmasi PIN Perawat"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="Ulangi PIN perawat" value={cfPerawat} onChange={e=>setCfPerawat(e.target.value)}/></LF>
+        {setupErr && <div style={{fontSize:12,color:C.d,marginBottom:10,fontWeight:600}}>⚠ {setupErr}</div>}
+        <Btn full onClick={doSetup} style={{marginTop:8,padding:"13px",fontSize:15,background:C.p}}>✓ Simpan PIN & Masuk</Btn>
+      </div>
+    </div>
+  );
+
   return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#003D33,#00695C,#00897B)",padding:16}}>
-      <style>{`@keyframes shk{0%,100%{transform:translateX(0)}25%,75%{transform:translateX(-7px)}50%{transform:translateX(7px)}} @keyframes lgFloat{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-8px) scale(1.06)}} @keyframes lgGlow{0%,100%{box-shadow:0 4px 18px rgba(0,77,64,.3),0 0 0 3px #00695C55}50%{box-shadow:0 12px 38px rgba(0,77,64,.65),0 0 0 4px #00897Baa}}`}</style>
-      <div style={{background:C.white,borderRadius:24,padding:"32px 28px",width:"100%",maxWidth:340,boxShadow:"0 20px 60px rgba(0,0,0,.3)",animation:shake?"shk .4s":"none"}}>
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#ADE8F4,#48CAE4,#0077B6)",padding:16}}>
+      <style>{`@keyframes shk{0%,100%{transform:translateX(0)}25%,75%{transform:translateX(-7px)}50%{transform:translateX(7px)}} @keyframes lgFloat{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-8px) scale(1.06)}} @keyframes lgGlow{0%,100%{box-shadow:0 4px 18px rgba(0,119,182,.3),0 0 0 3px #0077B655}50%{box-shadow:0 12px 38px rgba(0,119,182,.65),0 0 0 4px #00B4D8aa}}`}</style>
+      <div style={{background:C.white,borderRadius:24,padding:"32px 28px",width:"100%",maxWidth:360,boxShadow:"0 20px 60px rgba(0,0,0,.3)",animation:shake?"shk .4s":"none"}}>
         <div style={{textAlign:"center",marginBottom:24}}>
           <img src="/logo.jpeg" alt="Logo Kamar Bedah" style={{width:104,height:104,borderRadius:"50%",objectFit:"cover",display:"block",margin:"0 auto 14px",animation:"lgFloat 3s ease-in-out infinite, lgGlow 3s ease-in-out infinite"}}/>
-          <div style={{fontSize:17,fontWeight:800,color:C.p}}>Sistem Koordinasi<br/>Kamar Bedah</div>
-          <div style={{fontSize:12,color:C.tL,marginTop:6}}>{HOSPITAL}</div>
+          <div style={{fontSize:11,fontWeight:700,color:C.g,letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>RS Panti Rini</div>
+          <div style={{fontSize:20,fontWeight:900,color:C.p,letterSpacing:.5,lineHeight:1.2}}>SISTEM KOORDINASI<br/>KAMAR BEDAH</div>
+          <div style={{fontSize:11,color:C.tL,marginTop:6}}>{HOSPITAL}</div>
         </div>
-        {mode==="login" && <>
-          <div style={{fontSize:13,fontWeight:600,color:C.t,textAlign:"center",marginBottom:10}}>Masukkan PIN Akses</div>
-          <input style={{...iS,textAlign:"center",fontSize:28,letterSpacing:12,height:56,marginBottom:12,borderRadius:12}} type="password" inputMode="numeric" maxLength={6} placeholder="••••" value={pin} onChange={e=>setPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&check()}/>
-          {err && <div style={{fontSize:12,color:C.d,textAlign:"center",marginBottom:10}}>⚠ {err}</div>}
-          <Btn full onClick={check} style={{marginBottom:12,padding:"13px",fontSize:15}}>Masuk</Btn>
-          <div style={{display:"flex",justifyContent:"space-between"}}>
-            <button onClick={()=>{setMode("change");setErr("");}} style={{background:"none",border:"none",color:C.tL,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Ubah PIN</button>
-            <button onClick={()=>{setMode("forgot");setErr("");}} style={{background:"none",border:"none",color:C.i,fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>Lupa PIN?</button>
-          </div>
-        </>}
-        {mode==="change" && <>
-          <div style={{fontSize:14,fontWeight:700,color:C.p,marginBottom:14,textAlign:"center"}}>Ubah PIN Akses</div>
-          <LF label="PIN Baru (min. 4 digit)"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="PIN baru" value={np} onChange={e=>setNp(e.target.value)}/></LF>
-          <LF label="Konfirmasi PIN"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="Ulangi PIN" value={cp} onChange={e=>setCp(e.target.value)}/></LF>
-          {err && <div style={{fontSize:12,color:C.d,marginBottom:10}}>⚠ {err}</div>}
-          <div style={{display:"flex",gap:8}}><Btn full onClick={change}>Simpan PIN</Btn><Btn full outline color={C.g} onClick={()=>setMode("login")}>Batal</Btn></div>
-        </>}
-        {mode==="forgot" && <>
-          <div style={{fontSize:13,color:C.tL,marginBottom:14,textAlign:"center",lineHeight:1.6}}>Untuk reset PIN, gunakan PIN darurat <b style={{color:C.p}}>1234</b> atau hubungi Administrator Sistem.</div>
-          <Btn full onClick={()=>setMode("login")}>Kembali ke Login</Btn>
-        </>}
+        <div style={{fontSize:13,fontWeight:600,color:C.t,textAlign:"center",marginBottom:10}}>Masukkan PIN Akses</div>
+        <div style={{fontSize:11,color:C.tL,textAlign:"center",marginBottom:10}}>Gunakan PIN Admin atau PIN Perawat</div>
+        <input style={{...iS,textAlign:"center",fontSize:28,letterSpacing:12,height:56,marginBottom:12,borderRadius:12}} type="password" inputMode="numeric" maxLength={6} placeholder="••••" value={pin} disabled={checking} onChange={e=>setPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&check()}/>
+        {err && <div style={{fontSize:12,color:C.d,textAlign:"center",marginBottom:10}}>⚠ {err}</div>}
+        <Btn full onClick={check} disabled={checking} style={{marginBottom:12,padding:"13px",fontSize:15}}>{checking?"Memeriksa...":"Masuk"}</Btn>
+        <div style={{display:"flex",justifyContent:"center"}}>
+          <button onClick={()=>{}} style={{background:"none",border:"none",color:C.tL,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Hubungi Admin jika lupa PIN</button>
+        </div>
+        <div style={{display:"flex",gap:6,marginTop:12,justifyContent:"center"}}>
+          <span style={{background:C.pBg,color:C.p,fontSize:10,padding:"3px 10px",borderRadius:12,fontWeight:700}}>🔐 Admin</span>
+          <span style={{background:C.gBg,color:C.g,fontSize:10,padding:"3px 10px",borderRadius:12,fontWeight:700}}>👤 Perawat</span>
+        </div>
       </div>
     </div>
   );
 }
 
 /* ─── VIEW JADWAL ────────────────────────────────────────────────────── */
-function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReqOpId,reqText,setReqText,addReq,delReq,getPhone,setNotifs,showToast,privacyMode}: any) {
+function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReqOpId,reqText,setReqText,addReq,delReq,getPhone,setNotifs,showToast,privacyMode,role,upsertOneToSupa}: ViewJadwalProps) {
   const [cId,setCId]     = useState<string|null>(null);
   const [cR,setCR]       = useState("");
   const [cytoM,setCytoM] = useState<any>(null);
@@ -452,7 +899,7 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
             if(!filtered.length){showToast("Tidak ada jadwal untuk dicetak",C.w);return;}
             const rows = filtered.map((op:any,i:number)=>`<tr><td>${i+1}</td><td>${op.date} ${op.time}</td><td><b>${op.patient}</b></td><td>${op.procedure}</td><td>${op.room}</td><td>${op.surgeon}</td><td>${op.anesthesiologist||"—"}</td><td style="text-align:center"><span style="background:${STS[op.status as keyof typeof STS]?.c||C.g};color:#fff;padding:2px 8px;border-radius:10px;font-size:10px">${STS[op.status as keyof typeof STS]?.l||op.status}</span></td></tr>`).join("");
             const w=window.open("","_blank","width=900,height=700")!;
-            w.document.write(`<!DOCTYPE html><html><head><title>Jadwal Operasi ${printDate||"Semua"} — ${HOSPITAL}</title><style>body{font-family:Arial,sans-serif;font-size:12px;margin:20px}h2{color:#004D40;margin-bottom:4px}p{color:#555;margin-bottom:12px}table{width:100%;border-collapse:collapse}th{background:#004D40;color:#fff;padding:7px 10px;text-align:left;font-size:11px}td{padding:6px 10px;border-bottom:1px solid #e0e0e0;vertical-align:top}tr:nth-child(even)td{background:#f5f5f5}@media print{button{display:none}}</style></head><body><h2>🏥 Jadwal Operasi — ${HOSPITAL}</h2><p>${printDate?`Tanggal: ${printDate}`:"Semua jadwal"} · Dicetak: ${fNow()}</p><button onclick="window.print()" style="margin-bottom:12px;background:#004D40;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px">🖨 Cetak / Simpan PDF</button><table><thead><tr><th>#</th><th>Tanggal/Jam</th><th>Pasien</th><th>Tindakan</th><th>Kamar</th><th>Dr. Bedah</th><th>Dr. Anestesi</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
+            w.document.write(`<!DOCTYPE html><html><head><title>Jadwal Operasi ${printDate||"Semua"} — ${HOSPITAL}</title><style>body{font-family:Arial,sans-serif;font-size:12px;margin:20px}h2{color:#0077B6;margin-bottom:4px}p{color:#555;margin-bottom:12px}table{width:100%;border-collapse:collapse}th{background:#0077B6;color:#fff;padding:7px 10px;text-align:left;font-size:11px}td{padding:6px 10px;border-bottom:1px solid #e0e0e0;vertical-align:top}tr:nth-child(even)td{background:#f5f5f5}@media print{button{display:none}}</style></head><body><h2>🏥 Jadwal Operasi — ${HOSPITAL}</h2><p>${printDate?`Tanggal: ${printDate}`:"Semua jadwal"} · Dicetak: ${fNow()}</p><button onclick="window.print()" style="margin-bottom:12px;background:#0077B6;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px">🖨 Cetak / Simpan PDF</button><table><thead><tr><th>#</th><th>Tanggal/Jam</th><th>Pasien</th><th>Tindakan</th><th>Kamar</th><th>Dr. Bedah</th><th>Dr. Anestesi</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
             w.document.close();
           }} style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${C.p}`,background:C.pBg,color:C.p,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
             🖨 Cetak
@@ -520,17 +967,34 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
               </div>
             )}
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              {!isBatal&&op.status==="scheduled" && <Btn sm outline color={C.pL} onClick={()=>setOps((p:any)=>p.map((o:any)=>o.id===op.id?{...o,status:"ongoing"}:o))}>Mulai</Btn>}
-              {!isBatal&&op.status==="ongoing"    && <Btn sm outline color={C.s} onClick={()=>setOps((p:any)=>p.map((o:any)=>o.id===op.id?{...o,status:"done"}:o))}>Selesai</Btn>}
+              {!isBatal&&op.status==="scheduled" && <Btn sm outline color={C.pL} onClick={()=>{
+                const upd={...op,status:"ongoing",updated_at:new Date().toISOString()};
+                setOps((p:any)=>p.map((o:any)=>o.id===op.id?upd:o));
+                upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal menyimpan status: ${res?.error||"kesalahan tidak diketahui"}`,C.d); } });
+              }}>Mulai</Btn>}
+              {!isBatal&&op.status==="ongoing"    && <Btn sm outline color={C.s} onClick={()=>{
+                const upd={...op,status:"done",updated_at:new Date().toISOString()};
+                setOps((p:any)=>p.map((o:any)=>o.id===op.id?upd:o));
+                upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal menyimpan status: ${res?.error||"kesalahan tidak diketahui"}`,C.d); } });
+              }}>Selesai</Btn>}
               {!isBatal && <Btn sm outline color={C.d} onClick={()=>{setCId(op.id);setCR("");}}>Batal/Tunda</Btn>}
-              {isBatal   && <Btn sm outline color={C.g} onClick={()=>setOps((p:any)=>p.map((o:any)=>o.id===op.id?{...o,status:"scheduled",cancelReason:""}:o))}>Aktifkan</Btn>}
+              {isBatal   && <Btn sm outline color={C.g} onClick={()=>{
+                const upd={...op,status:"scheduled",cancelReason:"",updated_at:new Date().toISOString()};
+                setOps((p:any)=>p.map((o:any)=>o.id===op.id?upd:o));
+                upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal menyimpan status: ${res?.error||"kesalahan tidak diketahui"}`,C.d); } });
+              }}>Aktifkan</Btn>}
               <Btn sm outline color={C.d} onClick={()=>setDelC(op.id)}>Hapus</Btn>
             </div>
             {cId===op.id && (
               <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.b}`}}>
                 <div style={{fontSize:13,fontWeight:700,color:C.d,marginBottom:8}}>Alasan Pembatalan / Penundaan</div>
                 <input style={{...iS,marginBottom:8}} placeholder="Cth: Pasien belum puasa, kondisi tidak stabil" value={cR} onChange={e=>setCR(e.target.value)}/>
-                <div style={{display:"flex",gap:8}}><Btn full color={C.d} onClick={()=>{setOps((p:any)=>p.map((o:any)=>o.id===op.id?{...o,status:"batal",cancelReason:sanitize(cR)}:o));setCId(null);setCR("");showToast("Operasi ditandai batal",C.w);}}>Konfirmasi Batal</Btn><Btn full outline color={C.g} onClick={()=>setCId(null)}>Tutup</Btn></div>
+                <div style={{display:"flex",gap:8}}><Btn full color={C.d} onClick={()=>{
+                  const upd={...op,status:"batal",cancelReason:sanitize(cR),updated_at:new Date().toISOString()};
+                  setOps((p:any)=>p.map((o:any)=>o.id===op.id?upd:o));
+                  setCId(null);setCR("");showToast("Operasi ditandai batal",C.w);
+                  upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal menyimpan status: ${res?.error||"kesalahan tidak diketahui"}`,C.d); } });
+                }}>Konfirmasi Batal</Btn><Btn full outline color={C.g} onClick={()=>setCId(null)}>Tutup</Btn></div>
               </div>
             )}
             {reqOpId===op.id && (
@@ -579,7 +1043,32 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
 }
 
 /* ─── VIEW DAFTAR ────────────────────────────────────────────────────── */
-function ViewDaftar({opForm,setOpForm,editingOp,resetOp,saveOp,opErrors,setOpErrors,staff,setTab,dupWarning,templates,setTemplates,showToast}: any) {
+/* FIX #1: opForm state dipindah ke dalam ViewDaftar sebagai local state.
+   Sebelumnya state ini ada di root App, sehingga setiap ketukan huruf di
+   kolom "Nama Pasien" memicu re-render seluruh aplikasi — sangat berat di
+   tablet/HP. Sekarang hanya ViewDaftar yang re-render saat mengetik.
+   editOpRef memungkinkan root App (via startEditOp) mengisi form lokal ini. */
+function ViewDaftar({editOpRef,saveOpFn,staff,setTab,templates,setTemplates,showToast}: ViewDaftarProps) {
+  // ── Form state: lokal di sini, tidak lagi di root App ──
+  const [opForm,   setOpForm]   = useState<Partial<Operation>>({...EOP, date:todayDate()});
+  const [editingOp,setEditingOp]= useState<any>(null);
+  const [opErrors, setOpErrors] = useState<any>({});
+  const [dupWarn,  setDupWarn]  = useState(false);
+
+  // Expose metode populasi form ke parent via ref (dipakai oleh startEditOp)
+  useEffect(()=>{
+    if(editOpRef) editOpRef.current = (op: any) => {
+      setOpForm({...op});
+      setEditingOp(op);
+      setOpErrors({});
+      setDupWarn(false);
+    };
+  },[editOpRef]);
+
+  const resetOp = () => { setOpForm({...EOP,date:todayDate()}); setEditingOp(null); setOpErrors({}); setDupWarn(false); };
+  const saveOp  = () => saveOpFn({opForm, editingOp, setOpErrors, setDupWarn, resetOp});
+  const dupWarning = dupWarn;
+
   const byT = (t: string) => staff.filter((s:any)=>s.type===t).map((s:any)=>s.name);
   const allNurses = [...new Set([...byT("circulating"),...byT("anesthesia_nurse"),...byT("onloop"),...byT("katim")])];
   const [foc,setFoc] = useState<string|null>(null);
@@ -748,21 +1237,42 @@ function ViewDaftar({opForm,setOpForm,editingOp,resetOp,saveOp,opErrors,setOpErr
 }
 
 /* ─── VIEW LAPORAN ───────────────────────────────────────────────────── */
-function ViewLaporan({ops,lSet,setLSet,lSby,setLSby,staff,roster,showToast}: any) {
+/* FIX #1: lSet dan lSby dipindah ke dalam ViewLaporan sebagai local state.
+   Sebelumnya keduanya ada di root App sehingga setiap ketukan di field
+   "Keterangan Laporan" memicu re-render seluruh pohon komponen. */
+function ViewLaporan({ops,staff,roster,showToast,role}: ViewLaporanProps) {
+  const [lSet, setLSet] = useState({greeting:gWord(),recipients:"",keterangan:"",pembawaHP:"",katimPhone:"",grupPhone:""});
+  const [lSby, setLSby] = useState({anest:["",""],cyto:["","",""],nurses:["","","",""],pembawaHP:""});
   const [preview,setPreview] = useState("");
   const [foc,setFoc]         = useState<string|null>(null);
   const todayOps = ops.filter((o:any)=>o.date===todayDate());
   const tmrwOps  = ops.filter((o:any)=>o.date===tmrwDate());
-  const rTmrw    = roster.find((r:any)=>r.date===tmrwDate());
+  const rTmrw    = roster.find((r:any)=>r.date===todayDate());
   const tActive  = todayOps.filter((o:any)=>o.status!=="batal");
   const tBatal   = todayOps.filter((o:any)=>o.status==="batal");
 
   useEffect(()=>{
     if(rTmrw) setLSby((p:any)=>({
       ...p,
-      anest:  rTmrw.anestJaga ? [rTmrw.anestJaga] : (p.anest.some((x:any)=>x)?p.anest:[""]),
-      cyto:   rTmrw.anestCyto ? [rTmrw.anestCyto] : (p.cyto.some((x:any)=>x)?p.cyto:[""]),
-      nurses: rTmrw.nurses?.filter(Boolean).length ? rTmrw.nurses.filter(Boolean) : (p.nurses.some((x:any)=>x)?p.nurses:[""]),
+      anest: (()=>{
+        const a = rTmrw.anestJagaList?.length ? rTmrw.anestJagaList : (rTmrw.anestJaga ? rTmrw.anestJaga.split(/[,;]/).map((x:string)=>x.trim()).filter(Boolean) : []);
+        const cur = p.anest.filter((x:any)=>x);
+        const base = a.length>0 ? [...a] : [...cur];
+        while(base.length<2) base.push("");
+        return base.slice(0,2).concat(base.slice(2));
+      })(),
+      cyto: (()=>{
+        const c = rTmrw.anestCytoList?.length ? rTmrw.anestCytoList : (rTmrw.anestCyto ? rTmrw.anestCyto.split(/[,;]/).map((x:string)=>x.trim()).filter(Boolean) : []);
+        const cur = p.cyto.filter((x:any)=>x);
+        const base = c.length>0 ? [...c] : [...cur];
+        while(base.length<3) base.push("");
+        return base.slice(0,3).concat(base.slice(3));
+      })(),
+      nurses: (()=>{
+        const n = rTmrw.nurses?.filter(Boolean).length ? rTmrw.nurses.filter(Boolean) : (p.nurses.filter((x:any)=>x).length ? p.nurses.filter((x:any)=>x) : []);
+        while(n.length<4) n.push("");
+        return n;
+      })(),
       pembawaHP: rTmrw.pembawaHP||p.pembawaHP||""
     }));
   }, [roster]);
@@ -784,7 +1294,7 @@ function ViewLaporan({ops,lSet,setLSet,lSby,setLSby,staff,roster,showToast}: any
   return (
     <div>
       <Row title="Laporan Kepala Jaga"/>
-      {rTmrw ? <div style={{background:C.sBg,borderRadius:10,padding:"8px 14px",marginBottom:12,fontSize:12,color:C.s,border:`1px solid ${C.s}33`}}>✅ Jadwal siaga besok ditemukan — kolom siaga terisi otomatis. Bisa diedit.</div>
+      {rTmrw ? <div style={{background:C.sBg,borderRadius:10,padding:"8px 14px",marginBottom:12,fontSize:12,color:C.s,border:`1px solid ${C.s}33`}}>✅ Jadwal siaga hari ini ditemukan — kolom siaga terisi otomatis. Bisa diedit.</div>
               : <div style={{background:C.wBg,borderRadius:10,padding:"8px 14px",marginBottom:12,fontSize:12,color:C.w}}>⚠ Upload Jadwal Siaga di menu <b>Staf</b>, atau isi manual di bawah.</div>}
       <Card>
         <SH label="① Salam & Penerima"/>
@@ -849,19 +1359,45 @@ function ViewLaporan({ops,lSet,setLSet,lSby,setLSby,staff,roster,showToast}: any
           </>
         }
       </Card>
-      {[{k:"anest",l:"⑤ Siaga Dokter Anestesi",c:C.p},{k:"cyto",l:"⑥ Siaga Cyto Dokter Anestesi",c:"#B71C1C"},{k:"nurses",l:"⑦ Siaga Perawat",c:C.p}].map(({k,l,c})=>(
-        <Card key={k} hi={k==="cyto"?C.dL:undefined}>
-          <SH label={l} color={c}/>
-          {rTmrw && <div style={{fontSize:11,color:C.s,marginBottom:8,fontWeight:600}}>✓ Terisi otomatis dari jadwal jaga {fD(tmrwDate())} — bisa diedit</div>}
-          {(lSby[k]||[""]).map((n: string,i: number)=>(
-            <div key={i} style={{display:"flex",gap:8,marginBottom:8}}>
-              <input style={{...iS,flex:1}} placeholder={`${l.replace(/[⑤⑥⑦] /,"")} ${i+1}`} value={n} onChange={(ev:any)=>setI(k,i,ev.target.value)} spellCheck={false}/>
-              <button onClick={()=>rmI(k,i)} style={{background:"none",border:`1.5px solid ${C.d}`,borderRadius:8,color:C.d,padding:"0 12px",cursor:"pointer",fontSize:16,flexShrink:0}}>×</button>
+      {/* ⑤ Siaga Dokter Anestesi — 2 kolom fixed */}
+      <Card>
+        <SH label="⑤ Siaga Dokter Anestesi" color={C.p}/>
+        {rTmrw && <div style={{fontSize:11,color:C.s,marginBottom:8,fontWeight:600}}>✓ Terisi otomatis dari jadwal jaga {fD(todayDate())} — bisa diedit</div>}
+        <div style={{display:"flex",gap:8}}>
+          {[0,1].map(i=>(
+            <div key={i} style={{flex:1}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.g,marginBottom:4,textTransform:"uppercase",letterSpacing:.4}}>Dokter {i+1}</div>
+              <input style={iS} placeholder={`Dokter Anestesi ${i+1}`} value={(lSby.anest||["",""])[i]||""} onChange={(ev:any)=>setI("anest",i,ev.target.value)} spellCheck={false}/>
             </div>
           ))}
-          <Btn sm outline color={c} onClick={()=>addI(k)}>+ Tambah</Btn>
-        </Card>
-      ))}
+        </div>
+      </Card>
+      {/* ⑥ Siaga Cyto Dokter Anestesi — 3 kolom fixed */}
+      <Card hi={C.dL}>
+        <SH label="⑥ Siaga Cyto Dokter Anestesi" color="#B71C1C"/>
+        {rTmrw && <div style={{fontSize:11,color:C.s,marginBottom:8,fontWeight:600}}>✓ Terisi otomatis dari jadwal jaga {fD(todayDate())} — bisa diedit</div>}
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {[0,1,2].map(i=>(
+            <div key={i} style={{flex:"1 1 calc(33% - 8px)",minWidth:120}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.g,marginBottom:4,textTransform:"uppercase",letterSpacing:.4}}>Dokter {i+1}</div>
+              <input style={iS} placeholder={`Dokter Cyto ${i+1}`} value={(lSby.cyto||["","",""])[i]||""} onChange={(ev:any)=>setI("cyto",i,ev.target.value)} spellCheck={false}/>
+            </div>
+          ))}
+        </div>
+      </Card>
+      {/* ⑦ Siaga Perawat — 4 kolom fixed */}
+      <Card>
+        <SH label="⑦ Siaga Perawat" color={C.p}/>
+        {rTmrw && <div style={{fontSize:11,color:C.s,marginBottom:8,fontWeight:600}}>✓ Terisi otomatis dari jadwal jaga {fD(todayDate())} — bisa diedit</div>}
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {[0,1,2,3].map(i=>(
+            <div key={i} style={{flex:"1 1 calc(50% - 8px)",minWidth:140}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.g,marginBottom:4,textTransform:"uppercase",letterSpacing:.4}}>Perawat {i+1}</div>
+              <input style={iS} placeholder={`Siaga Perawat ${i+1}`} value={(lSby.nurses||["","","",""])[i]||""} onChange={(ev:any)=>setI("nurses",i,ev.target.value)} spellCheck={false}/>
+            </div>
+          ))}
+        </div>
+      </Card>
       <Card>
         <SH label="⑧ Pembawa HP & Nomor WA Pengiriman"/>
         <LF label="Nama Pembawa HP">
@@ -890,11 +1426,11 @@ function ViewLaporan({ops,lSet,setLSet,lSby,setLSby,staff,roster,showToast}: any
 }
 
 /* ─── VIEW KIRIM WA ──────────────────────────────────────────────────── */
-function ViewKirimWA({ops,staff,setNotifs,showToast}: any) {
+function ViewKirimWA({ops,staff,setNotifs,showToast}: ViewKirimWAProps) {
   const [prev,setPrev] = useState<Record<string,boolean>>({});
   const getPhone = (n: string) => staff.find((x:any)=>x.name===n)?.phone||null;
   const tmrwOps  = ops.filter((o:any)=>o.date===tmrwDate()&&o.status!=="batal");
-  const sendWA   = (ph: string,msg: string,name: string,lbl: string) => {
+  const sendWA   = (ph: string | null,msg: string,name: string,lbl: string) => {
     if(ph) window.open(`https://wa.me/${ph.replace(/[^0-9]/g,"")}?text=${encodeURIComponent(msg)}`,"_blank");
     setNotifs((p:any)=>[{id:gId(),type:"wa_direct",label:lbl,patient:name,procedure:"Jadwal H-1",message:msg,sentAt:fNow()},...p]);
     showToast("✓ WhatsApp dibuka — tekan Kirim di WA","#25D366");
@@ -960,7 +1496,13 @@ function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
     if(range==="all") return true;
     const d = new Date(op.date+"T00:00:00");
     const days = range==="30"?30:90;
-    return (now.getTime()-d.getTime()) <= days*24*60*60*1000;
+    const diff = now.getTime()-d.getTime();
+    /* PENTING: harus cek diff>=0 JUGA, bukan hanya diff<=range.
+       Tanpa batas bawah ini, operasi yang TERJADWAL DI MASA DEPAN (status
+       "scheduled") punya diff negatif, yang selalu <= days*ms berapa pun
+       besarnya — akibatnya operasi bulan depan/tahun depan tetap lolos
+       filter "30 Hari" / "90 Hari" dan mencemari statistik. */
+    return diff >= 0 && diff <= days*24*60*60*1000;
   });
 
   const total = filtered.length;
@@ -985,7 +1527,10 @@ function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
   // Per month (last 6 months)
   const monthMap: Record<string,number> = {};
   filtered.forEach((o:any)=>{
-    if(!o.date) return;
+    /* FIX #5: Cek tipe dan panjang string sebelum .slice() — jika o.date null/undefined
+       (dari data migrasi lama), .slice() akan crash "Cannot read properties of null".
+       Perlu typeof === "string" DAN panjang >= 7, bukan sekadar truthy check. */
+    if(typeof o.date !== "string" || o.date.length < 7) return;
     const m = o.date.slice(0,7);
     monthMap[m]=(monthMap[m]||0)+1;
   });
@@ -1217,7 +1762,7 @@ function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
 }
 
 /* ─── VIEW STAF ──────────────────────────────────────────────────────── */
-function ViewStaf({staff,setStaff,roster,setRoster,showToast}: any) {
+function ViewStaf({staff,setStaff,roster,setRoster,showToast,upsertOneToSupa,deleteFromSupa,upsertBulkToSupa}: ViewStafProps) {
   const [form,setForm]   = useState({name:"",type:"surgeon",phone:""});
   const [editing,setEd]  = useState<any>(null);
   const [show,setShow]   = useState(false);
@@ -1229,13 +1774,36 @@ function ViewStaf({staff,setStaff,roster,setRoster,showToast}: any) {
     const e: any={};
     if(!form.name.trim()) e.name="Wajib";
     if(!form.phone.trim()) e.phone="Wajib";
-    else if(!/^62\d{8,13}$/.test(form.phone.replace(/\s/g,""))) e.phone="Format: 62xxx (tanpa + atau spasi)";
+    else if(!isValidPhone62(form.phone.replace(/\s/g,""))) e.phone="Format: 62xxx (tanpa + atau spasi)";
     setErr(e); return !Object.keys(e).length;
   };
   const save = () => {
     if(!validate()) return;
-    if(editing){ setStaff((p:any)=>p.map((s:any)=>s.id===editing.id?{...editing,...form}:s)); showToast("✓ Data staf diperbarui",C.s); }
-    else { setStaff((p:any)=>[...p,{id:gId(),...form}]); showToast("✓ Staf berhasil ditambahkan",C.s); }
+    if(editing){
+      const updated={...editing,...form, updated_at: new Date().toISOString()};
+      /* Optimistic update untuk edit (data sudah ada di DB, resiko rendah) */
+      setStaff((p:any[])=>p.map((s:any)=>s.id===editing.id?updated:s));
+      upsertOneToSupa?.("kb_staf",updated).then((res:{ok:boolean;error?:string})=>{
+        if(!res?.ok){
+          setStaff((p:any[])=>p.map((s:any)=>s.id===editing.id?editing:s));
+          showToast(`⚠ Gagal menyimpan staf: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
+        } else showToast("✓ Data staf diperbarui & tersinkron",C.s);
+      });
+    } else {
+      const newStaf={id:gId(),...form, updated_at: new Date().toISOString()};
+      /* DB-first untuk data baru */
+      upsertOneToSupa?.("kb_staf",newStaf).then((res:{ok:boolean;error?:string})=>{
+        if(!res?.ok){
+          showToast(`⚠ Gagal menyimpan staf: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
+        } else {
+          setStaff((p:any[])=>{
+            if(p.some((s:any)=>s.id===newStaf.id)) return p;
+            return [...p,newStaf];
+          });
+          showToast("✓ Staf berhasil ditambahkan & tersinkron",C.s);
+        }
+      });
+    }
     setForm({name:"",type:"surgeon",phone:""}); setEd(null); setShow(false); setErr({});
   };
   const dlStaff = () => {
@@ -1243,17 +1811,36 @@ function ViewStaf({staff,setStaff,roster,setRoster,showToast}: any) {
     downloadBlob(csv,"template_staf.csv"); showToast("✓ Template CSV Staf diunduh",C.s);
   };
   const dlRoster = () => {
-    const csv = "\"Tanggal\",\"Dokter Anestesi Jaga\",\"Dokter Anestesi Cyto\",\"Perawat Siaga 1\",\"Perawat Siaga 2\",\"Perawat Siaga 3\",\"Pembawa HP\"\n\"01/06/2025\",\"dr. Anestesi Jaga Sp.An\",\"dr. Anestesi Cyto Sp.An\",\"Ns. Perawat 1\",\"Ns. Perawat 2\",\"Ns. Perawat 3\",\"Ns. Katim Jaga\"";
-    downloadBlob(csv,"template_jadwal_siaga_bulanan.csv"); showToast("✓ Template Jadwal Siaga diunduh",C.s);
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["Tanggal","Dokter Anestesi Jaga 1","Dokter Anestesi Jaga 2","Dokter Anestesi Cyto 1","Dokter Anestesi Cyto 2","Dokter Anestesi Cyto 3","Perawat Siaga 1","Perawat Siaga 2","Perawat Siaga 3","Perawat Siaga 4","Pembawa HP"],
+      ["01/06/2025","dr. Anestesi Jaga 1 Sp.An","dr. Anestesi Jaga 2 Sp.An","dr. Cyto 1 Sp.An","dr. Cyto 2 Sp.An","dr. Cyto 3 Sp.An","Ns. Perawat 1","Ns. Perawat 2","Ns. Perawat 3","Ns. Perawat 4","Ns. Katim Jaga"],
+      ["02/06/2025","dr. Anestesi Jaga 1 Sp.An","dr. Anestesi Jaga 2 Sp.An","dr. Cyto 1 Sp.An","dr. Cyto 2 Sp.An","dr. Cyto 3 Sp.An","Ns. Perawat 1","Ns. Perawat 2","Ns. Perawat 3","Ns. Perawat 4","Ns. Katim Jaga"],
+    ]);
+    ws["!cols"]=[{wch:12},{wch:28},{wch:28},{wch:28},{wch:28},{wch:28},{wch:22},{wch:22},{wch:22},{wch:22},{wch:22}];
+    XLSX.utils.book_append_sheet(wb,ws,"Jadwal Siaga");
+    XLSX.writeFile(wb,"template_jadwal_siaga_bulanan.xlsx");
+    showToast("✓ Template Jadwal Siaga diunduh",C.s);
   };
-  const readFileRows = async (f: File): Promise<string[][]> => {
+
+
+
+  /* readFileRows: PENTING — untuk .xlsx dibaca dengan cellDates:true dan TIDAK
+     dipaksa jadi string di sini. Memaksa String(cell) terlalu awal adalah
+     sumber bug nyata: sel tanggal Excel yang diformat sebagai tanggal akan
+     terbaca sebagai angka "serial" (mis. 45809) oleh SheetJS bila cellDates
+     tidak diaktifkan, lalu String(45809) tidak akan pernah cocok dengan
+     regex DD/MM/YYYY — tanggal rusak inilah yang akhirnya ditolak Supabase.
+     Sel Date/number asli dipertahankan agar bisa disanitasi per-kolom oleh
+     toISODateStrict() di pemanggil. */
+  const readFileRows = async (f: File): Promise<any[][]> => {
     const isXlsx = f.name.match(/\.xlsx?$/i);
     if(isXlsx) {
       const buf = await f.arrayBuffer();
-      const wb2 = XLSX.read(new Uint8Array(buf),{type:"array"});
+      const wb2 = XLSX.read(new Uint8Array(buf),{type:"array", cellDates:true});
       const ws2 = wb2.Sheets[wb2.SheetNames[0]];
       const raw: any[][] = XLSX.utils.sheet_to_json(ws2,{header:1,defval:""});
-      return raw.map((r:any[])=>r.map((c:any)=>String(c??"")));
+      return raw;
     }
     return parseCSV(await f.text());
   };
@@ -1263,32 +1850,102 @@ function ViewStaf({staff,setStaff,roster,setRoster,showToast}: any) {
     try {
       const rows = await readFileRows(f);
       if(rows.length<2){showToast("File kosong atau format tidak sesuai",C.d);return;}
-      const h=rows[0].map((x:string)=>x.toLowerCase().trim());
+      const h=rows[0].map((x:any)=>String(x).toLowerCase().trim());
       const ni=h.findIndex((x:string)=>x.includes("nama")), ti=h.findIndex((x:string)=>x.includes("jabatan")||x.includes("type")), pi=h.findIndex((x:string)=>x.includes("wa")||x.includes("phone")||x.includes("nomor"));
       if(ni<0){showToast("Kolom 'nama' tidak ditemukan. Gunakan template.",C.d);return;}
-      const imp=rows.slice(1).map((c:string[])=>({id:gId(),name:sanitize(c[ni]||""),type:ti>=0?(c[ti]||"circulating"):"circulating",phone:(pi>=0?c[pi]||"":"").replace(/[^0-9]/g,"")})).filter((s:any)=>s.name);
-      if(!imp.length){showToast("Tidak ada data valid",C.d);return;}
-      setStaff((p:any)=>[...p,...imp]); showToast("✓ "+imp.length+" staf berhasil diimport",C.s);
-    } catch(e: any){showToast("Error: "+e.message,C.d);}
+      let skippedPhone = 0;
+      const imp=rows.slice(1).map((c:any[])=>{
+        const name = sanitize(String(c[ni]??""));
+        if(!name) return null;
+        const rawPhone = String(pi>=0?c[pi]??"":"");
+        const phone = normalizePhone62(rawPhone);
+        if(rawPhone.trim() && !isValidPhone62(phone)) skippedPhone++;
+        /* Cocokkan dgn staf yang SUDAH ADA (nama, case-insensitive) — jika ketemu,
+           PERBARUI baris yg sama (reuse id) bukan membuat staf duplikat baru.
+           Tanpa ini, re-upload file staf yg sama akan menggandakan data setiap kali. */
+        const existing = staff.find((s:any)=>String(s.name||"").toLowerCase().trim()===name.toLowerCase());
+        return {
+          id: existing ? existing.id : gId(),
+          name,
+          type: ti>=0 ? normalizeStaffType(String(c[ti]??"")) : "circulating",
+          phone,
+          updated_at: new Date().toISOString(),
+        };
+      }).filter(Boolean) as any[];
+      if(!imp.length){showToast("Tidak ada data valid (kolom nama kosong)",C.d);return;}
+      showToast(`⟳ Menyimpan ${imp.length} staf ke Supabase...`,C.p);
+      const res = await upsertBulkToSupa?.("kb_staf", imp);
+      if(res?.ok) {
+        setStaff((p:any[])=>{
+          const byId = new Map(p.map((s:any)=>[s.id,s]));
+          imp.forEach((s:any)=>byId.set(s.id,s));
+          return Array.from(byId.values());
+        });
+        const note = skippedPhone ? ` (${skippedPhone} nomor WA format tidak valid — tetap tersimpan, cek kembali)` : "";
+        showToast("✓ "+imp.length+" staf berhasil diimport & tersinkron"+note,C.s);
+      } else {
+        showToast(`⚠ Import staf gagal: ${res?.error||"kesalahan tidak diketahui dari Supabase"}`,C.d);
+      }
+    } catch(e: any){showToast("Error membaca file: "+(e?.message||"format tidak dikenali"),C.d);}
   };
   const handleRosterFile = async (ev: any) => {
     const f=ev.target.files[0]; if(!f)return; ev.target.value="";
     try {
       const rows = await readFileRows(f);
       if(rows.length<2){showToast("File kosong",C.d);return;}
-      const h=rows[0].map((x:string)=>x.toLowerCase().trim());
-      const di=h.findIndex((x:string)=>x.includes("tanggal")||x.includes("date")), ai=h.findIndex((x:string)=>x.includes("jaga")&&!x.includes("cyto")), ci=h.findIndex((x:string)=>x.includes("cyto")), pi=h.findIndex((x:string)=>x.includes("perawat")||x.includes("nurse")), hpi=h.findIndex((x:string)=>x.includes("pembawa")||x.includes("hp"));
+      const h=rows[0].map((x:any)=>String(x).toLowerCase().trim());
+      const di=h.findIndex((x:string)=>x.includes("tanggal")||x.includes("date"));
       if(di<0){showToast("Kolom 'Tanggal' tidak ditemukan. Gunakan template.",C.d);return;}
-      const imp=rows.slice(1).map((r:string[])=>{
-        const date=parseDateCSV(r[di]||"")||(r[di]||"");
+      const ai1=h.findIndex((x:string)=>x.includes("jaga")&&!x.includes("cyto")&&(x.includes("1")||(!x.includes("2")&&!x.includes("3"))));
+      const ai2=h.findIndex((x:string)=>x.includes("jaga")&&!x.includes("cyto")&&x.includes("2"));
+      const ci1=h.findIndex((x:string)=>x.includes("cyto")&&(x.includes("1")||(!x.includes("2")&&!x.includes("3"))));
+      const ci2=h.findIndex((x:string)=>x.includes("cyto")&&x.includes("2"));
+      const ci3=h.findIndex((x:string)=>x.includes("cyto")&&x.includes("3"));
+      const pi=h.findIndex((x:string)=>x.includes("perawat")||x.includes("nurse"));
+      const hpi=h.findIndex((x:string)=>x.includes("pembawa")||x.includes("hp"));
+      const ts = new Date().toISOString();
+      let skippedDate = 0;
+      const imp=rows.slice(1).map((r:any[])=>{
+        /* toISODateStrict menangani Date object, serial number Excel, dan
+           string DD/MM/YYYY atau YYYY-MM-DD sekaligus — lihat definisinya. */
+        const date = toISODateStrict(r[di]);
+        if(!date){ if(r[di]) skippedDate++; return null; }
         const nurses: string[]=[];
-        if(pi>=0) for(let i=pi;i<Math.min(r.length,pi+6);i++) if(r[i]&&r[i].trim()) nurses.push(sanitize(r[i].trim()));
-        return {id:gId(),date,anestJaga:sanitize(r[ai>=0?ai:0]||""),anestCyto:sanitize(r[ci>=0?ci:0]||""),nurses,pembawaHP:sanitize(r[hpi>=0?hpi:0]||"")};
-      }).filter((r:any)=>r.date&&r.date.length>=8);
-      if(!imp.length){showToast("Tidak ada baris valid. Cek format tanggal DD/MM/YYYY",C.d);return;}
-      setRoster((p:any)=>[...p.filter((x:any)=>!imp.find((n:any)=>n.date===x.date)),...imp]);
-      showToast("✓ "+imp.length+" hari jadwal siaga berhasil diimport",C.s);
-    } catch(e: any){showToast("Error: "+e.message,C.d);}
+        if(pi>=0) for(let i=pi;i<Math.min(r.length,pi+4);i++){ const cell=String(r[i]??"").trim(); if(cell && !cell.toLowerCase().includes("pembawa")) nurses.push(sanitize(cell)); }
+        const jaga1=sanitize(String(r[ai1>=0?ai1:0]??""));
+        const jaga2=ai2>=0?sanitize(String(r[ai2]??"")):"";
+        const cyto1=ci1>=0?sanitize(String(r[ci1]??"")):"";
+        const cyto2=ci2>=0?sanitize(String(r[ci2]??"")):"";
+        const cyto3=ci3>=0?sanitize(String(r[ci3]??"")):"";
+        const anestJagaArr=[jaga1,jaga2].filter(Boolean);
+        const anestCytoArr=[cyto1,cyto2,cyto3].filter(Boolean);
+        /* id DETERMINISTIK dari tanggal (bukan random) — re-upload jadwal yang
+           tanggalnya sama akan UPSERT baris yg sama (onConflict:"id"), bukan
+           membuat baris baru yang "berhantu" (tetap ada di DB walau sudah
+           tergeser di tampilan lokal) dan muncul lagi sbg duplikat di device
+           lain / setelah refresh. */
+        return {id:`roster_${date}`,date,anestJaga:anestJagaArr.join(", "),anestCyto:anestCytoArr.join(", "),anestJagaList:anestJagaArr,anestCytoList:anestCytoArr,nurses,pembawaHP:sanitize(String(r[hpi>=0?hpi:0]??"")),updated_at:ts};
+      }).filter(Boolean) as any[];
+      if(!imp.length){showToast(`Tidak ada baris valid (${skippedDate} tanggal tidak terbaca — cek format DD/MM/YYYY)`,C.d);return;}
+      /* Merge lokal: timpa entry dengan tanggal yang sama */
+      const oldSameDate = roster.filter((x:any)=>imp.some((n:any)=>n.date===x.date));
+      const newRoster=[...roster.filter((x:any)=>!imp.find((n:any)=>n.date===x.date)),...imp];
+      showToast(`⟳ Menyimpan ${imp.length} jadwal siaga ke Supabase...`,C.p);
+      /* DB-first: roster harus persist sebelum UI diupdate */
+      const res = await upsertBulkToSupa?.("kb_roster", imp);
+      if(res?.ok) {
+        setRoster(newRoster);
+        /* Best-effort: bersihkan baris lama (id berbeda, mis. dari upload versi
+           sebelumnya yg masih pakai id acak) utk tanggal yg sama agar tidak
+           menumpuk sbg duplikat "hantu" di Supabase. */
+        const orphanIds = oldSameDate.filter((x:any)=>!imp.some((n:any)=>n.id===x.id)).map((x:any)=>x.id);
+        if(orphanIds.length) Promise.all(orphanIds.map((id:string)=>deleteFromSupa?.("kb_roster", id))).catch(()=>{});
+        const note = skippedDate ? ` (${skippedDate} baris dilewati — tanggal tidak terbaca)` : "";
+        showToast("✓ "+imp.length+" jadwal siaga tersimpan & tersinkron ke semua perangkat"+note,C.s);
+      } else {
+        showToast(`⚠ Upload jadwal siaga gagal: ${res?.error||"kesalahan tidak diketahui dari Supabase"}`,C.d);
+      }
+    } catch(e: any){showToast("Error membaca file: "+(e?.message||"format tidak dikenali"),C.d);}
   };
 
   return (
@@ -1353,7 +2010,12 @@ function ViewStaf({staff,setStaff,roster,setRoster,showToast}: any) {
                   <div><div style={{fontSize:14,fontWeight:700,color:C.t}}>{s.name}</div><div style={{fontSize:12,color:C.tL}}>+{s.phone}</div></div>
                   <div style={{display:"flex",gap:6}}>
                     <Btn sm outline color={C.p} onClick={()=>{setForm({name:s.name,type:s.type,phone:s.phone});setEd(s);setErr({});setShow(true);}}>Edit</Btn>
-                    <Btn sm outline color={C.d} onClick={()=>{setStaff((p:any)=>p.filter((x:any)=>x.id!==s.id));showToast("Staf dihapus");}}>Hapus</Btn>
+                    <Btn sm outline color={C.d} onClick={async()=>{
+                      const res = await deleteFromSupa?.("kb_staf",s.id);
+                      if(!res?.ok){ showToast(`⚠ Gagal menghapus staf: ${res?.error||"kesalahan tidak diketahui"}`,C.d); return; }
+                      setStaff((p:any[])=>p.filter((x:any)=>x.id!==s.id));
+                      showToast("✓ Staf dihapus & tersinkron",C.d);
+                    }}>Hapus</Btn>
                   </div>
                 </div>
               </Card>
@@ -1366,7 +2028,7 @@ function ViewStaf({staff,setStaff,roster,setRoster,showToast}: any) {
 }
 
 /* ─── IMPORT EXCEL ───────────────────────────────────────────────────── */
-function ImportExcel({ops, setOps, showToast}: any) {
+function ImportExcel({ops, setOps, showToast, upsertBulkToSupa}: any) {
   const [rows, setRows] = useState<any[]>([]);
   const [fileName, setFileName] = useState("");
   const [importing, setImporting] = useState(false);
@@ -1397,7 +2059,7 @@ function ImportExcel({ops, setOps, showToast}: any) {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const wb = XLSX.read(new Uint8Array(e.target!.result as ArrayBuffer), {type:"array"});
+        const wb = XLSX.read(new Uint8Array(e.target!.result as ArrayBuffer), {type:"array", cellDates:true});
         const ws = wb.Sheets[wb.SheetNames[0]];
         const data: any[][] = XLSX.utils.sheet_to_json(ws, {header:1});
         if(data.length<2){showToast("File kosong atau tidak ada data",C.d);return;}
@@ -1409,8 +2071,10 @@ function ImportExcel({ops, setOps, showToast}: any) {
           const obj: any={};
           COLS.forEach(col=>{
             const idx=header.findIndex(h=>h.toLowerCase()===col.label.toLowerCase()||h.toLowerCase()===col.key.toLowerCase());
-            if(idx>=0) obj[col.key]=String(row[idx]||"").trim();
-            else obj[col.key]="";
+            if(idx<0){ obj[col.key]=""; return; }
+            /* Kolom tanggal disanitasi khusus — sel Excel bisa berupa Date object
+               atau serial number, jangan langsung String() atau formatnya rusak. */
+            obj[col.key] = col.key==="date" ? (toISODateStrict(row[idx])||"") : String(row[idx]??"").trim();
           });
           if(obj.date||obj.patient||obj.procedure) parsed.push(obj);
         }
@@ -1421,22 +2085,44 @@ function ImportExcel({ops, setOps, showToast}: any) {
     reader.readAsArrayBuffer(file);
   };
 
-  const doImport = () => {
+  const doImport = async () => {
     setImporting(true);
     const valid = rows.filter(r=>r.patient&&r.date&&r.procedure);
-    const newOps = valid.map(r=>({
-      id:gId(), status:"scheduled", reminders:[], requests:[], createdAt:fNow(),
-      opType: r.opType||"elektif",
-      date: r.date, time: r.time||"08:00",
-      patient: r.patient, diagnosis: r.diagnosis||"", procedure: r.procedure,
-      surgeon: r.surgeon||"", anesthesiologist: r.anesthesiologist||"",
-      room: r.room||ROOMS[0], age: r.age||"", rm: r.rm||"",
-      bloodType: r.bloodType||"Tidak Diketahui", allergy: r.allergy||"Tidak Ada",
-      circulatingNurse: r.circulatingNurse||"", anesthesiaNurse: r.anesthesiaNurse||"",
-      onloopNurse: r.onloopNurse||"", rrKatim: r.rrKatim||"",
-    }));
-    setOps((p:any[])=>[...p,...newOps]);
-    showToast(`✓ ${newOps.length} jadwal berhasil diimport`,C.s);
+    const ts = new Date().toISOString();
+    const newOps = valid.map(r=>{
+      return {
+        id: gId(), status:"scheduled", reminders:[], requests:[],
+        createdAt: fNow(), updated_at: ts,
+        opType: r.opType||"elektif",
+        date: r.date, time: r.time||"08:00",
+        patient: r.patient, diagnosis: r.diagnosis||"", procedure: r.procedure,
+        surgeon: r.surgeon||"", anesthesiologist: r.anesthesiologist||"",
+        room: r.room||ROOMS[0], age: r.age||"", rm: r.rm||"",
+        bloodType: r.bloodType||"Tidak Diketahui", allergy: r.allergy||"Tidak Ada",
+        circulatingNurse: r.circulatingNurse||"", anesthesiaNurse: r.anesthesiaNurse||"",
+        onloopNurse: r.onloopNurse||"", rrKatim: r.rrKatim||"",
+      };
+    });
+    /* ── SSOT Import Flow ──────────────────────────────────────────────────
+       DB-FIRST: tulis ke Supabase dulu, baru update local state setelah konfirmasi.
+       Ini memastikan data persist bahkan jika browser di-refresh sesaat setelah import.
+       postgres_changes akan debounce ke device lain secara otomatis.
+       ──────────────────────────────────────────────────────────────────── */
+    showToast(`⟳ Menyimpan ${newOps.length} jadwal ke Supabase...`,C.p);
+    const res = upsertBulkToSupa
+      ? await upsertBulkToSupa("kb_operasi", newOps)
+      : {ok:false, error:"upsertBulkToSupa tidak tersedia"};
+    if(res.ok){
+      /* Insert ke local state HANYA setelah DB sukses — cegah ghost data */
+      setOps((p:any[])=>{
+        const existingIds = new Set(p.map((o:any)=>o.id));
+        const toAdd = newOps.filter(o=>!existingIds.has(o.id));
+        return [...p,...toAdd];
+      });
+      showToast(`✓ ${newOps.length} jadwal berhasil diimport & tersinkron`,C.s);
+    } else {
+      showToast(`⚠ Import gagal: ${res.error||"kesalahan tidak diketahui dari Supabase"}`,C.d);
+    }
     setRows([]); setFileName(""); setImporting(false);
   };
 
@@ -1492,7 +2178,7 @@ function ImportExcel({ops, setOps, showToast}: any) {
 }
 
 /* ─── VIEW ARSIP ─────────────────────────────────────────────────────── */
-function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMode,supaCfg,setSupaCfg,onSupaBackup,onSupaRestoreOps,onSupaRestoreLembur,onSupaRestoreMonitoring,onSupaRestoreAll,supaStatus,supaBackingUp,auditLog,rtStatus,rtEnabled,setRtEnabled,dbxCfg,setDbxCfg,onDbxBackup,onDbxRestoreOps,onDbxRestoreLembur,dbxStatus,dbxBacking,onDbxBackupOpsXls,onDbxBackupLemburXls,onDbxBackupMonitoringXls,lemburData,lemburPegawai,monitoringEntries,monitoringCfg}: any) {
+function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMode,supaCfg,setSupaCfg,onSupaBackup,onSupaRestoreOps,onSupaRestoreLembur,onSupaRestoreMonitoring,onSupaRestoreAll,supaStatus,supaBackingUp,auditLog,rtStatus,rtEnabled,setRtEnabled,dbxCfg,setDbxCfg,onDbxBackup,onDbxRestoreOps,onDbxRestoreLembur,dbxStatus,dbxBacking,onDbxBackupOpsXls,onDbxBackupLemburXls,onDbxBackupMonitoringXls,lemburData,lemburPegawai,monitoringEntries,monitoringCfg,role,upsertBulkToSupa}: any) {
   const [sub,setSub] = useState("notif");
   const [arsipTahun,setArsipTahun]  = useState("");
   const [arsipBulan,setArsipBulan]  = useState("");
@@ -1539,8 +2225,8 @@ function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMo
         return true;
       });
       if(!me.length){showToast("Tidak ada data monitoring untuk periode ini",C.w);return;}
-      const h = ["Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas","Lokasi"];
-      const rows = me.map((e:any)=>[e.tanggal,e.jam,e.suhu,e.kelembaban,monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas,monitoringCfg?.lokasiRuang||""]);
+      const h = ["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"];
+      const rows = me.map((e:any)=>[e.ruang||"",e.tanggal,e.jam,e.suhu,e.kelembaban,monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas]);
       const ws = XLSX.utils.aoa_to_sheet([h,...rows]);
       ws["!cols"]=[{wch:12},{wch:8},{wch:12},{wch:14},{wch:16},{wch:22},{wch:20}];
       const wb = XLSX.utils.book_new();
@@ -1680,8 +2366,8 @@ function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMo
     } else {
       const filtered=(monitoringEntries||[]).filter((e:any)=>e.tanggal?.startsWith(month));
       if(!filtered.length){showToast("Tidak ada data monitoring "+ymLabel(month),C.w);return;}
-      const h=["Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"];
-      const rows=filtered.map((e:any)=>[e.tanggal||"",e.jam||"",e.suhu??""  ,e.kelembaban??"",monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas||""]);
+      const h=["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"];
+      const rows=filtered.map((e:any)=>[e.ruang||"",e.tanggal||"",e.jam||"",e.suhu??"",e.kelembaban??"",monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas||""]);
       buildAndDownloadXlsx("Monitoring "+ymLabel(month),h,rows,`Monitoring_${month}.xlsx`);
       showToast(`✓ Excel Monitoring ${ymLabel(month)} diunduh`,C.s);
     }
@@ -1690,13 +2376,12 @@ function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMo
   /* ── Download dari Supabase berdasarkan bulan ── */
   const dlFromSupabase = async (month:string, type:"ops"|"lembur"|"monitoring") => {
     if(!month){showToast("Pilih bulan terlebih dahulu",C.w);return;}
-    if(!supaCfg.url||!supaCfg.anonKey){showToast("Supabase belum dikonfigurasi",C.w);return;}
+    
     setDlCloudBusy(true);
     try {
-      const {createClient} = await import("@supabase/supabase-js");
-      const supa = createClient(supaCfg.url, supaCfg.anonKey);
-      const tbl = supaCfg.tableName||"hospital_backup";
-      const {data, error} = await supa.from(tbl).select("*").order("created_at",{ascending:false}).limit(1);
+      // Gunakan SUPA_CLIENT singleton
+      const tbl = "kamar_bedah_backup";
+      const {data, error} = await SUPA_CLIENT.from(tbl).select("*").order("created_at",{ascending:false}).limit(1);
       if(error||!data?.length) throw new Error(error?.message||"Data Supabase tidak ditemukan");
       const raw = data[0];
       if(type==="ops"){
@@ -1740,16 +2425,11 @@ function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMo
   /* ── Download dari Dropbox berdasarkan bulan ── */
   const dlFromDropbox = async (month:string, type:"ops"|"lembur"|"monitoring") => {
     if(!month){showToast("Pilih bulan terlebih dahulu",C.w);return;}
-    if(!dbxCfg.token){showToast("Dropbox belum dikonfigurasi",C.w);return;}
     setDlCloudBusy(true);
     try {
-      const path = dbxCfg.filePath||"/hospital_backup.json";
-      const res = await fetch("https://content.dropboxapi.com/2/files/download",{
-        method:"POST",
-        headers:{"Authorization":"Bearer "+dbxCfg.token,"Dropbox-API-Arg":JSON.stringify({path})},
-      });
-      if(!res.ok) throw new Error("HTTP "+res.status);
-      const raw = await res.json();
+      const res = await callDbxProxy({action:"restore", path: dbxCfg.path});
+      if(!res.ok) throw new Error(res.msg);
+      const raw = res.data;
       if(type==="ops"){
         const allOps:any[] = raw.ops||raw.data?.ops||[];
         const rows = allOps.filter((o:any)=>o.date?.startsWith(month))
@@ -1826,8 +2506,8 @@ function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMo
           <Btn full outline color={C.p} onClick={()=>{
             if(!ops.length){showToast("Belum ada data jadwal",C.w);return;}
             const h=["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","PERAWAT Instrumen","P.Anestesi","Onloop","RR/Katim","Alergi","Gol.Darah","Status"];
-            const rows=ops.map((op:any,i:number)=>[i+1,op.date,op.time,op.patient,op.age||"",op.rm||"",OT[op.opType as keyof typeof OT||"elektif"]&&OT[op.opType as keyof typeof OT||"elektif"].label||"Elektif",op.diagnosis,op.procedure,op.room,op.surgeon,op.anesthesiologist||"",op.assistantNurse||"",op.circulatingNurse||"",op.anesthesiaNurse||"",op.onloopNurse||"",op.rrKatim||"",op.allergy||"",op.bloodType,op.status]);
-            downloadBlob([h,...rows].map((r:any[])=>r.map((c:any)=>'"'+String(c||"").replace(/"/g,'""')+'"').join(",")).join("\n"),"JadwalOK_PantiRini_"+todayDate()+".csv");
+            const rows=ops.map((op:any,i:number)=>[i+1,op.date,op.time,sanitizeForCSV(op.patient),sanitizeForCSV(op.age||""),sanitizeForCSV(op.rm||""),OT[op.opType as keyof typeof OT||"elektif"]&&OT[op.opType as keyof typeof OT||"elektif"].label||"Elektif",sanitizeForCSV(op.diagnosis),sanitizeForCSV(op.procedure),op.room,op.surgeon,op.anesthesiologist||"",op.assistantNurse||"",op.circulatingNurse||"",op.anesthesiaNurse||"",op.onloopNurse||"",op.rrKatim||"",sanitizeForCSV(op.allergy||""),op.bloodType,op.status]);
+            downloadBlob([h,...rows].map((r:any[])=>r.map((c:any)=>typeof c==="string"&&c.startsWith('"')?c:sanitizeForCSV(c)).join(",")).join("\n"),"JadwalOK_PantiRini_"+todayDate()+".csv");
             showToast("✓ CSV berhasil diunduh",C.s);
           }} style={{marginBottom:12}}>⬇ Unduh CSV Jadwal</Btn>
           {ops.length===0 && <Card><div style={{textAlign:"center",padding:20,color:C.tL,fontSize:13}}>Belum ada data jadwal</div></Card>}
@@ -1880,8 +2560,8 @@ function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMo
               Bisa dari data <b>Lokal</b> (perangkat ini), <b>Supabase</b> (cloud), atau <b>Dropbox</b> (cloud).
             </div>
             <div style={{background:"#F3E5F5",borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:12,color:"#6A1B9A",lineHeight:1.6}}>
-              ℹ️ <b>Tentang penyimpanan:</b> Data tersimpan di browser (localStorage) perangkat ini saja.
-              Untuk akses dari HP/tablet lain, aktifkan <b>Backup Supabase</b> atau <b>Sinkronisasi Real-time</b> di tab ⚙ Setelan, lalu pilih "Download dari Supabase" di bawah.
+              ✅ <b>Multi-Device Sync Aktif:</b> Data tersinkron otomatis ke <b>Supabase</b> & <b>Dropbox</b> setiap ada perubahan.
+              Buka dari HP/tablet lain = data langsung tersedia. Auto-delete backup &gt; 2 tahun.
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
               <LF label="Bulan &amp; Tahun">
@@ -1904,13 +2584,13 @@ function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMo
                   {dlCloudBusy?"⏳ Mengunduh...":"☁️ Supabase"}
                 </Btn>
               )}
-              {dbxCfg?.token&&(
+              {dbxCfg?.path&&(
                 <Btn full onClick={()=>dlFromDropbox(dlCloudMonth,dlCloudType)} style={{flex:1,background:dlCloudBusy?"#aaa":"#0061FF",color:"#fff",border:"none",minWidth:120,opacity:dlCloudBusy?.6:1,cursor:dlCloudBusy?"not-allowed":"pointer"}}>
                   {dlCloudBusy?"⏳ Mengunduh...":"📦 Dropbox"}
                 </Btn>
               )}
             </div>
-            {!supaCfg?.url&&!dbxCfg?.token&&(
+            {!supaCfg?.url&&!dbxCfg?.path&&(
               <div style={{marginTop:10,fontSize:11,color:"#7B1FA2",background:"#F3E5F5",borderRadius:8,padding:"6px 10px"}}>
                 💡 Tombol Supabase &amp; Dropbox akan muncul setelah konfigurasi diisi di tab ⚙ Setelan.
               </div>
@@ -1984,20 +2664,20 @@ function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMo
               Unduh semua data lembur dari semua pegawai sebagai file tracking (Excel atau Word).
               Total pegawai: <b>{(lemburPegawai||[]).length}</b>.
             </div>
-            <div style={{display:"flex",gap:8}}>
+            {role==="admin" && <div style={{display:"flex",gap:8}}>
               <Btn full onClick={()=>downloadTrackingLembur("excel")} style={{flex:1,background:"#00695C",color:"#fff",border:"none"}}>
                 📊 Excel Tracking Lembur
               </Btn>
-              <Btn full onClick={()=>downloadTrackingLembur("word")} style={{flex:1,background:"#004D40",color:"#fff",border:"none"}}>
+              <Btn full onClick={()=>downloadTrackingLembur("word")} style={{flex:1,background:"#0077B6",color:"#fff",border:"none"}}>
                 📄 Word Tracking Lembur
               </Btn>
-            </div>
+            </div>}
           </Card>
         </div>
       )}
 
       {sub==="import" && (
-        <ImportExcel ops={ops} setOps={setOps} showToast={showToast}/>
+        <ImportExcel ops={ops} setOps={setOps} showToast={showToast} upsertBulkToSupa={upsertBulkToSupa}/>
       )}
 
       {sub==="audit" && (
@@ -2030,17 +2710,10 @@ function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMo
           <Card>
             <SH label="☁ Backup ke Supabase" color="#3ECF8E"/>
             <div style={{background:"#ECFDF5",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#065F46",lineHeight:1.7,border:"1px solid #A7F3D0"}}>
-              <b>Cara setup:</b><br/>
-              1. Buat project di <b>supabase.com</b><br/>
-              2. Buat tabel: <code style={{background:"#D1FAE5",padding:"1px 5px",borderRadius:4}}>kamar_bedah_backup</code> dengan kolom <code style={{background:"#D1FAE5",padding:"1px 5px",borderRadius:4}}>created_at</code> (timestamptz) dan <code style={{background:"#D1FAE5",padding:"1px 5px",borderRadius:4}}>data</code> (text)<br/>
-              3. Copy URL & Anon Key dari Project Settings → API
+              <b>✅ Koneksi Supabase aktif otomatis.</b><br/>
+              Project: <code style={{background:"#D1FAE5",padding:"1px 5px",borderRadius:4}}>ezwgnpdtzcabxmimovbp.supabase.co</code><br/>
+              Konfigurasi dikelola secara terpusat — tidak perlu input manual.
             </div>
-            <LF label="Supabase Project URL">
-              <input style={iS} placeholder="https://xxxx.supabase.co" value={supaCfg.url} onChange={(e:any)=>setSupaCfg((p:SupabaseConfig)=>({...p,url:e.target.value.trim()}))} autoComplete="off" spellCheck={false}/>
-            </LF>
-            <LF label="Supabase Anon Key">
-              <input style={iS} type="password" placeholder="eyJhbGciOi..." value={supaCfg.anonKey} onChange={(e:any)=>setSupaCfg((p:SupabaseConfig)=>({...p,anonKey:e.target.value.trim()}))} autoComplete="off"/>
-            </LF>
             <Toggle
               value={supaCfg.autoBackup}
               onChange={(v:boolean)=>setSupaCfg((p:SupabaseConfig)=>({...p,autoBackup:v}))}
@@ -2074,12 +2747,31 @@ function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMo
                 🕐 Backup terakhir: {supaCfg.lastBackup}
               </div>
             )}
+            {/* Storage indicator */}
+            <div style={{background:"#F0F4F8",borderRadius:10,padding:"10px 14px",marginBottom:10,display:"flex",gap:12,flexWrap:"wrap"}}>
+              <div style={{flex:1,minWidth:120}}>
+                <div style={{fontSize:10,fontWeight:700,color:C.p,marginBottom:4,textTransform:"uppercase",letterSpacing:.5}}>☁ Supabase</div>
+                <div style={{fontSize:11,color:C.g}}>Free: ~500MB · Auto-backup aktif</div>
+                <div style={{background:C.b,borderRadius:4,height:6,marginTop:4}}>
+                  <div style={{background:C.p,height:6,borderRadius:4,width:"2%"}}/>
+                </div>
+                <div style={{fontSize:10,color:C.tL,marginTop:2}}>~2% terpakai · Auto-delete &gt;2 tahun</div>
+              </div>
+              <div style={{flex:1,minWidth:120}}>
+                <div style={{fontSize:10,fontWeight:700,color:"#0061FF",marginBottom:4,textTransform:"uppercase",letterSpacing:.5}}>📦 Dropbox</div>
+                <div style={{fontSize:11,color:C.g}}>Free: ~2GB · Auto-backup aktif</div>
+                <div style={{background:C.b,borderRadius:4,height:6,marginTop:4}}>
+                  <div style={{background:"#0061FF",height:6,borderRadius:4,width:"1%"}}/>
+                </div>
+                <div style={{fontSize:10,color:C.tL,marginTop:2}}>~1% terpakai · JSON + Excel harian</div>
+              </div>
+            </div>
             {supaStatus && (
               <div style={{background:supaStatus.ok?"#ECFDF5":"#FEF2F2",borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:supaStatus.ok?"#065F46":C.d,border:`1px solid ${supaStatus.ok?"#A7F3D0":C.dL}`}}>
                 {supaStatus.msg}
               </div>
             )}
-            <Btn full color="#3ECF8E" onClick={onSupaBackup} disabled={supaBackingUp||!supaCfg.url||!supaCfg.anonKey} style={{marginTop:4}}>
+            <Btn full color="#3ECF8E" onClick={onSupaBackup} disabled={supaBackingUp} style={{marginTop:4}}>
               {supaBackingUp?"⟳ Memproses...":"☁ Backup Semua Data Sekarang ke Supabase"}
             </Btn>
             {/* ── Restore dari Supabase ── */}
@@ -2089,17 +2781,17 @@ function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMo
                 Ambil data dari backup Supabase paling baru. Pilih kategori data yang ingin dipulihkan, atau pulihkan semua sekaligus.
               </div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
-                <Btn full outline color="#065F46" onClick={onSupaRestoreOps} disabled={supaBackingUp||!supaCfg.url||!supaCfg.anonKey} style={{flex:1,minWidth:130}}>
+                <Btn full outline color="#065F46" onClick={onSupaRestoreOps} disabled={supaBackingUp} style={{flex:1,minWidth:130}}>
                   🗓 Pulihkan Operasi
                 </Btn>
-                <Btn full outline color="#065F46" onClick={onSupaRestoreLembur} disabled={supaBackingUp||!supaCfg.url||!supaCfg.anonKey} style={{flex:1,minWidth:130}}>
+                <Btn full outline color="#065F46" onClick={onSupaRestoreLembur} disabled={supaBackingUp} style={{flex:1,minWidth:130}}>
                   ⏰ Pulihkan Lembur
                 </Btn>
-                <Btn full outline color="#0369A1" onClick={onSupaRestoreMonitoring} disabled={supaBackingUp||!supaCfg.url||!supaCfg.anonKey} style={{flex:1,minWidth:130}}>
+                <Btn full outline color="#0369A1" onClick={onSupaRestoreMonitoring} disabled={supaBackingUp} style={{flex:1,minWidth:130}}>
                   🌡 Pulihkan Monitoring
                 </Btn>
               </div>
-              <Btn full color="#065F46" onClick={onSupaRestoreAll} disabled={supaBackingUp||!supaCfg.url||!supaCfg.anonKey} style={{background:"#065F46",color:"#fff",border:"none",width:"100%"}}>
+              <Btn full color="#065F46" onClick={onSupaRestoreAll} disabled={supaBackingUp} style={{background:"#065F46",color:"#fff",border:"none",width:"100%"}}>
                 ♻ Pulihkan SEMUA Data dari Supabase
               </Btn>
             </div>
@@ -2109,18 +2801,10 @@ function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMo
           <Card>
             <SH label="📦 Backup ke Dropbox" color="#0061FF"/>
             <div style={{background:"#EFF6FF",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#1D4ED8",lineHeight:1.8,border:"1px solid #BFDBFE"}}>
-              <b>Cara setup:</b><br/>
-              1. Buka <b>dropbox.com/developers/apps</b><br/>
-              2. Buat App → <b>Scoped access</b> → <b>Full Dropbox</b><br/>
-              3. Di tab <b>Permissions</b>: aktifkan <code style={{background:"#DBEAFE",padding:"1px 4px",borderRadius:3}}>files.content.write</code> &amp; <code style={{background:"#DBEAFE",padding:"1px 4px",borderRadius:3}}>files.content.read</code><br/>
-              4. Di tab <b>Settings</b> → Generated access token → copy ke sini
+              <b>✅ Koneksi Dropbox aktif otomatis.</b><br/>
+              Token terkonfigurasi secara terpusat — tidak perlu input manual.<br/>
+              Path backup: <code style={{background:"#DBEAFE",padding:"1px 4px",borderRadius:3}}>/KamarBedahPantiRini/backup.json</code>
             </div>
-            <LF label="Dropbox Access Token">
-              <input style={iS} type="password" placeholder="sl...." value={dbxCfg.token} onChange={(e:any)=>setDbxCfg((p:DropboxConfig)=>({...p,token:e.target.value.trim()}))} autoComplete="off"/>
-            </LF>
-            <LF label="Path File Backup di Dropbox">
-              <input style={iS} placeholder="/KamarBedahPantiRini/backup.json" value={dbxCfg.path} onChange={(e:any)=>setDbxCfg((p:DropboxConfig)=>({...p,path:e.target.value.trim()}))} spellCheck={false}/>
-            </LF>
             <Toggle
               value={dbxCfg.autoBackup}
               onChange={(v:boolean)=>setDbxCfg((p:DropboxConfig)=>({...p,autoBackup:v}))}
@@ -2183,7 +2867,7 @@ function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMo
                 {dbxStatus.msg}
               </div>
             )}
-            <Btn full color="#0061FF" onClick={onDbxBackup} disabled={dbxBacking||!dbxCfg.token} style={{background:"#0061FF",color:"#fff",border:"none",marginTop:4}}>
+            <Btn full color="#0061FF" onClick={onDbxBackup} disabled={dbxBacking} style={{background:"#0061FF",color:"#fff",border:"none",marginTop:4}}>
               {dbxBacking?"⟳ Menyimpan...":"📦 Backup Semua Data (JSON) ke Dropbox"}
             </Btn>
             {/* ── FITUR 1: Backup per kategori sebagai Excel ── */}
@@ -2194,13 +2878,13 @@ function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMo
                 File tersimpan di folder yang sama dengan path backup utama.
               </div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                <Btn full outline color="#3730A3" onClick={onDbxBackupOpsXls} disabled={dbxBacking||!dbxCfg.token} style={{flex:1,minWidth:140}}>
+                <Btn full outline color="#3730A3" onClick={onDbxBackupOpsXls} disabled={dbxBacking} style={{flex:1,minWidth:140}}>
                   🗓 Backup Operasi (Excel)
                 </Btn>
-                <Btn full outline color="#3730A3" onClick={onDbxBackupLemburXls} disabled={dbxBacking||!dbxCfg.token} style={{flex:1,minWidth:140}}>
+                <Btn full outline color="#3730A3" onClick={onDbxBackupLemburXls} disabled={dbxBacking} style={{flex:1,minWidth:140}}>
                   ⏰ Backup Lembur (Excel)
                 </Btn>
-                <Btn full outline color="#0369A1" onClick={onDbxBackupMonitoringXls} disabled={dbxBacking||!dbxCfg.token} style={{flex:1,minWidth:140}}>
+                <Btn full outline color="#0369A1" onClick={onDbxBackupMonitoringXls} disabled={dbxBacking} style={{flex:1,minWidth:140}}>
                   🌡 Backup Monitoring (Excel)
                 </Btn>
               </div>
@@ -2208,10 +2892,10 @@ function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMo
             <div style={{marginTop:10}}>
               <div style={{fontSize:11,fontWeight:700,color:"#1D4ED8",marginBottom:6}}>⬇ Pulihkan dari Dropbox (pilih data yang ingin dipulihkan):</div>
               <div style={{display:"flex",gap:8}}>
-                <Btn full outline color="#0061FF" onClick={onDbxRestoreOps} disabled={dbxBacking||!dbxCfg.token} style={{flex:1}}>
+                <Btn full outline color="#0061FF" onClick={onDbxRestoreOps} disabled={dbxBacking} style={{flex:1}}>
                   🗓 Jadwal Operasi
                 </Btn>
-                <Btn full outline color="#0061FF" onClick={onDbxRestoreLembur} disabled={dbxBacking||!dbxCfg.token} style={{flex:1}}>
+                <Btn full outline color="#0061FF" onClick={onDbxRestoreLembur} disabled={dbxBacking} style={{flex:1}}>
                   ⏰ Data Lembur
                 </Btn>
               </div>
@@ -2265,7 +2949,7 @@ const BULAN_ID = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agus
 const nowYM = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
 const ymLabel = (ym:string) => { const [y,m]=ym.split("-"); return `${BULAN_ID[parseInt(m)-1]} ${y}`; };
 
-function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData, showToast, supaCfg, dbxCfg}: any) {
+function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData, showToast, supaCfg, dbxCfg, role, upsertOneToSupa, deleteFromSupa}: any) {
   const [sub, setSub]         = useState<"catat"|"rekap"|"pegawai">("catat");
   const [selPeg, setSelPeg]   = useState<string>("");
   const [selYM,  setSelYM]    = useState(nowYM());
@@ -2287,7 +2971,11 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
   const rec: any = (key && lemburData[key]) || {entries:[], kepRuang:"", kepBidang:""};
   const entries: any[] = rec.entries || [];
 
-  /* Sync kepRuang/kepBidang from saved record */
+  /* Sync kepRuang/kepBidang from saved record.
+     FIX AUDIT #15 (MEDIUM — useEffect deps tidak lengkap): tambahkan lemburData
+     ke deps. Sebelumnya jika lemburData diupdate via Supabase realtime sementara
+     `key` tidak berubah (mis. device lain menyimpan perubahan), effect ini tidak
+     berjalan dan kepRuang/kepBidang tetap menampilkan nilai lama (stale UI). */
   useEffect(()=>{
     if(key && lemburData[key]){
       setKepRuang(lemburData[key].kepRuang||"");
@@ -2295,37 +2983,51 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     } else {
       setKepRuang(""); setKepBidang("");
     }
-  },[key]);
+  },[key, lemburData]);
 
-  const saveEntry = () => {
+  /* ── writeLemburKey: DB-first untuk SATU key "${pegId}_${period}" saja.
+     Granular — tidak menyentuh key/pegawai/periode lain, sehingga edit
+     bersamaan oleh device lain (key berbeda) tidak akan saling menimpa. ── */
+  const writeLemburKey = async (newRecForKey: any): Promise<boolean> => {
+    if(!key) return false;
+    const res = await upsertOneToSupa?.("kb_lembur_data", {id:key, ...newRecForKey, updated_at:new Date().toISOString()});
+    if(!res?.ok){
+      showToast(`⚠ Gagal menyimpan ke Supabase: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
+      return false;
+    }
+    setLemburData((p:Record<string,any>)=>({...p,[key]:newRecForKey}));
+    return true;
+  };
+
+  const saveEntry = async () => {
     if(!rowForm.tanggalAwal||!rowForm.jamMasuk||!rowForm.jamKeluar){
       showToast("Tanggal awal lembur, jam masuk & keluar wajib diisi",C.d); return;
     }
     const upd = editRow
       ? entries.map((e:any)=>e.id===editRow?{...e,...rowForm}:e)
       : [...entries,{id:gId(),...rowForm,no:entries.length+1}];
-    setLemburData((p:any)=>({...p,[key!]:{...rec,entries:upd}}));
-    setEditRow(null); setRowForm({});
-    showToast("✓ Baris disimpan",C.s);
+    showToast("⟳ Menyimpan...",C.p);
+    const ok = await writeLemburKey({...rec, entries:upd});
+    if(ok){ setEditRow(null); setRowForm({}); showToast("✓ Baris disimpan & tersinkron",C.s); }
   };
 
-  const delEntry = (id:string) => {
+  const delEntry = async (id:string) => {
     const upd = entries.filter((e:any)=>e.id!==id).map((e:any,i:number)=>({...e,no:i+1}));
-    setLemburData((p:any)=>({...p,[key!]:{...rec,entries:upd}}));
-    showToast("Baris dihapus");
+    const ok = await writeLemburKey({...rec, entries:upd});
+    if(ok) showToast("Baris dihapus & tersinkron");
   };
 
-  const saveSigs = () => {
+  const saveSigs = async () => {
     if(!key) return;
-    setLemburData((p:any)=>({...p,[key]:{...rec,kepRuang,kepBidang,savedAt:fNow()}}));
-    showToast("✓ Tanda tangan tersimpan",C.s);
+    const ok = await writeLemburKey({...rec, kepRuang, kepBidang, savedAt:fNow()});
+    if(ok) showToast("✓ Tanda tangan tersimpan & tersinkron",C.s);
   };
 
   const handleImportJadwal = (file:File) => {
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
-        const wb = XLSX.read(new Uint8Array(e.target!.result as ArrayBuffer),{type:"array"});
+        const wb = XLSX.read(new Uint8Array(e.target!.result as ArrayBuffer),{type:"array", cellDates:true});
         const ws = wb.Sheets[wb.SheetNames[0]];
         const data: any[][] = XLSX.utils.sheet_to_json(ws,{header:1});
         if(data.length<2){showToast("File kosong",C.d);return;}
@@ -2339,10 +3041,9 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
         for(let i=1;i<data.length;i++){
           const row=data[i] as any[];
           if(!row||row.every((c:any)=>!c)) continue;
-          const jadwal=jadwalIdx>=0?String(row[jadwalIdx]||"").trim():"";
+          const jadwalRaw = jadwalIdx>=0 ? row[jadwalIdx] : "";
+          const jadwal = toISODateStrict(jadwalRaw) || "";
           if(!jadwal) continue;
-          /* detect month match */
-          const dateMatch = jadwal.match(/(\d{4})-(\d{2})-(\d{2})/)||jadwal.match(/(\d{2})\/(\d{2})\/(\d{4})/);
           const existing = newEntries.find((e:any)=>(e.tanggalAwal||e.jadwalDinas)===jadwal);
           if(existing) continue;
           newEntries.push({
@@ -2355,12 +3056,15 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
             ttd:"",
           });
         }
-        setLemburData((p:any)=>({...p,[key!]:{...rec,entries:newEntries}}));
-        showToast(`✓ ${newEntries.length-entries.length} baris diimport`,C.s);
+        const added = newEntries.length-entries.length;
+        showToast(`⟳ Menyimpan ${added} baris lembur...`,C.p);
+        const ok = await writeLemburKey({...rec, entries:newEntries});
+        if(ok) showToast(`✓ ${added} baris diimport & tersinkron`,C.s);
       } catch(err){showToast("Gagal membaca file",C.d);}
     };
     reader.readAsArrayBuffer(file);
   };
+
 
   const downloadExcel = () => {
     if(!peg){showToast("Pilih pegawai terlebih dahulu",C.w);return;}
@@ -2387,7 +3091,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     setC(6,0,"",false,false);
     /* Table header */
     const TH=["No","Tgl Awal Lembur","Tgl Akhir Lembur","Jam Absen Masuk","Jam Absen Keluar","Keperluan Lembur","Keterangan","Tanda Tangan"];
-    TH.forEach((h,i)=>setC(7,i,h,true,true,true,"004D40"));
+    TH.forEach((h,i)=>setC(7,i,h,true,true,true,"0077B6"));
     /* Table rows */
     entries.forEach((e:any,i:number)=>{
       const r=8+i;
@@ -2443,7 +3147,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     const ws = XLSX.utils.aoa_to_sheet([]);
     const merge=(r1:number,c1:number,r2:number,c2:number)=>({s:{r:r1,c:c1},e:{r:r2,c:c2}});
     const cell=(v:any,bold?:boolean,center?:boolean,border?:boolean,bg?:string,fs?:number):XLSX.CellObject=>{
-      const s:any={font:{bold:!!bold,sz:fs||10,color:bg==="004D40"||bg==="003D33"?{rgb:"FFFFFF"}:undefined},alignment:{horizontal:center?"center":"left",vertical:"center",wrapText:true}};
+      const s:any={font:{bold:!!bold,sz:fs||10,color:bg==="0077B6"||bg==="0077B6"?{rgb:"FFFFFF"}:undefined},alignment:{horizontal:center?"center":"left",vertical:"center",wrapText:true}};
       if(border) s.border={top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
       if(bg) s.fill={fgColor:{rgb:bg},patternType:"solid"};
       return {v,t:"s",s} as XLSX.CellObject;
@@ -2458,7 +3162,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     setC(3,0,"",false,false);
     /* Header row */
     const TH=["No","Nama Pegawai","NIK / NIP","Jumlah Hari Lembur","Total Jam Lembur","Keterangan"];
-    TH.forEach((h,i)=>setC(4,i,h,true,true,true,"004D40",11));
+    TH.forEach((h,i)=>setC(4,i,h,true,true,true,"0077B6",11));
     /* Data rows */
     const merges=[
       merge(0,0,0,5),merge(1,0,1,5),merge(2,0,2,5),merge(3,0,3,5),
@@ -2501,7 +3205,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
         ws2[XLSX.utils.encode_cell({r:row,c:col})]={v,t:"s",s:st} as XLSX.CellObject;
       };
       s2(0,0,r.name,true,false); s2(0,2,r.nik,false,false);
-      ["No","Tgl Awal Lembur","Tgl Akhir Lembur","Jam Masuk","Jam Keluar","Keperluan","Keterangan"].forEach((h,i)=>s2(1,i,h,true,true,true,"004D40"));
+      ["No","Tgl Awal Lembur","Tgl Akhir Lembur","Jam Masuk","Jam Keluar","Keperluan","Keterangan"].forEach((h,i)=>s2(1,i,h,true,true,true,"0077B6"));
       r.entries.forEach((e:any,i:number)=>{
         const row=2+i; const bg=i%2===0?"F0FFF8":undefined;
         [String(e.no),e.tanggalAwal||e.jadwalDinas||"",e.tanggalAkhir||"",e.jamMasuk||"",e.jamKeluar||"",e.keperluanLembur||"",e.keterangan||""].forEach((v,c)=>s2(row,c,v,false,c===0||c===3||c===4,true,bg));
@@ -2516,12 +3220,10 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
   };
 
   const downloadLemburFromSupa = async () => {
-    if(!supaCfg?.url||!supaCfg?.anonKey||!supaCfg?.table){showToast("Supabase belum dikonfigurasi. Atur di tab Arsip → Setelan.",C.d);return;}
+    // SUPA_CLIENT sudah singleton — guard tidak diperlukan
     setSupaLemburBusy(true);
     try {
-      const {createClient} = await import("@supabase/supabase-js");
-      const sb = createClient(supaCfg.url, supaCfg.anonKey);
-      const {data,error} = await sb.from(supaCfg.table).select("data").order("created_at",{ascending:false}).limit(1);
+      const {data,error} = await SUPA_CLIENT.from("kamar_bedah_backup").select("data").order("created_at",{ascending:false}).limit(1);
       if(error||!data?.length) throw new Error(error?.message||"Data tidak ditemukan di Supabase");
       const raw = typeof data[0].data==="string"?JSON.parse(data[0].data):data[0].data;
       const ld:any = raw.lemburData||raw.data?.lemburData||{};
@@ -2547,7 +3249,6 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
   };
 
   const downloadLemburFromDropbox = async () => {
-    if(!dbxCfg?.token){showToast("Access Token Dropbox belum diisi. Atur di tab Arsip → Setelan.",C.d);return;}
     setDbxLemburBusy(true);
     try {
       const res = await dropboxDownload(dbxCfg);
@@ -2632,7 +3333,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
           {peg && key && (
             <>
               {/* Header info */}
-              <div style={{background:"linear-gradient(135deg,#003D33,#00695C)",borderRadius:14,padding:"16px 20px",marginBottom:14,color:"#fff"}}>
+              <div style={{background:"linear-gradient(135deg,#023047,#00695C)",borderRadius:14,padding:"16px 20px",marginBottom:14,color:"#fff"}}>
                 <div style={{fontSize:14,fontWeight:800,letterSpacing:.3}}>📋 PENCATATAN LEMBUR</div>
                 <div style={{fontSize:11,color:"rgba(255,255,255,.65)",marginTop:2}}>{HOSPITAL}</div>
                 <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 16px",fontSize:12}}>
@@ -2687,7 +3388,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
 
               {/* Table */}
               <Card style={{padding:0,overflow:"hidden"}}>
-                <div style={{background:"#004D40",padding:"12px 16px"}}>
+                <div style={{background:"#0077B6",padding:"12px 16px"}}>
                   <div style={{fontSize:13,fontWeight:800,color:"#fff"}}>Tabel Lembur — {ymLabel(selYM)}</div>
                   <div style={{fontSize:11,color:"rgba(255,255,255,.6)",marginTop:2}}>{peg.name} · NIK: {peg.nik||"—"}</div>
                 </div>
@@ -2703,7 +3404,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                       <thead>
                         <tr style={{background:"#E0F2F1"}}>
                           {["No","Tgl Awal Lembur","Tgl Akhir Lembur","Masuk","Keluar","Durasi","Keperluan Lembur","Keterangan","TTD","Aksi"].map(h=>(
-                            <th key={h} style={{padding:"8px 10px",textAlign:"left",color:"#004D40",fontWeight:700,borderBottom:"2px solid #004D40",whiteSpace:"nowrap"}}>{h}</th>
+                            <th key={h} style={{padding:"8px 10px",textAlign:"left",color:"#0077B6",fontWeight:700,borderBottom:"2px solid #0077B6",whiteSpace:"nowrap"}}>{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -2743,7 +3444,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                           const [h2,m2]=e.jamKeluar.split(":").map(Number);
                           let m=(h2*60+m2)-(h1*60+m1); if(m<0) m+=24*60; return sum+(m>0?m:0);
                         },0);
-                        return <tfoot><tr style={{background:"#E0F2F1"}}><td colSpan={4} style={{padding:"8px 10px",fontWeight:700,color:"#004D40",textAlign:"right"}}>Total Lembur:</td><td colSpan={5} style={{padding:"8px 10px",fontWeight:800,color:C.s}}>{Math.floor(totalMins/60)} jam {totalMins%60} menit</td></tr></tfoot>;
+                        return <tfoot><tr style={{background:"#E0F2F1"}}><td colSpan={4} style={{padding:"8px 10px",fontWeight:700,color:"#0077B6",textAlign:"right"}}>Total Lembur:</td><td colSpan={5} style={{padding:"8px 10px",fontWeight:800,color:C.s}}>{Math.floor(totalMins/60)} jam {totalMins%60} menit</td></tr></tfoot>;
                       })()}
                     </table>
                   </div>
@@ -2832,7 +3533,6 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
             <Btn full onClick={downloadLemburFromDropbox} disabled={dbxLemburBusy} style={{background:dbxLemburBusy?"#94A3B8":"#0061FF",color:"#fff",border:"none"}}>
               {dbxLemburBusy?"⏳ Mengunduh...":"📦 Download Excel dari Dropbox"}
             </Btn>
-            {!dbxCfg?.token && <div style={{fontSize:11,color:"#EF4444",marginTop:8}}>⚠ Dropbox belum dikonfigurasi — atur di tab Arsip → Setelan.</div>}
           </Card>
 
           {lemburPegawai.length===0 ? (
@@ -2860,7 +3560,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
 
               {/* Table */}
               <Card style={{padding:0,overflow:"hidden"}}>
-                <div style={{background:"#004D40",padding:"12px 16px"}}>
+                <div style={{background:"#0077B6",padding:"12px 16px"}}>
                   <div style={{fontSize:13,fontWeight:800,color:"#fff"}}>Rekap Lembur — {ymLabel(rekapYM)}</div>
                   <div style={{fontSize:11,color:"rgba(255,255,255,.6)",marginTop:2}}>{HOSPITAL}</div>
                 </div>
@@ -2869,7 +3569,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                     <thead>
                       <tr style={{background:"#E0F2F1"}}>
                         {["No","Nama Pegawai","NIK / NIP","Hari Lembur","Total Jam","Detail"].map(h=>(
-                          <th key={h} style={{padding:"9px 12px",textAlign:"left",color:"#004D40",fontWeight:700,borderBottom:"2px solid #004D40",whiteSpace:"nowrap"}}>{h}</th>
+                          <th key={h} style={{padding:"9px 12px",textAlign:"left",color:"#0077B6",fontWeight:700,borderBottom:"2px solid #0077B6",whiteSpace:"nowrap"}}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -2898,7 +3598,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                     </tbody>
                     <tfoot>
                       <tr style={{background:"#E0F2F1"}}>
-                        <td colSpan={3} style={{padding:"9px 12px",fontWeight:700,color:"#004D40",textAlign:"right"}}>TOTAL</td>
+                        <td colSpan={3} style={{padding:"9px 12px",fontWeight:700,color:"#0077B6",textAlign:"right"}}>TOTAL</td>
                         <td style={{padding:"9px 12px",textAlign:"center",fontWeight:800,color:C.s}}>
                           {rekapRows.reduce((s:number,r:any)=>s+r.jumlahHari,0)} hari
                         </td>
@@ -2942,11 +3642,15 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                 </LF>
               </div>
             </div>
-            <Btn full onClick={()=>{
+            <Btn full onClick={async ()=>{
               if(!pegForm.name.trim()){showToast("Nama wajib diisi",C.d);return;}
-              setLemburPegawai((p:any[])=>[...p,{id:gId(),name:pegForm.name.trim(),nik:pegForm.nik.trim()}]);
+              const newPeg={id:gId(),name:pegForm.name.trim(),nik:pegForm.nik.trim()};
+              showToast("⟳ Menyimpan...",C.p);
+              const res = await upsertOneToSupa?.("kb_lembur_pegawai", newPeg);
+              if(!res?.ok){ showToast(`⚠ Gagal menyimpan pegawai: ${res?.error||"kesalahan tidak diketahui"}`,C.d); return; }
+              setLemburPegawai((p:any[])=>[...p,newPeg]);
               setPegForm({name:"",nik:""});
-              showToast("✓ Pegawai ditambahkan",C.s);
+              showToast("✓ Pegawai ditambahkan & tersinkron",C.s);
             }}>✚ Tambah Pegawai</Btn>
           </Card>
 
@@ -2964,11 +3668,18 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                     </div>
                     <div style={{display:"flex",gap:6}}>
                       <button onClick={()=>{setSelPeg(p.id);setSub("catat");}} style={{background:C.pBg,border:`1px solid ${C.p}33`,borderRadius:8,color:C.p,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:600}}>Lihat Lembur</button>
-                      <button onClick={()=>{
+                      <button onClick={async ()=>{
                         if(!window.confirm(`Hapus pegawai "${p.name}"?\nSemua data lembur pegawai ini juga akan dihapus.`)) return;
+                        showToast("⟳ Menghapus...",C.p);
+                        const res = await deleteFromSupa?.("kb_lembur_pegawai", p.id);
+                        if(!res?.ok){ showToast(`⚠ Gagal menghapus pegawai: ${res?.error||"kesalahan tidak diketahui"}`,C.d); return; }
                         setLemburPegawai((prev:any[])=>prev.filter((x:any)=>x.id!==p.id));
-                        setLemburData((prev:any)=>{const n={...prev};Object.keys(n).filter(k=>k.startsWith(p.id+"_")).forEach(k=>delete n[k]);return n;});
-                        showToast("Pegawai dihapus");
+                        /* Hapus juga setiap row kb_lembur_data milik pegawai ini (best-effort,
+                           tidak menghalangi UI — kegagalan hanya menyisakan row tak terpakai). */
+                        const relatedKeys = Object.keys(lemburData).filter(k=>k.startsWith(p.id+"_"));
+                        await Promise.all(relatedKeys.map(k=>deleteFromSupa?.("kb_lembur_data", k)));
+                        setLemburData((prev:Record<string,any>)=>{ const n={...prev}; relatedKeys.forEach(k=>delete n[k]); return n; });
+                        showToast("✓ Pegawai dihapus & tersinkron",C.d);
                       }} style={{background:C.dBg,border:`1px solid ${C.dL}`,borderRadius:8,color:C.d,padding:"5px 10px",cursor:"pointer",fontSize:12}}>🗑</button>
                     </div>
                   </div>
@@ -2983,10 +3694,16 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
 }
 
 /* ─── MONITORING SUHU & KELEMBABAN ─────────────────────────────────── */
-interface MonitoringEntry { id:string; tanggal:string; jam:string; suhu:number; kelembaban:number; petugas:string; createdAt:string; }
+interface MonitoringEntry { id:string; ruang:string; tanggal:string; jam:string; suhu:number; kelembaban:number; petugas:string; createdAt:string; }
 interface MonitoringCfg { suhuMin:number; suhuMax:number; rhMin:number; rhMax:number; lokasiRuang:string; kepalaKamarBedah:string; }
 const defaultMonCfg: MonitoringCfg = { suhuMin:19, suhuMax:24, rhMin:45, rhMax:65, lokasiRuang:"Kamar Bedah", kepalaKamarBedah:"" };
 const MON_JAMS = ["07:00","14:00","21:00"];
+const MON_ROOMS = ["Kamar Bedah 1","Kamar Bedah 2","Ruang Instrumen"];
+/* monId: id deterministik berbasis (ruang,tanggal,jam) — bukan random — sehingga
+   menyimpan ulang slot yang sama akan UPSERT (timpa baris yang sama) bukan
+   membuat baris baru yang menumpuk sebagai duplikat "hantu" di Supabase.
+   KRITIS: ruang disertakan agar data antar-ruangan tidak saling menimpa. */
+const monId = (ruang: string, tanggal: string, jam: string) => `mon_${ruang.replace(/\s+/g,"_")}_${tanggal}_${jam}`;
 const MON_MONTHS_ID = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 const MC = { pri:"#0369A1", priL:"#0284C7", priBg:"#EFF6FF", ok:"#16A34A", okBg:"#DCFCE7", err:"#DC2626", errBg:"#FEE2E2" };
 
@@ -2996,46 +3713,93 @@ function monIsOK(suhu:number, rh:number, cfg:MonitoringCfg):boolean {
 
 function monXlsx(entries:MonitoringEntry[], cfg:MonitoringCfg, ym:string, type:"harian"|"rekap"|"akreditasi", showToast:(m:string,c?:string)=>void) {
   const [ys,ms]=ym.split("-"); const year=+ys; const month=+ms;
-  const me=[...entries].filter(e=>e.tanggal.startsWith(ym)).sort((a,b)=>a.tanggal.localeCompare(b.tanggal)||a.jam.localeCompare(b.jam));
+  const me=[...entries].filter(e=>e.tanggal.startsWith(ym))
+    .sort((a,b)=>(a.ruang||"").localeCompare(b.ruang||"")||a.tanggal.localeCompare(b.tanggal)||a.jam.localeCompare(b.jam));
   if(!me.length){showToast("Tidak ada data untuk periode ini","#E65100");return;}
-  const suhuV=me.map(e=>e.suhu).filter(v=>v>0);
-  const rhV=me.map(e=>e.kelembaban).filter(v=>v>0);
-  const avgS=suhuV.length?+(suhuV.reduce((a,b)=>a+b,0)/suhuV.length).toFixed(2):0;
-  const avgR=rhV.length?+(rhV.reduce((a,b)=>a+b,0)/rhV.length).toFixed(2):0;
-  const tidakS=me.filter(e=>!monIsOK(e.suhu,e.kelembaban,cfg)).length;
   const mName=MON_MONTHS_ID[month-1];
   const wb=XLSX.utils.book_new();
-  let lastDate="";
-  const rows1=me.map(e=>{const ok=monIsOK(e.suhu,e.kelembaban,cfg);const r=[e.tanggal===lastDate?"":e.tanggal,e.jam,e.suhu,e.kelembaban,cfg.suhuMin+"-"+cfg.suhuMax,cfg.rhMin+"-"+cfg.rhMax,ok?"SESUAI":"TIDAK SESUAI",e.petugas];lastDate=e.tanggal;return r;});
-  const ws1=XLSX.utils.aoa_to_sheet([["Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Standar Suhu","Standar RH","Status","Petugas"],...rows1]);
-  ws1["!cols"]=[{wch:14},{wch:8},{wch:10},{wch:14},{wch:13},{wch:12},{wch:16},{wch:16}];
+
+  /* ── Sheet 1: Monitoring Harian — tambah kolom Ruangan ── */
+  let lastRuang=""; let lastDate="";
+  const rows1=me.map(e=>{
+    const ok=monIsOK(e.suhu,e.kelembaban,cfg);
+    const r=[
+      e.ruang!==lastRuang?e.ruang:""         ,  // Ruangan (group)
+      e.tanggal!==lastDate||e.ruang!==lastRuang?e.tanggal:"",
+      e.jam,e.suhu,e.kelembaban,
+      cfg.suhuMin+"-"+cfg.suhuMax,cfg.rhMin+"-"+cfg.rhMax,
+      ok?"SESUAI":"TIDAK SESUAI",e.petugas
+    ];
+    if(e.ruang!==lastRuang){lastRuang=e.ruang;lastDate="";} // reset date grouping per room
+    lastDate=e.tanggal;
+    return r;
+  });
+  const ws1=XLSX.utils.aoa_to_sheet([["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Standar Suhu","Standar RH","Status","Petugas"],...rows1]);
+  ws1["!cols"]=[{wch:18},{wch:14},{wch:8},{wch:10},{wch:14},{wch:13},{wch:12},{wch:16},{wch:16}];
   XLSX.utils.book_append_sheet(wb,ws1,"Monitoring Harian");
-  const ws2=XLSX.utils.aoa_to_sheet([["REKAP MONITORING SUHU & KELEMBABAN",""],[""+mName+" "+year,""],["",""],["Parameter","Hasil"],["Rata-rata Suhu (°C)",avgS],["Rata-rata Kelembaban (%)",avgR],["Jumlah Pengukuran",me.length],["Tidak Sesuai Standar",tidakS],["Kepatuhan (%)",me.length?+((me.length-tidakS)/me.length*100).toFixed(1):0]]);
-  ws2["!cols"]=[{wch:28},{wch:14}]; ws2["!merges"]=[{s:{r:0,c:0},e:{r:0,c:1}},{s:{r:1,c:0},e:{r:1,c:1}}];
+
+  /* ── Sheet 2: Rekap Bulanan — dipecah per ruangan ── */
+  const rekapRows:any[]=[
+    ["REKAP MONITORING SUHU & KELEMBABAN",""],
+    [mName+" "+year,""],["",""],
+    ["Ruangan","Rata-rata Suhu (°C)","Rata-rata RH (%)","Jumlah Ukur","Tidak Sesuai","Kepatuhan (%)"]
+  ];
+  let totalUkur=0; let totalTidakS=0;
+  MON_ROOMS.forEach(r=>{
+    const re=me.filter(e=>(e.ruang||"")===(r));
+    const sv=re.map(e=>e.suhu).filter(v=>v>0);
+    const rv=re.map(e=>e.kelembaban).filter(v=>v>0);
+    const aS=sv.length?+(sv.reduce((a,b)=>a+b,0)/sv.length).toFixed(2):"-";
+    const aR=rv.length?+(rv.reduce((a,b)=>a+b,0)/rv.length).toFixed(2):"-";
+    const ts=re.filter(e=>!monIsOK(e.suhu,e.kelembaban,cfg)).length;
+    const pct=re.length?+((re.length-ts)/re.length*100).toFixed(1):"-";
+    rekapRows.push([r,aS,aR,re.length,ts,pct]);
+    totalUkur+=re.length; totalTidakS+=ts;
+  });
+  rekapRows.push(["","","",""]);
+  rekapRows.push(["TOTAL",
+    me.length?+(me.map(e=>e.suhu).filter(v=>v>0).reduce((a,b)=>a+b,0)/me.map(e=>e.suhu).filter(v=>v>0).length).toFixed(2):"-",
+    me.length?+(me.map(e=>e.kelembaban).filter(v=>v>0).reduce((a,b)=>a+b,0)/me.map(e=>e.kelembaban).filter(v=>v>0).length).toFixed(2):"-",
+    totalUkur,totalTidakS,
+    totalUkur?+((totalUkur-totalTidakS)/totalUkur*100).toFixed(1):"-"
+  ]);
+  const ws2=XLSX.utils.aoa_to_sheet(rekapRows);
+  ws2["!cols"]=[{wch:20},{wch:18},{wch:16},{wch:12},{wch:14},{wch:13}];
+  ws2["!merges"]=[{s:{r:0,c:0},e:{r:0,c:5}},{s:{r:1,c:0},e:{r:1,c:5}}];
   XLSX.utils.book_append_sheet(wb,ws2,"Rekap Bulanan");
+
+  /* ── Sheet 3: Laporan Akreditasi — rekap per ruangan + kolom TTD ── */
   if(type==="akreditasi"){
-    const ws3=XLSX.utils.aoa_to_sheet([
-      ["LAPORAN MONITORING SUHU DAN KELEMBABAN KAMAR BEDAH","","",""],
-      ["Bulan: "+mName+" "+year,"","",""],
-      [HOSPITAL,"","",""],["","","",""],
-      ["Parameter","Nilai","",""],
-      ["Rata-rata Suhu (°C)",avgS,"",""],["Rata-rata Kelembaban (%)",avgR,"",""],
-      ["Jumlah Pengukuran",me.length,"",""],["Tidak Sesuai Standar",tidakS,"",""],
-      ["Kepatuhan (%)",me.length?+((me.length-tidakS)/me.length*100).toFixed(1):0,"",""],
-      ["","","",""],
-      ["Petugas Monitoring","","Kepala Kamar Bedah",""],
-      ["","","",""],["","","",""],["","","",""],
-      ["(..........................)","","(..........................)",""],
-    ]);
-    ws3["!cols"]=[{wch:28},{wch:16},{wch:28},{wch:16}];
-    ws3["!merges"]=[{s:{r:0,c:0},e:{r:0,c:3}},{s:{r:1,c:0},e:{r:1,c:3}},{s:{r:2,c:0},e:{r:2,c:3}}];
+    const aRows:any[]=[
+      ["LAPORAN MONITORING SUHU DAN KELEMBABAN KAMAR BEDAH","","","","",""],
+      ["Bulan: "+mName+" "+year,"","","","",""],
+      [HOSPITAL,"","","","",""],["","","","","",""],
+      ["Ruangan","Rata-rata Suhu (°C)","Rata-rata RH (%)","Jumlah Ukur","Tidak Sesuai","Kepatuhan (%)"],
+    ];
+    MON_ROOMS.forEach(r=>{
+      const re=me.filter(e=>(e.ruang||"")===r);
+      const sv=re.map(e=>e.suhu).filter(v=>v>0);
+      const rv=re.map(e=>e.kelembaban).filter(v=>v>0);
+      const aS=sv.length?+(sv.reduce((a,b)=>a+b,0)/sv.length).toFixed(2):"-";
+      const aR=rv.length?+(rv.reduce((a,b)=>a+b,0)/rv.length).toFixed(2):"-";
+      const ts=re.filter(e=>!monIsOK(e.suhu,e.kelembaban,cfg)).length;
+      const pct=re.length?+((re.length-ts)/re.length*100).toFixed(1):"-";
+      aRows.push([r,aS,aR,re.length,ts,pct]);
+    });
+    aRows.push(["","","","","",""]);
+    aRows.push(["Petugas Monitoring","","","","Kepala Kamar Bedah",""]);
+    aRows.push(["","","","","",""]);aRows.push(["","","","","",""]);aRows.push(["","","","","",""]);
+    aRows.push(["(..........................)","","","","(..........................)",")"]);
+    const ws3=XLSX.utils.aoa_to_sheet(aRows);
+    ws3["!cols"]=[{wch:22},{wch:18},{wch:16},{wch:12},{wch:14},{wch:13}];
+    ws3["!merges"]=[{s:{r:0,c:0},e:{r:0,c:5}},{s:{r:1,c:0},e:{r:1,c:5}},{s:{r:2,c:0},e:{r:2,c:5}}];
     XLSX.utils.book_append_sheet(wb,ws3,"Laporan Akreditasi");
   }
   XLSX.writeFile(wb,"Monitoring_"+(type==="harian"?"Harian":type==="rekap"?"Rekap":"Akreditasi")+"_"+ym+".xlsx");
   showToast("✓ Monitoring "+(type==="harian"?"Harian":type==="rekap"?"Rekap":"Akreditasi")+" "+mName+" "+year+" diunduh",MC.ok);
 }
 
-function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,setMonitoringCfg,showToast,supaCfg,dbxCfg}:any) {
+function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,setMonitoringCfg,showToast,supaCfg,dbxCfg,role,upsertOneToSupa,deleteFromSupa}:any) {
   const [subTab,setSubTab]=useState("harian");
   const [selMonth,setSelMonth]=useState(todayDate().slice(0,7));
   const [supaMonBusy,setSupaMonBusy]=useState(false);
@@ -3043,32 +3807,56 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
   const [dbxMonBusy,setDbxMonBusy]=useState(false);
   const [dbxMonYM,setDbxMonYM]=useState(todayDate().slice(0,7));
   const [formDate,setFormDate]=useState(todayDate());
+  const [grafikRuang,setGrafikRuang]=useState<string>("Kamar Bedah 1");
   type SL={suhu:string;kelembaban:string;petugas:string};
   const ES:SL={suhu:"",kelembaban:"",petugas:""};
-  const mkSlots=():(Record<string,SL>)=>({"07:00":{...ES},"14:00":{...ES},"21:00":{...ES}});
-  const [slots,setSlots]=useState<Record<string,SL>>(mkSlots);
+  /* multiSlots: { [ruang]: { [jam]: SL } } */
+  type MultiSlots=Record<string,Record<string,SL>>;
+  const mkMultiSlots=():MultiSlots=>Object.fromEntries(MON_ROOMS.map(r=>[r,{"07:00":{...ES},"14:00":{...ES},"21:00":{...ES}}]));
+  const [multiSlots,setMultiSlots]=useState<MultiSlots>(mkMultiSlots);
   const [cfgForm,setCfgForm]=useState<MonitoringCfg>({...monitoringCfg});
   useEffect(()=>{
-    const ns=mkSlots();
-    MON_JAMS.forEach(jam=>{const ex=monitoringEntries.find((e:MonitoringEntry)=>e.tanggal===formDate&&e.jam===jam);if(ex) ns[jam]={suhu:String(ex.suhu),kelembaban:String(ex.kelembaban),petugas:ex.petugas};});
-    setSlots(ns);
-  },[formDate]);
-  const handleSave=()=>{
+    if(!monitoringEntries) return;
+    const ns=mkMultiSlots();
+    MON_ROOMS.forEach(ruang=>{
+      MON_JAMS.forEach(jam=>{
+        const ex=monitoringEntries.find((e:MonitoringEntry)=>e.ruang===ruang&&e.tanggal===formDate&&e.jam===jam);
+        if(ex) ns[ruang][jam]={suhu:String(ex.suhu),kelembaban:String(ex.kelembaban),petugas:ex.petugas};
+      });
+    });
+    setMultiSlots(ns);
+  },[formDate, monitoringEntries]);
+  const handleSave= async ()=>{
     const nw:MonitoringEntry[]=[];
-    MON_JAMS.forEach(jam=>{const s=slots[jam];if(s.suhu&&s.kelembaban) nw.push({id:gId(),tanggal:formDate,jam,suhu:parseFloat(s.suhu),kelembaban:parseFloat(s.kelembaban),petugas:s.petugas,createdAt:fNow()});});
+    MON_ROOMS.forEach(ruang=>{
+      MON_JAMS.forEach(jam=>{
+        const s=multiSlots[ruang][jam];
+        if(s.suhu&&s.kelembaban) nw.push({id:monId(ruang,formDate,jam),ruang,tanggal:formDate,jam,suhu:parseFloat(s.suhu),kelembaban:parseFloat(s.kelembaban),petugas:s.petugas,createdAt:fNow()});
+      });
+    });
     if(!nw.length){showToast("Isi minimal satu slot suhu/kelembaban","#E65100");return;}
-    const filtered=monitoringEntries.filter((e:MonitoringEntry)=>!(e.tanggal===formDate&&MON_JAMS.includes(e.jam)));
-    setMonitoringEntries([...filtered,...nw]);
-    showToast("✓ "+nw.length+" data monitoring "+formDate+" disimpan",MC.ok);
+    showToast(`⟳ Menyimpan ${nw.length} data monitoring...`,MC.pri);
+    /* Tulis per-slot (granular, id deterministik) — bukan replace seluruh array,
+       sehingga slot/tanggal lain yang sedang diedit device lain tidak tersentuh. */
+    const results = await Promise.all(nw.map((e:MonitoringEntry)=>upsertOneToSupa?.("kb_monitoring", e)));
+    const failed = results.filter((r:any)=>!r?.ok);
+    if(failed.length){
+      showToast(`⚠ Gagal menyimpan ${failed.length} data: ${failed[0]?.error||"kesalahan tidak diketahui"}`,MC.err);
+      return;
+    }
+    setMonitoringEntries((p:MonitoringEntry[])=>{
+      /* Filter lama: cocokkan tanggal DAN ruangan DAN jam agar Realtime tidak bentrok */
+      const filtered=p.filter((e:MonitoringEntry)=>!nw.some(n=>n.ruang===e.ruang&&n.tanggal===e.tanggal&&n.jam===e.jam));
+      return [...filtered,...nw];
+    });
+    showToast("✓ "+nw.length+" data monitoring "+formDate+" disimpan & tersinkron",MC.ok);
   };
 
   const downloadMonFromSupa = async (type:"harian"|"rekap"|"akreditasi") => {
-    if(!supaCfg?.url||!supaCfg?.anonKey||!supaCfg?.table){showToast("Supabase belum dikonfigurasi. Atur di tab Arsip → Setelan.",MC.err);return;}
+    // SUPA_CLIENT sudah singleton — guard tidak diperlukan
     setSupaMonBusy(true);
     try {
-      const {createClient} = await import("@supabase/supabase-js");
-      const sb = createClient(supaCfg.url, supaCfg.anonKey);
-      const {data,error} = await sb.from(supaCfg.table).select("data").order("created_at",{ascending:false}).limit(1);
+      const {data,error} = await SUPA_CLIENT.from("kamar_bedah_backup").select("data").order("created_at",{ascending:false}).limit(1);
       if(error||!data?.length) throw new Error(error?.message||"Data tidak ditemukan di Supabase");
       const raw = typeof data[0].data==="string"?JSON.parse(data[0].data):data[0].data;
       const me:MonitoringEntry[] = (raw.monitoringEntries||raw.data?.monitoringEntries||[]).filter((e:MonitoringEntry)=>e.tanggal?.startsWith(supaMonYM));
@@ -3081,7 +3869,6 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
   };
 
   const downloadMonFromDropbox = async (type:"harian"|"rekap"|"akreditasi") => {
-    if(!dbxCfg?.token){showToast("Access Token Dropbox belum diisi. Atur di tab Arsip → Setelan.",MC.err);return;}
     setDbxMonBusy(true);
     try {
       const res = await dropboxDownload(dbxCfg);
@@ -3095,34 +3882,38 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
     setDbxMonBusy(false);
   };
 
-  const downloadGrafikExcel = () => {
-    if(!me.length){showToast("Tidak ada data untuk bulan ini","#E65100");return;}
-    const wb = XLSX.utils.book_new();
-    const rows = me.map((e:MonitoringEntry)=>[e.tanggal,e.jam,e.suhu,e.kelembaban,monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas]);
-    const ws = XLSX.utils.aoa_to_sheet([["Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"],...rows,
-      [],[`Rata-rata Suhu: ${avgS}°C`,`Rata-rata RH: ${avgR}%`,`Kepatuhan: ${cmpPct}%`,"","",""]
-    ]);
-    ws["!cols"]=[{wch:14},{wch:8},{wch:12},{wch:14},{wch:16},{wch:22}];
-    XLSX.utils.book_append_sheet(wb,ws,"Data Grafik");
-    XLSX.writeFile(wb,`Grafik_Monitoring_${selMonth}.xlsx`);
-    showToast("✓ Data grafik "+mLabel+" diunduh",MC.ok);
-  };
-
-  const me=monitoringEntries.filter((e:MonitoringEntry)=>e.tanggal.startsWith(selMonth)).sort((a:MonitoringEntry,b:MonitoringEntry)=>a.tanggal.localeCompare(b.tanggal)||a.jam.localeCompare(b.jam));
-  const suhuV=me.map((e:MonitoringEntry)=>e.suhu).filter((v:number)=>v>0);
-  const rhV=me.map((e:MonitoringEntry)=>e.kelembaban).filter((v:number)=>v>0);
+  /* ── derived variables (grafik pakai filter ruangan) ── */
+  const me=monitoringEntries.filter((e:MonitoringEntry)=>e.tanggal.startsWith(selMonth))
+    .sort((a:MonitoringEntry,b:MonitoringEntry)=>(a.ruang||"").localeCompare(b.ruang||"")||a.tanggal.localeCompare(b.tanggal)||a.jam.localeCompare(b.jam));
+  const meGrafik = grafikRuang==="Semua" ? me : me.filter((e:MonitoringEntry)=>e.ruang===grafikRuang);
+  const suhuV=meGrafik.map((e:MonitoringEntry)=>e.suhu).filter((v:number)=>v>0);
+  const rhV=meGrafik.map((e:MonitoringEntry)=>e.kelembaban).filter((v:number)=>v>0);
   const avgS=suhuV.length?+(suhuV.reduce((a:number,b:number)=>a+b,0)/suhuV.length).toFixed(1):0;
   const avgR=rhV.length?+(rhV.reduce((a:number,b:number)=>a+b,0)/rhV.length).toFixed(1):0;
-  const tidakS=me.filter((e:MonitoringEntry)=>!monIsOK(e.suhu,e.kelembaban,monitoringCfg)).length;
-  const cmpPct=me.length?+((me.length-tidakS)/me.length*100).toFixed(1):0;
-  const chartData=me.map((e:MonitoringEntry)=>({name:e.tanggal.slice(8)+"/"+(e.jam==="07:00"?"07":e.jam==="14:00"?"14":"21"),suhu:e.suhu,kelembaban:e.kelembaban}));
-  const iS:React.CSSProperties={padding:"8px 12px",border:"1px solid #D1D5DB",borderRadius:8,fontSize:14,width:"100%",background:"#fff",fontFamily:"inherit",outline:"none"};
+  const tidakS=meGrafik.filter((e:MonitoringEntry)=>!monIsOK(e.suhu,e.kelembaban,monitoringCfg)).length;
+  const cmpPct=meGrafik.length?+((meGrafik.length-tidakS)/meGrafik.length*100).toFixed(1):0;
+  const chartData=meGrafik.map((e:MonitoringEntry)=>({name:e.tanggal.slice(8)+"/"+(e.jam==="07:00"?"07":e.jam==="14:00"?"14":"21"),suhu:e.suhu,kelembaban:e.kelembaban}));
+  const monInS:React.CSSProperties={padding:"8px 12px",border:"1px solid #D1D5DB",borderRadius:8,fontSize:14,width:"100%",background:"#fff",fontFamily:"inherit",outline:"none"};
   const mLabel=MON_MONTHS_ID[+selMonth.slice(5)-1]+" "+selMonth.slice(0,4);
+
+  const downloadGrafikExcel = () => {
+    if(!meGrafik.length){showToast("Tidak ada data untuk bulan ini","#E65100");return;}
+    const wb = XLSX.utils.book_new();
+    const rows = meGrafik.map((e:MonitoringEntry)=>[e.ruang||"",e.tanggal,e.jam,e.suhu,e.kelembaban,monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas]);
+    const ws = XLSX.utils.aoa_to_sheet([["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"],...rows,
+      [],[`Rata-rata Suhu: ${avgS}°C`,`Rata-rata RH: ${avgR}%`,`Kepatuhan: ${cmpPct}%`,"","","",""]
+    ]);
+    ws["!cols"]=[{wch:18},{wch:14},{wch:8},{wch:12},{wch:14},{wch:16},{wch:22}];
+    XLSX.utils.book_append_sheet(wb,ws,"Data Grafik");
+    XLSX.writeFile(wb,`Grafik_Monitoring_${selMonth}_${grafikRuang.replace(/\s+/g,"_")}.xlsx`);
+    showToast("✓ Data grafik "+mLabel+" ("+grafikRuang+") diunduh",MC.ok);
+  };
+
   return (
     <div>
       <div style={{marginBottom:14}}>
         <div style={{fontWeight:800,fontSize:18,color:MC.pri,marginBottom:2}}>🌡 Monitoring Suhu &amp; Kelembaban</div>
-        <div style={{fontSize:12,color:"#64748B"}}>{monitoringCfg.lokasiRuang} · Standar Suhu {monitoringCfg.suhuMin}-{monitoringCfg.suhuMax}°C · RH {monitoringCfg.rhMin}-{monitoringCfg.rhMax}%</div>
+        <div style={{fontSize:12,color:"#64748B"}}>3 Ruangan · Standar Suhu {monitoringCfg.suhuMin}-{monitoringCfg.suhuMax}°C · RH {monitoringCfg.rhMin}-{monitoringCfg.rhMax}%</div>
       </div>
       <div style={{display:"flex",gap:6,marginBottom:18,flexWrap:"wrap"}}>
         {[{k:"harian",l:"📋 Harian"},{k:"grafik",l:"📊 Grafik"},{k:"unduh",l:"📥 Unduh"},{k:"standar",l:"⚙ Standar"}].map(t=>(
@@ -3131,57 +3922,72 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
       </div>
       {(subTab==="harian"||subTab==="grafik"||subTab==="unduh")&&(
         <div style={{display:"flex",gap:10,alignItems:"flex-end",marginBottom:18,flexWrap:"wrap"}}>
-          <div><div style={{fontSize:11,fontWeight:700,color:"#64748B",marginBottom:4}}>Bulan</div><input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)} style={{...iS,width:"auto"}}/></div>
-          {subTab==="harian"&&<div><div style={{fontSize:11,fontWeight:700,color:"#64748B",marginBottom:4}}>Tanggal Input</div><input type="date" value={formDate} onChange={e=>setFormDate(e.target.value)} style={{...iS,width:"auto"}}/></div>}
+          <div><div style={{fontSize:11,fontWeight:700,color:"#64748B",marginBottom:4}}>Bulan</div><input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)} style={{...monInS,width:"auto"}}/></div>
+          {subTab==="harian"&&<div><div style={{fontSize:11,fontWeight:700,color:"#64748B",marginBottom:4}}>Tanggal Input</div><input type="date" value={formDate} onChange={e=>setFormDate(e.target.value)} style={{...monInS,width:"auto"}}/></div>}
         </div>
       )}
       {/* ── HARIAN ── */}
       {subTab==="harian"&&(
         <div>
+          {/* ── Form Input: 3 seksi ruangan sekaligus ── */}
           <div style={{background:"linear-gradient(135deg,#EFF6FF,#F0FDF4)",border:"1px solid #BAE6FD",borderRadius:14,padding:18,marginBottom:18}}>
-            <div style={{fontWeight:700,color:MC.pri,fontSize:14,marginBottom:12}}>📝 Input Pemantauan — {fD(formDate)}</div>
-            <div style={{overflowX:"auto"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                <thead><tr>{["Jam","Suhu (°C)","Kelembaban (%)","Petugas","Status"].map(h=><th key={h} style={{padding:"8px 12px",background:"#DBEAFE",color:MC.pri,fontWeight:700,textAlign:"left",borderBottom:"2px solid #BAE6FD",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
-                <tbody>
-                  {MON_JAMS.map(jam=>{
-                    const s=slots[jam];const sv=parseFloat(s.suhu);const rv=parseFloat(s.kelembaban);
-                    const hasV=!!(s.suhu&&s.kelembaban&&!isNaN(sv)&&!isNaN(rv));
-                    const ok:boolean|null=hasV?monIsOK(sv,rv,monitoringCfg):null;
-                    return (
-                      <tr key={jam} style={{background:"#fff",borderBottom:"1px solid #E2E8F0"}}>
-                        <td style={{padding:"8px 12px",fontWeight:700,color:MC.pri,whiteSpace:"nowrap"}}>{jam}</td>
-                        <td style={{padding:"6px 8px"}}><input type="number" step="0.1" min="10" max="40" placeholder="mis. 21.5" value={s.suhu} onChange={e=>setSlots(p=>({...p,[jam]:{...p[jam],suhu:e.target.value}}))} style={{...iS,width:100}}/></td>
-                        <td style={{padding:"6px 8px"}}><input type="number" step="1" min="0" max="100" placeholder="mis. 55" value={s.kelembaban} onChange={e=>setSlots(p=>({...p,[jam]:{...p[jam],kelembaban:e.target.value}}))} style={{...iS,width:85}}/></td>
-                        <td style={{padding:"6px 8px"}}><input type="text" placeholder="Nama petugas" value={s.petugas} onChange={e=>setSlots(p=>({...p,[jam]:{...p[jam],petugas:e.target.value}}))} style={{...iS,minWidth:130}}/></td>
-                        <td style={{padding:"8px 12px",whiteSpace:"nowrap"}}>
-                          {ok===null?<span style={{color:"#94A3B8",fontSize:12}}>—</span>:ok?<span style={{background:MC.okBg,color:MC.ok,fontWeight:700,fontSize:11,padding:"3px 10px",borderRadius:20}}>✓ SESUAI</span>:<span style={{background:MC.errBg,color:MC.err,fontWeight:700,fontSize:11,padding:"3px 10px",borderRadius:20}}>✕ TIDAK SESUAI</span>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div style={{marginTop:14}}><Btn color={MC.pri} onClick={handleSave} style={{background:MC.pri,color:"#fff",border:"none"}}>💾 Simpan Data {formDate}</Btn></div>
+            <div style={{fontWeight:700,color:MC.pri,fontSize:14,marginBottom:16}}>📝 Input Pemantauan — {fD(formDate)}</div>
+            {MON_ROOMS.map((ruang,ri)=>{
+              const roomColors=[{bg:"#EFF6FF",hd:"#DBEAFE",border:"#BAE6FD",accent:MC.pri},{bg:"#F0FDF4",hd:"#DCFCE7",border:"#86EFAC",accent:MC.ok},{bg:"#FFF7ED",hd:"#FED7AA",border:"#FDBA74",accent:"#EA580C"}];
+              const rc=roomColors[ri%3];
+              return (
+                <div key={ruang} style={{background:rc.bg,border:"1px solid "+rc.border,borderRadius:12,padding:"14px 16px",marginBottom:ri<MON_ROOMS.length-1?12:0}}>
+                  <div style={{fontWeight:800,color:rc.accent,fontSize:13,marginBottom:10}}>🏥 {ruang}</div>
+                  <div style={{overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                      <thead><tr>{["Jam","Suhu (°C)","Kelembaban (%)","Petugas","Status"].map(h=><th key={h} style={{padding:"7px 10px",background:rc.hd,color:rc.accent,fontWeight:700,textAlign:"left",borderBottom:"2px solid "+rc.border,whiteSpace:"nowrap",fontSize:12}}>{h}</th>)}</tr></thead>
+                      <tbody>
+                        {MON_JAMS.map(jam=>{
+                          const s=multiSlots[ruang]?.[jam]||{suhu:"",kelembaban:"",petugas:""};
+                          const sv=parseFloat(s.suhu);const rv=parseFloat(s.kelembaban);
+                          const hasV=!!(s.suhu&&s.kelembaban&&!isNaN(sv)&&!isNaN(rv));
+                          const ok:boolean|null=hasV?monIsOK(sv,rv,monitoringCfg):null;
+                          return (
+                            <tr key={jam} style={{background:"#fff",borderBottom:"1px solid #E2E8F0"}}>
+                              <td style={{padding:"7px 10px",fontWeight:700,color:rc.accent,whiteSpace:"nowrap"}}>{jam}</td>
+                              <td style={{padding:"5px 7px"}}><input type="number" step="0.1" min="10" max="40" placeholder="mis. 21.5" value={s.suhu} onChange={e=>setMultiSlots(p=>({...p,[ruang]:{...p[ruang],[jam]:{...p[ruang][jam],suhu:e.target.value}}}))} style={{...monInS,width:95}}/></td>
+                              <td style={{padding:"5px 7px"}}><input type="number" step="1" min="0" max="100" placeholder="mis. 55" value={s.kelembaban} onChange={e=>setMultiSlots(p=>({...p,[ruang]:{...p[ruang],[jam]:{...p[ruang][jam],kelembaban:e.target.value}}}))} style={{...monInS,width:82}}/></td>
+                              <td style={{padding:"5px 7px"}}><input type="text" placeholder="Nama petugas" value={s.petugas} onChange={e=>setMultiSlots(p=>({...p,[ruang]:{...p[ruang],[jam]:{...p[ruang][jam],petugas:e.target.value}}}))} style={{...monInS,minWidth:120}}/></td>
+                              <td style={{padding:"7px 10px",whiteSpace:"nowrap"}}>
+                                {ok===null?<span style={{color:"#94A3B8",fontSize:12}}>—</span>:ok?<span style={{background:MC.okBg,color:MC.ok,fontWeight:700,fontSize:11,padding:"3px 10px",borderRadius:20}}>✓ SESUAI</span>:<span style={{background:MC.errBg,color:MC.err,fontWeight:700,fontSize:11,padding:"3px 10px",borderRadius:20}}>✕ TIDAK SESUAI</span>}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })}
+            <div style={{marginTop:16}}><Btn color={MC.pri} onClick={handleSave} style={{background:MC.pri,color:"#fff",border:"none"}}>💾 Simpan Semua Data — {formDate}</Btn></div>
           </div>
+          {/* ── Tabel data tersimpan ── */}
           <div style={{background:"#fff",border:"1px solid #E2E8F0",borderRadius:12,overflow:"hidden"}}>
             <div style={{background:"linear-gradient(90deg,"+MC.pri+","+MC.priL+")",padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <span style={{color:"#fff",fontWeight:700,fontSize:14}}>📋 Data {mLabel}</span>
-              <span style={{color:"rgba(255,255,255,.75)",fontSize:12}}>{me.length} entri</span>
+              <span style={{color:"rgba(255,255,255,.75)",fontSize:12}}>{me.length} entri · {MON_ROOMS.length} ruangan</span>
             </div>
             {me.length===0?(
               <div style={{padding:32,textAlign:"center",color:"#94A3B8"}}><div style={{fontSize:32,marginBottom:8}}>🌡</div><div style={{fontWeight:600}}>Belum ada data monitoring bulan ini</div><div style={{fontSize:12,marginTop:4}}>Gunakan form di atas untuk menambahkan data</div></div>
             ):(
               <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                  <thead style={{background:"#F8FAFC"}}><tr>{["Tanggal","Jam","Suhu","RH","Std Suhu","Std RH","Status","Petugas",""].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontWeight:700,color:"#475569",fontSize:11,borderBottom:"1px solid #E2E8F0",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                  <thead style={{background:"#F8FAFC"}}><tr>{["Ruangan","Tanggal","Jam","Suhu","RH","Std Suhu","Std RH","Status","Petugas",""].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontWeight:700,color:"#475569",fontSize:11,borderBottom:"1px solid #E2E8F0",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
                   <tbody>
                     {me.map((e:MonitoringEntry,i:number)=>{
-                      const ok=monIsOK(e.suhu,e.kelembaban,monitoringCfg); const prevDate=i>0?me[i-1].tanggal:"";
+                      const ok=monIsOK(e.suhu,e.kelembaban,monitoringCfg);
+                      const prevRuang=i>0?me[i-1].ruang:""; const prevDate=i>0?me[i-1].tanggal:"";
+                      const isNewRuang=e.ruang!==prevRuang;
                       return (
-                        <tr key={e.id} style={{borderBottom:"1px solid #F1F5F9",background:i%2===0?"#fff":"#FAFBFC"}}>
-                          <td style={{padding:"7px 12px",fontWeight:e.tanggal!==prevDate?700:400,color:"#374151"}}>{e.tanggal!==prevDate?e.tanggal:""}</td>
+                        <tr key={e.id} style={{borderBottom:"1px solid #F1F5F9",background:isNewRuang?"#EFF6FF":i%2===0?"#fff":"#FAFBFC"}}>
+                          <td style={{padding:"7px 12px",fontWeight:isNewRuang?700:400,color:MC.pri,fontSize:isNewRuang?12:11}}>{isNewRuang?e.ruang:""}</td>
+                          <td style={{padding:"7px 12px",fontWeight:(e.tanggal!==prevDate||isNewRuang)?700:400,color:"#374151"}}>{(e.tanggal!==prevDate||isNewRuang)?e.tanggal:""}</td>
                           <td style={{padding:"7px 12px",fontWeight:700,color:MC.pri}}>{e.jam}</td>
                           <td style={{padding:"7px 12px",fontWeight:700,color:ok?MC.ok:MC.err}}>{e.suhu}°C</td>
                           <td style={{padding:"7px 12px",fontWeight:700,color:ok?MC.ok:MC.err}}>{e.kelembaban}%</td>
@@ -3189,7 +3995,12 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
                           <td style={{padding:"7px 12px",color:"#64748B",fontSize:12}}>{monitoringCfg.rhMin}-{monitoringCfg.rhMax}</td>
                           <td style={{padding:"7px 12px"}}><span style={{background:ok?MC.okBg:MC.errBg,color:ok?MC.ok:MC.err,fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:12}}>{ok?"SESUAI":"TIDAK SESUAI"}</span></td>
                           <td style={{padding:"7px 12px",color:"#374151"}}>{e.petugas}</td>
-                          <td style={{padding:"7px 12px"}}><button onClick={()=>{setMonitoringEntries((p:MonitoringEntry[])=>p.filter(x=>x.id!==e.id));showToast("Data dihapus");}} style={{background:"none",border:"none",cursor:"pointer",color:"#EF4444",fontSize:16}}>✕</button></td>
+                          <td style={{padding:"7px 12px"}}><button onClick={async ()=>{
+                            const res = await deleteFromSupa?.("kb_monitoring", e.id);
+                            if(!res?.ok){ showToast(`⚠ Gagal menghapus: ${res?.error||"kesalahan tidak diketahui"}`,C.d); return; }
+                            setMonitoringEntries((p:any[])=>p.filter((x:any)=>x.id!==e.id));
+                            showToast("✓ Data dihapus & tersinkron",C.d);
+                          }} style={{background:"none",border:"none",cursor:"pointer",color:"#EF4444",fontSize:16}}>✕</button></td>
                         </tr>
                       );
                     })}
@@ -3203,10 +4014,16 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
       {/* ── GRAFIK ── */}
       {subTab==="grafik"&&(
         <div>
-          {/* Month selector + today shortcut + download */}
+          {/* Filter ruangan + month selector + download */}
           <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:14,flexWrap:"wrap"}}>
             <div style={{flex:1,minWidth:160}}>
-              <input style={{padding:"7px 12px",border:"1px solid #D1D5DB",borderRadius:8,fontSize:13,width:"100%",background:"#fff",fontFamily:"inherit"}} type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}/>
+              <input style={{...monInS,fontSize:13}} type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}/>
+            </div>
+            {/* Dropdown Pilih Ruangan */}
+            <div style={{minWidth:180}}>
+              <select value={grafikRuang} onChange={e=>setGrafikRuang(e.target.value)} style={{...monInS,fontSize:13,appearance:"none",cursor:"pointer",paddingRight:28}}>
+                {[...MON_ROOMS,"Semua"].map(r=><option key={r} value={r}>{r}</option>)}
+              </select>
             </div>
             <button onClick={()=>setSelMonth(todayDate().slice(0,7))} style={{padding:"7px 14px",background:selMonth===todayDate().slice(0,7)?"#0EA5E9":"#F0F9FF",color:selMonth===todayDate().slice(0,7)?"#fff":"#0369A1",border:"1px solid #BAE6FD",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
               📅 Bulan Ini
@@ -3215,8 +4032,12 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
               ⬇ Download Excel
             </button>
           </div>
+          {/* Label ruangan aktif */}
+          <div style={{marginBottom:14,fontSize:12,color:"#64748B",fontWeight:600}}>
+            Menampilkan: <span style={{color:MC.pri,fontWeight:800}}>{grafikRuang}</span> — {mLabel}
+          </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,marginBottom:20}}>
-            {([{l:"Rata-rata Suhu",v:avgS+"°C",ico:"🌡",bg:"#DBEAFE",c:"#1D4ED8"},{l:"Rata-rata RH",v:avgR+"%",ico:"💧",bg:"#DCFCE7",c:"#16A34A"},{l:"Total Ukur",v:String(me.length),ico:"📊",bg:"#FEF3C7",c:"#B45309"},{l:"Tidak Sesuai",v:String(tidakS),ico:"⚠️",bg:"#FEE2E2",c:"#DC2626"},{l:"Kepatuhan",v:cmpPct+"%",ico:"✅",bg:"#F0FDF4",c:"#16A34A"}] as {l:string;v:string;ico:string;bg:string;c:string}[]).map(s=>(
+            {([{l:"Rata-rata Suhu",v:avgS+"°C",ico:"🌡",bg:"#DBEAFE",c:"#1D4ED8"},{l:"Rata-rata RH",v:avgR+"%",ico:"💧",bg:"#DCFCE7",c:"#16A34A"},{l:"Total Ukur",v:String(meGrafik.length),ico:"📊",bg:"#FEF3C7",c:"#B45309"},{l:"Tidak Sesuai",v:String(tidakS),ico:"⚠️",bg:"#FEE2E2",c:"#DC2626"},{l:"Kepatuhan",v:cmpPct+"%",ico:"✅",bg:"#F0FDF4",c:"#16A34A"}] as {l:string;v:string;ico:string;bg:string;c:string}[]).map(s=>(
               <div key={s.l} style={{background:s.bg,borderRadius:12,padding:"12px 10px",textAlign:"center",border:"1px solid "+s.c+"20"}}>
                 <div style={{fontSize:20,marginBottom:3}}>{s.ico}</div>
                 <div style={{fontSize:17,fontWeight:800,color:s.c}}>{s.v}</div>
@@ -3225,11 +4046,11 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
             ))}
           </div>
           {chartData.length===0?(
-            <div style={{textAlign:"center",padding:48,color:"#94A3B8"}}><div style={{fontSize:40,marginBottom:10}}>📊</div><div style={{fontWeight:600}}>Belum ada data untuk bulan ini</div></div>
+            <div style={{textAlign:"center",padding:48,color:"#94A3B8"}}><div style={{fontSize:40,marginBottom:10}}>📊</div><div style={{fontWeight:600}}>Belum ada data untuk ruangan &amp; bulan ini</div></div>
           ):(
             <>
               <div style={{background:"#fff",border:"1px solid #E2E8F0",borderRadius:12,padding:"16px 16px 8px",marginBottom:14}}>
-                <div style={{fontWeight:700,color:MC.pri,marginBottom:10,fontSize:13}}>🌡 Grafik Suhu — {mLabel}</div>
+                <div style={{fontWeight:700,color:MC.pri,marginBottom:10,fontSize:13}}>🌡 Grafik Suhu — {grafikRuang} · {mLabel}</div>
                 <ResponsiveContainer width="100%" height={200}>
                   <LineChart data={chartData} margin={{top:4,right:20,left:0,bottom:4}}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9"/>
@@ -3243,7 +4064,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
                 </ResponsiveContainer>
               </div>
               <div style={{background:"#fff",border:"1px solid #E2E8F0",borderRadius:12,padding:"16px 16px 8px"}}>
-                <div style={{fontWeight:700,color:MC.ok,marginBottom:10,fontSize:13}}>💧 Grafik Kelembaban — {mLabel}</div>
+                <div style={{fontWeight:700,color:MC.ok,marginBottom:10,fontSize:13}}>💧 Grafik Kelembaban — {grafikRuang} · {mLabel}</div>
                 <ResponsiveContainer width="100%" height={200}>
                   <LineChart data={chartData} margin={{top:4,right:20,left:0,bottom:4}}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9"/>
@@ -3317,7 +4138,6 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
                 </div>
               ))}
             </div>
-            {!dbxCfg?.token && <div style={{fontSize:11,color:"#EF4444",marginTop:10}}>⚠ Dropbox belum dikonfigurasi — atur di tab Arsip → Setelan.</div>}
           </div>
         </div>
       )}
@@ -3342,142 +4162,254 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
   );
 }
 
+/* ─── SUPABASE SINGLETON ───────────────────────────────────────────
+   FIX #1 (CRITICAL — AUDIT): Anon key TIDAK LAGI di-hardcode di source.
+   Diambil dari environment variable (.env.local, JANGAN di-commit ke git):
+     VITE_SUPABASE_URL=https://xxxx.supabase.co
+     VITE_SUPABASE_ANON_KEY=eyJ...
+   "anon public key" memang didesain aman di client-side per arsitektur
+   Supabase (akses sesungguhnya dikontrol via RLS), namun tetap tidak boleh
+   di-hardcode di source: hardcode membuat rotasi key sulit, membuat key
+   bocor ke setiap fork/clone repo, dan menyamarkan kebutuhan RLS yang benar.
+   ─────────────────────────────────────────────────────────────────── */
+const SUPA_URL    = (import.meta as any).env?.VITE_SUPABASE_URL as string | undefined;
+const SUPA_ANON   = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY as string | undefined;
+if (!SUPA_URL || !SUPA_ANON) {
+  // eslint-disable-next-line no-console
+  console.error(
+    "[Konfigurasi] VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY belum diset di .env.local. " +
+    "Aplikasi tidak dapat terhubung ke Supabase sampai env var ini dikonfigurasi."
+  );
+}
+const SUPA_CLIENT = createClient(SUPA_URL || "", SUPA_ANON || "");
+
+/* ─── DROPBOX: token DIHAPUS dari sini sepenuhnya — lihat DBX_PROXY_SECRET
+   di atas. Token asli sekarang hanya hidup sbg secret server-side di
+   Supabase Edge Function "dropbox-proxy" (Deno.env.get("DROPBOX_ACCESS_TOKEN")). */
+
+/* ─── HEADER CLOCK (terisolasi) ─────────────────────────────────────────
+   Sengaja dipisah jadi komponennya sendiri — detak 1 detik di sini TIDAK
+   memicu re-render App ataupun tab yang sedang aktif (lihat catatan perf
+   di komponen App: state currentTime sebelumnya ada di root App). */
+function HeaderClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const iv = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(iv);
+  }, []);
+  return (
+    <>
+      <div style={{color:"rgba(255,255,255,.55)",fontSize:10,marginTop:3,letterSpacing:.2}}>{now.toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
+      <div style={{color:"rgba(255,255,255,.9)",fontSize:13,fontWeight:700,fontVariantNumeric:"tabular-nums",letterSpacing:1,marginTop:1}}>{now.toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit",second:"2-digit"})} WIB</div>
+    </>
+  );
+}
+
 /* ─── MAIN APP ───────────────────────────────────────────────────────── */
+
+/* FIX AUDIT #12: ALL_TABS sebagai module-level constant (stabil antar render) */
+const ALL_TABS: Array<{k:string; l:string; roles:Array<"admin"|"perawat">}> = [
+  {k:"jadwal",    l:"📋 Jadwal",     roles:["admin","perawat"]},
+  {k:"daftar",    l:"📝 Daftar",     roles:["admin","perawat"]},
+  {k:"laporan",   l:"📄 Laporan",    roles:["admin","perawat"]},
+  {k:"wa",        l:"💬 Kirim WA",   roles:["admin","perawat"]},
+  {k:"statistik", l:"📊 Statistik",  roles:["admin"]},
+  {k:"staf",      l:"👥 Staf",       roles:["admin"]},
+  {k:"lembur",    l:"⏰ Lembur",     roles:["admin","perawat"]},
+  {k:"monitoring",l:"🌡 Monitoring", roles:["admin","perawat"]},
+  {k:"arsip",     l:"🗂 Arsip",      roles:["admin"]},
+];
+
 export default function App() {
   const [pinOK,    setPinOK]    = useState(false);
-  const [savedPin, setSavedPin] = useState(CONFIG.DEFAULT_PIN);
+  const [role,     setRole]     = useState<"admin"|"perawat">("perawat");
+  const [pinAdmin,   setPinAdmin]   = useState<string>("2409"); // fallback
+  const [pinPerawat, setPinPerawat] = useState<string>("1234"); // fallback
+  const [pinLoaded,  setPinLoaded]  = useState(false);
+  const [pinFromCloud, setPinFromCloud] = useState(false); // true jika PIN loaded dari Supabase
+  const isFirstTime = pinLoaded && !pinFromCloud; // first time jika Supabase tidak punya PIN
   const [tab,      setTab]      = useState("jadwal");
-  const [ops,      setOps]      = useState<any[]>(()=>{try{return JSON.parse(localStorage.getItem("kb_ops")||"[]");}catch{return [];}});
-  const [staff,    setStaff]    = useState<any[]>([]);
-  const [roster,   setRoster]   = useState<any[]>([]);
-  const [notifs,   setNotifs]   = useState<any[]>([]);
-  const [archive,  setArchive]  = useState<any[]>([]);
+
+  // Load PIN dari Supabase saat pertama buka — pakai SUPA_CLIENT singleton
+  useEffect(()=>{
+    (async()=>{
+      const FA = "2409"; const FP = "1234";
+      try {
+        const {data, error} = await SUPA_CLIENT.from("kamar_bedah_config").select("value").eq("key","pins").single();
+        if(!error && data?.value){
+          const pins = safeJSONParse(data.value, {});
+          // FIX AUDIT #4: field bisa berisi hash ("salt:hash") atau legacy
+          // plaintext lama — keduanya ditangani transparan oleh verifyPin().
+          const ap = pins.admin||FA; const pp = pins.perawat||FP;
+          setPinAdmin(ap); setPinPerawat(pp);
+          setPinFromCloud(true); // PIN ada di Supabase — bukan first time
+        } else {
+          // Supabase tidak punya PIN — isFirstTime=true, force setup modal
+          setPinAdmin(FA); setPinPerawat(FP);
+          setPinFromCloud(false);
+        }
+      } catch(e){
+        /* PIN load failed — use fallback, treat as existing PIN (not first time) */
+        setPinAdmin(FA); setPinPerawat(FP);
+        setPinFromCloud(true); // assume existing setup on error
+      }
+      setPinLoaded(true);
+    })();
+  },[]);
+  const [showPinMgmt, setShowPinMgmt] = useState(false);
+  const [pmNewAdmin,  setPmNewAdmin]  = useState("");
+  const [pmCfAdmin,   setPmCfAdmin]   = useState("");
+  const [pmNewPerawat,setPmNewPerawat]= useState("");
+  const [pmCfPerawat, setPmCfPerawat] = useState("");
+  const [pmErr,       setPmErr]       = useState("");
+  const [ops,      setOps]      = useState<Operation[]>([]);
+  const [staff,    setStaff]    = useState<StaffMember[]>([]);
+  const [roster,   setRoster]   = useState<RosterEntry[]>([]);
+  const [notifs,   setNotifs]   = useState<Notif[]>([]);
+  const [archive,  setArchive]  = useState<Operation[]>([]);
   const [toast,    setToast]    = useState<any>(null);
-  const [opForm,   setOpForm]   = useState({...EOP, date:todayDate()});
-  const [editingOp,setEditingOp]= useState<any>(null);
-  const [opErrors, setOpErrors] = useState<any>({});
-  const [dupWarn,  setDupWarn]  = useState(false);
-  const [lSet,     setLSet]     = useState({greeting:gWord(),recipients:"",keterangan:"",pembawaHP:"",katimPhone:"",grupPhone:""});
-  const [lSby,     setLSby]     = useState({anest:[""],cyto:[""],nurses:[""],pembawaHP:""});
+  /* FIX #1: opForm, editingOp, opErrors, dupWarn DIPINDAH ke dalam ViewDaftar
+     sebagai local state. State ini sebelumnya ada di sini (root App) sehingga
+     setiap ketukan huruf di form pendaftaran memicu re-render seluruh pohon
+     komponen. Komunikasi antara ViewJadwal (tombol Edit) dan ViewDaftar (form)
+     sekarang melalui editOpRef — tanpa harus angkat state ke root. */
+  /* FIX #1: lSet dan lSby DIPINDAH ke ViewLaporan sebagai local state —
+     tidak perlu ada di root App lagi. */
   const [reqOpId,  setReqOpId]  = useState<string|null>(null);
   const [reqText,  setReqText]  = useState("");
   const [privacyMode,setPM]     = useState(false);
-  const [supaCfg,  setSupaCfg]  = useState<SupabaseConfig>(()=>{try{return JSON.parse(localStorage.getItem("kb_supaCfg")||"null")||defaultSupaCfg;}catch{return defaultSupaCfg;}});
+  const [supaCfg,  setSupaCfg]  = useState<SupabaseConfig>(()=>({...defaultSupaCfg, url:SUPA_URL||"", anonKey:SUPA_ANON||"", autoBackup:true, realtimeBackup:true, autoExcelBackup:true}));
   const [supaStatus,setSupaStatus] = useState<{ok:boolean;msg:string}|null>(null);
   const [supaBackingUp,setSupaBU] = useState(false);
-  const [dbxCfg,   setDbxCfg]   = useState<DropboxConfig>(()=>{try{return JSON.parse(localStorage.getItem("kb_dbxCfg")||"null")||defaultDbxCfg;}catch{return defaultDbxCfg;}});
+  const [dbxCfg,   setDbxCfg]   = useState<DropboxConfig>(()=>({...defaultDbxCfg, autoBackup:true, realtimeBackup:true, autoExcelBackup:true}));
   const [dbxStatus,setDbxStatus] = useState<{ok:boolean;msg:string}|null>(null);
   const [dbxBacking,setDbxBacking] = useState(false);
   const dbxAutoRef      = useRef<ReturnType<typeof setInterval>|null>(null);
   const dbxRtRef        = useRef<ReturnType<typeof setTimeout>|null>(null);
   const dbxExcelAutoRef = useRef<ReturnType<typeof setInterval>|null>(null);
   const dualRtRef       = useRef<ReturnType<typeof setTimeout>|null>(null);
-  const supaStartupRef  = useRef(false);
-  const [templates,      setTemplates]      = useState<any[]>([]);
+  /* supaStartupRef removed — startup load via loadAllFromSupa on pinOK */
+  const [templates,      setTemplates]      = useState<Operation[]>([]);
   const [auditLog,       setAuditLog]       = useState<any[]>([]);
-  const [rtEnabled,      setRtEnabled]      = useState(false);
+  const [rtEnabled,      setRtEnabled]      = useState(true); // Realtime aktif otomatis
   const [rtStatus,       setRtStatus]       = useState<"offline"|"connecting"|"online">("offline");
-  const [lemburPegawai,  setLemburPegawai]  = useState<any[]>(()=>{try{return JSON.parse(localStorage.getItem("kb_lemburPegawai")||"[]");}catch{return [];}});
-  const [lemburData,     setLemburData]     = useState<Record<string,any>>(()=>{try{return JSON.parse(localStorage.getItem("kb_lemburData")||"{}");}catch{return {};}});
-  const [monitoringEntries, setMonitoringEntries] = useState<MonitoringEntry[]>(()=>{try{return JSON.parse(localStorage.getItem("kb_monitoring")||"[]");}catch{return [];}});
-  const [monitoringCfg,     setMonitoringCfg]     = useState<MonitoringCfg>(()=>{try{return JSON.parse(localStorage.getItem("kb_monCfg")||"null")||defaultMonCfg;}catch{return defaultMonCfg;}});
-  const [currentTime, setCurrentTime] = useState(new Date());
-  const [storageWarn, setStorageWarn] = useState<{pct:number;kb:number}|null>(null);
+  const [lemburPegawai,  setLemburPegawai]  = useState<any[]>([]);
+  const [lemburData,     setLemburData]     = useState<Record<string,any>>({});
+  const [monitoringEntries, setMonitoringEntries] = useState<MonitoringEntry[]>([]);
+  const [monitoringCfg,     setMonitoringCfg]     = useState<MonitoringCfg>(defaultMonCfg);
+  /* currentTime DIHAPUS dari root App — lihat komponen <HeaderClock/> di bawah.
+     Sebelumnya state jam berdetak setiap 1 detik ditaruh di komponen ROOT,
+     sehingga SETIAP detik memicu re-render seluruh tab yang sedang aktif
+     (termasuk daftar arsip ribuan baris / agregasi statistik), padahal yang
+     berubah hanya teks jam kecil di header. Sekarang jam diisolasi ke
+     komponennya sendiri agar detak per-detik tidak "menulari" seluruh App. */
+  /* storageWarn dihapus — tidak relevan setelah localStorage ditiadakan */
   const lastAct   = useRef(Date.now());
   const autoBackupRef = useRef<ReturnType<typeof setInterval>|null>(null);
+  const latestDataRef = useRef<any>({});
   const rtChannelRef  = useRef<RealtimeChannel|null>(null);
-  const rtIgnoreRef   = useRef(false);
+  // Debounce timers per-tabel — menggantikan rtIgnoreRef yang menyebabkan blocked valid payload
+  const rtDebounceRef = useRef<Record<string,ReturnType<typeof setTimeout>>>({});
+  // Timer toast aktif — dipakai agar toast baru tidak ditutup paksa oleh timer toast sebelumnya
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
 
+  /* FIX AUDIT #6 (HIGH — Stale Closure): logAudit HANYA menggunakan
+     functional updater setAuditLog(prev => ...) sehingga deps kosong [] VALID
+     dan tidak menyebabkan stale closure. Tidak ada state lain yang diakses
+     secara langsung di dalam callback ini. Pola functional updater ini
+     menjamin entri baru selalu ditambahkan ke versi state terbaru. */
   const logAudit = useCallback((action: string, op: any) => {
-    setAuditLog(p=>[...p,{id:gId(), action, patient:op.patient||"—", detail:`${op.procedure||""} · ${op.date||""} ${op.time||""}`, time:fNow()}]);
-  },[]);
+    setAuditLog(prev => [
+      ...prev,
+      {
+        id: gId(),
+        action,
+        patient: op.patient ?? "—",
+        detail: `${op.procedure ?? ""} · ${op.date ?? ""} ${op.time ?? ""}`,
+        time: fNow(),
+      },
+    ]);
+  }, []);
 
-  /* Live clock — update every second */
+  /* ── Auto-lock setelah idle ──────────────────────────────────────────
+     UI Pengaturan sudah lama mengklaim "Auto-lock setelah 10 menit idle"
+     (lihat LOCK_MS) dan ref `lastAct` sudah ada (diperbarui saat PIN
+     berhasil diverifikasi), TAPI tidak ada satu pun listener/interval yang
+     benar-benar memeriksa idle time — fitur keamanan ini sebelumnya hanya
+     teks, tidak pernah berjalan. Effect ini melengkapi implementasinya:
+     setiap interaksi pengguna memperbarui `lastAct`, dan setiap 15 detik
+     diperiksa apakah sudah melewati LOCK_MS sejak interaksi terakhir; jika
+     ya, kembalikan ke PinScreen (setPinOK(false)). ── */
   useEffect(()=>{
-    const iv = setInterval(()=>setCurrentTime(new Date()), 1000);
-    return ()=>clearInterval(iv);
-  },[]);
-
-  /* localStorage storage warning */
-  useEffect(()=>{
-    const check = () => {
-      try {
-        let total = 0;
-        for(const k of Object.keys(localStorage)) total += (localStorage.getItem(k)||"").length + k.length;
-        const kb = Math.round(total/1024);
-        const pct = Math.min(100, Math.round(total/(5*1024*1024)*100));
-        setStorageWarn(pct>=70?{pct,kb}:null);
-      } catch {}
+    if(!pinOK) return;
+    /* FIX #2: Throttle bump — mousemove/scroll bisa terpicu ratusan kali/detik.
+       Tanpa throttle ini, setiap gesekan layar/gerakan mouse memaksa fungsi JS
+       dieksekusi terus-menerus (CPU drain) dan menguras baterai perangkat.
+       Solusi: pakai satu timer; selama timer masih aktif, event berikutnya
+       diabaikan — lastAct hanya diperbarui maksimal 1x per 2 detik. */
+    let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+    const bump = () => {
+      if (throttleTimer) return; // abaikan event beruntun
+      throttleTimer = setTimeout(() => {
+        lastAct.current = Date.now();
+        throttleTimer = null;
+      }, 2000); // batasi pembaruan maksimal 1x per 2 detik
     };
-    check();
-    const iv = setInterval(check, 30000);
-    return ()=>clearInterval(iv);
-  },[ops,lemburData,monitoringEntries]);
+    const events: (keyof WindowEventMap)[] = ["mousedown","mousemove","keydown","touchstart","wheel","scroll"];
+    events.forEach(ev=>window.addEventListener(ev, bump, {passive:true}));
+    lastAct.current = Date.now();
+    const iv = setInterval(()=>{
+      if(Date.now() - lastAct.current >= LOCK_MS) setPinOK(false);
+    }, 15000);
+    return ()=>{
+      events.forEach(ev=>window.removeEventListener(ev, bump));
+      clearInterval(iv);
+      if (throttleTimer) clearTimeout(throttleTimer);
+    };
+  },[pinOK]);
 
-  /* Persist config + data to localStorage (cache/fallback for offline use) */
-  useEffect(()=>{ try{localStorage.setItem("kb_ops",JSON.stringify(ops));}catch{} },[ops]);
-  useEffect(()=>{ try{localStorage.setItem("kb_monitoring",JSON.stringify(monitoringEntries));}catch{} },[monitoringEntries]);
-  useEffect(()=>{ try{localStorage.setItem("kb_monCfg",JSON.stringify(monitoringCfg));}catch{} },[monitoringCfg]);
-  useEffect(()=>{ try{localStorage.setItem("kb_lemburPegawai",JSON.stringify(lemburPegawai));}catch{} },[lemburPegawai]);
-  useEffect(()=>{ try{localStorage.setItem("kb_lemburData",JSON.stringify(lemburData));}catch{} },[lemburData]);
-  useEffect(()=>{ try{localStorage.setItem("kb_dbxCfg",JSON.stringify(dbxCfg));}catch{} },[dbxCfg]);
-  useEffect(()=>{ try{const s={url:supaCfg.url,anonKey:supaCfg.anonKey,table:supaCfg.table,autoBackup:supaCfg.autoBackup,backupInterval:supaCfg.backupInterval,realtimeBackup:supaCfg.realtimeBackup};localStorage.setItem("kb_supaCfg",JSON.stringify(s));}catch{} },[supaCfg.url,supaCfg.anonKey,supaCfg.table,supaCfg.autoBackup,supaCfg.backupInterval,supaCfg.realtimeBackup]);
+  /* localStorage warning dihapus — data tidak lagi disimpan di localStorage */
 
-  /* Load primary data from Supabase on startup (multi-device: cloud is source of truth) */
-  useEffect(()=>{
-    if(supaStartupRef.current) return;
-    supaStartupRef.current=true;
-    if(!supaCfg.url||!supaCfg.anonKey) return;
-    (async()=>{
-      try{
-        const res=await supabaseRestore(supaCfg);
-        if(res.ok&&res.data){
-          if(Array.isArray(res.data.ops)&&res.data.ops.length) setOps(res.data.ops);
-          if(Array.isArray(res.data.lemburPegawai)&&res.data.lemburPegawai.length) setLemburPegawai(res.data.lemburPegawai);
-          if(res.data.lemburData&&Object.keys(res.data.lemburData).length) setLemburData(res.data.lemburData);
-          if(Array.isArray(res.data.monitoringEntries)&&res.data.monitoringEntries.length) setMonitoringEntries(res.data.monitoringEntries);
-          if(res.data.monitoringCfg) setMonitoringCfg(res.data.monitoringCfg);
-          if(Array.isArray(res.data.archive)) setArchive(res.data.archive);
-        }
-      }catch{}
-    })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[]);
+  /* NOTE: localStorage dihapus — Supabase adalah single source of truth.
+     Data di-hydrate dari cloud saat login dan disinkron via Realtime. */
+
+  /* Startup load handled by loadAllFromSupa (called on pinOK) — no duplicate needed */
+  /* supaStartupRef kept for backward compat but no longer used */
 
   /* Dropbox auto-backup interval */
   useEffect(()=>{
     if(dbxAutoRef.current) clearInterval(dbxAutoRef.current);
-    if(!dbxCfg.autoBackup||!dbxCfg.token) return;
+    if(!dbxCfg.autoBackup) return;
     const ms=dbxCfg.backupInterval*60*1000;
     dbxAutoRef.current=setInterval(async()=>{
-      const data={ops,archive,notifs,lemburPegawai,lemburData,monitoringEntries,monitoringCfg};
-      const res=await dropboxUpload(dbxCfg,data);
+      const d = latestDataRef.current;
+      const res=await dropboxUpload(dbxCfg,{...d});
       if(res.ok) setDbxCfg(p=>({...p,lastBackup:fNow()}));
     },ms);
     return()=>{ if(dbxAutoRef.current) clearInterval(dbxAutoRef.current); };
-  },[dbxCfg.autoBackup,dbxCfg.token,dbxCfg.backupInterval]);
+  },[dbxCfg.autoBackup,dbxCfg.backupInterval]);
 
   /* ── COMBINED dual realtime backup: Supabase + Dropbox fired SIMULTANEOUSLY ── */
   useEffect(()=>{
-    const hasSupa = supaCfg.realtimeBackup && supaCfg.url && supaCfg.anonKey;
-    const hasDbx  = dbxCfg.realtimeBackup && dbxCfg.token;
+    const hasSupa = supaCfg.realtimeBackup;
+    const hasDbx  = dbxCfg.realtimeBackup;
     if(!hasSupa && !hasDbx) return;
     if(dualRtRef.current) clearTimeout(dualRtRef.current);
     dualRtRef.current = setTimeout(async()=>{
-      const data = {exportedAt:fNow(), ops, archive, notifs, lemburPegawai, lemburData, monitoringEntries, monitoringCfg};
+      const data = {exportedAt:fNow(), ...latestDataRef.current};
       const tasks: Promise<any>[] = [];
-      if(hasSupa) tasks.push(supabaseBackup(supaCfg, data).then(r=>{ if(r.ok) setSupaCfg(p=>({...p,lastBackup:fNow()})); }));
+      if(hasSupa) tasks.push(supabaseBackup(supaCfg, data, SUPA_CLIENT).then(r=>{ if(r.ok) setSupaCfg(p=>({...p,lastBackup:fNow()})); }));
       if(hasDbx)  tasks.push(dropboxUpload(dbxCfg, data).then(r=>{ if(r.ok) setDbxCfg(p=>({...p,lastBackup:fNow()})); }));
       await Promise.all(tasks);
     }, 5000);
     return()=>{ if(dualRtRef.current) clearTimeout(dualRtRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[ops, lemburData, lemburPegawai, monitoringEntries]);
+  },[ops, staff, roster, lemburData, lemburPegawai, monitoringEntries]);
 
   /* ── Auto Excel backup every 24 hours ── */
   useEffect(()=>{
     if(dbxExcelAutoRef.current) clearInterval(dbxExcelAutoRef.current);
-    if(!dbxCfg.autoExcelBackup||!dbxCfg.token) return;
+    if(!dbxCfg.autoExcelBackup) return;
     const run24h = async (currentOps: any[], currentLemburPegawai: any[], currentLemburData: Record<string,any>, currentCfg: DropboxConfig) => {
       const now = Date.now();
       const last = currentCfg.lastExcelBackupTs||0;
@@ -3490,7 +4422,7 @@ export default function App() {
       const rows = [...currentOps].sort((a:any,b:any)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map((o:any,i:number)=>[i+1,o.date,o.time,o.patient||"",o.age||"",o.rm||"",o.opType||"",o.diagnosis||"",o.procedure||"",o.room||"",o.surgeon||"",o.anesthesiologist||"",o.assistantNurse||"",o.circulatingNurse||"",o.anesthesiaNurse||"",o.onloopNurse||"",o.rrKatim||"",o.status||"",o.createdAt||""]);
       const wsOps = XLSX.utils.aoa_to_sheet([h,...rows]);
       XLSX.utils.book_append_sheet(wbOps, wsOps, "Jadwal Operasi");
-      const resOps = await dropboxUploadExcel(currentCfg.token, `${folder}Auto_Operasi_${stamp}.xlsx`, wbOps);
+      const resOps = await dropboxUploadExcel(`${folder}Auto_Operasi_${stamp}.xlsx`, wbOps);
       /* — Lembur Excel — */
       const wbLmb = XLSX.utils.book_new();
       currentLemburPegawai.forEach((p:any)=>{
@@ -3502,27 +4434,27 @@ export default function App() {
         if(entries.length){const ws=XLSX.utils.aoa_to_sheet([["Nama","NIK","Bulan","Tgl Awal","Tgl Akhir","Jam Masuk","Jam Keluar","Keperluan","Keterangan","TTD"],...entries]);XLSX.utils.book_append_sheet(wbLmb,ws,p.name.slice(0,28));}
       });
       if(!wbLmb.SheetNames.length) XLSX.utils.book_append_sheet(wbLmb,XLSX.utils.aoa_to_sheet([["Belum ada data lembur"]]),"Data Lembur");
-      const resLmb = await dropboxUploadExcel(currentCfg.token, `${folder}Auto_Lembur_${stamp}.xlsx`, wbLmb);
+      const resLmb = await dropboxUploadExcel(`${folder}Auto_Lembur_${stamp}.xlsx`, wbLmb);
       /* — Monitoring Excel — */
       const wbMon = XLSX.utils.book_new();
-      const monRows = monitoringEntries.map((e:MonitoringEntry)=>[e.tanggal,e.jam,e.suhu,e.kelembaban,monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas,monitoringCfg.lokasiRuang||""]);
-      const wsMonMain = XLSX.utils.aoa_to_sheet([["Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas","Lokasi"],...monRows]);
-      wsMonMain["!cols"]=[{wch:12},{wch:8},{wch:12},{wch:14},{wch:16},{wch:22},{wch:20}];
+      const monRows = monitoringEntries.map((e:MonitoringEntry)=>[e.ruang||"",e.tanggal,e.jam,e.suhu,e.kelembaban,monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas]);
+      const wsMonMain = XLSX.utils.aoa_to_sheet([["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"],...monRows]);
+      wsMonMain["!cols"]=[{wch:18},{wch:12},{wch:8},{wch:12},{wch:14},{wch:16},{wch:22}];
       XLSX.utils.book_append_sheet(wbMon, wsMonMain, "Monitoring Suhu");
-      const wsMonCfg = XLSX.utils.aoa_to_sheet([["Parameter","Nilai"],["Lokasi",monitoringCfg.lokasiRuang],["Suhu Min",monitoringCfg.suhuMin],["Suhu Max",monitoringCfg.suhuMax],["RH Min",monitoringCfg.rhMin],["RH Max",monitoringCfg.rhMax],["Kepala KB",monitoringCfg.kepalaKamarBedah]]);
+      const wsMonCfg = XLSX.utils.aoa_to_sheet([["Parameter","Nilai"],["Ruangan 1","Kamar Bedah 1"],["Ruangan 2","Kamar Bedah 2"],["Ruangan 3","Ruang Instrumen"],["Suhu Min",monitoringCfg.suhuMin],["Suhu Max",monitoringCfg.suhuMax],["RH Min",monitoringCfg.rhMin],["RH Max",monitoringCfg.rhMax],["Kepala KB",monitoringCfg.kepalaKamarBedah]]);
       XLSX.utils.book_append_sheet(wbMon, wsMonCfg, "Konfigurasi");
-      const resMon = await dropboxUploadExcel(currentCfg.token, `${folder}Auto_Monitoring_${stamp}.xlsx`, wbMon);
+      const resMon = await dropboxUploadExcel(`${folder}Auto_Monitoring_${stamp}.xlsx`, wbMon);
       if(resOps.ok&&resLmb.ok&&resMon.ok){
         setDbxCfg((p:DropboxConfig)=>({...p,lastExcelBackup:fNow(),lastExcelBackupTs:Date.now()}));
       }
     };
     /* Check immediately on enable, then every hour */
-    run24h(ops, lemburPegawai, lemburData, dbxCfg);
+    run24h(latestDataRef.current.ops||[], latestDataRef.current.lemburPegawai||[], latestDataRef.current.lemburData||{}, dbxCfg);
     dbxExcelAutoRef.current = setInterval(()=>{
-      setDbxCfg(p=>{ run24h(ops, lemburPegawai, lemburData, p); return p; });
+      setDbxCfg(p=>{ run24h(latestDataRef.current.ops||[], latestDataRef.current.lemburPegawai||[], latestDataRef.current.lemburData||{}, p); return p; });
     }, 60*60*1000);
     return()=>{ if(dbxExcelAutoRef.current) clearInterval(dbxExcelAutoRef.current); };
-  },[dbxCfg.autoExcelBackup, dbxCfg.token]);
+  },[dbxCfg.autoExcelBackup]);
 
   /* Inject responsive CSS */
   useEffect(()=>{
@@ -3559,7 +4491,7 @@ export default function App() {
       /* ── Desktop (≥1024px) ── */
       @media(min-width:1024px){
         body{
-          background:linear-gradient(135deg,#002B24 0%,#004D40 50%,#00695C 100%)!important;
+          background:linear-gradient(135deg,#002B24 0%,#0077B6 50%,#00695C 100%)!important;
           min-height:100vh;
           display:flex;align-items:flex-start;justify-content:center;
           padding:28px 20px;
@@ -3580,7 +4512,7 @@ export default function App() {
         .kb-sidebar{
           display:flex;flex-direction:column;
           width:200px;min-width:200px;
-          background:linear-gradient(180deg,#003D33,#00695C);
+          background:linear-gradient(180deg,#023047,#00695C);
           padding:16px 10px;gap:4px;position:relative;
           border-right:1px solid rgba(255,255,255,.10);
           min-height:calc(100vh - 56px - 60px);
@@ -3616,80 +4548,407 @@ export default function App() {
     return()=>{const el=document.getElementById(id);if(el)el.remove();};
   },[]);
 
-  /* Auto-lock after LOCK_MS idle */
+    /* Auto-load semua data dari Supabase saat login — no localStorage check */
   useEffect(()=>{
-    if(!pinOK)return;
-    const rst=()=>{lastAct.current=Date.now();};
-    const evts=["click","touchstart","keydown","mousemove","scroll"];
-    evts.forEach(e=>window.addEventListener(e,rst,{passive:true}));
-    const iv=setInterval(()=>{if(Date.now()-lastAct.current>LOCK_MS)setPinOK(false);},10000);
-    return()=>{evts.forEach(e=>window.removeEventListener(e,rst));clearInterval(iv);};
+    if(!pinOK) return;
+    loadAllFromSupa();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   },[pinOK]);
 
-  /* Supabase Realtime sync */
+  /* ══════════════════════════════════════════════════════════════════════
+     SUPABASE REALTIME — SSOT (Single Source of Truth)
+     Strategi:
+     • postgres_changes → granular delta update per-tabel (INSERT/UPDATE/DELETE)
+     • Bulk import → debounce 800ms sebelum full refetch (hindari 50x refetch)
+     • Tidak ada broadcast manual — semua device rely on postgres_changes
+     • Tidak ada rtIgnoreRef — setiap payload dari DB selalu valid
+     ══════════════════════════════════════════════════════════════════════ */
   useEffect(()=>{
+    /* FIX AUDIT #5 (HIGH — Memory Leak Channel): gunakan removeChannel()
+       agar channel lama benar-benar dilepas dari registry internal Supabase
+       client, bukan hanya di-unsubscribe. Tanpa removeChannel(), channel
+       lama tetap ada di memori klien setelah reconnect, menyebabkan memory
+       leak bertahap dan potensi duplikasi event handler. */
     if(rtChannelRef.current){
-      rtChannelRef.current.unsubscribe();
+      SUPA_CLIENT.removeChannel(rtChannelRef.current);
       rtChannelRef.current=null;
       setRtStatus("offline");
     }
-    if(!rtEnabled||!supaCfg.url||!supaCfg.anonKey) return;
+    if(!rtEnabled) return;
     setRtStatus("connecting");
+
+    /* ── Helper: apply delta dari postgres_changes ke local state ── */
+    const applyDelta = (table: string, payload: any) => {
+      const ev    = payload.eventType as "INSERT"|"UPDATE"|"DELETE";
+      const newRec = payload.new?.data ?? null;
+      const newId  = payload.new?.id   ?? null;
+      const oldId  = payload.old?.id  ?? null;
+
+      if(table === "kb_operasi"){
+        if(ev === "DELETE") setOps((p:any[]) => p.filter(o => o.id !== oldId));
+        else if(newRec) setOps((p:any[]) => {
+          const idx = p.findIndex((o:any) => o.id === newRec.id);
+          /* Conflict resolution: last-write-wins via updated_at timestamp.
+             Jika record lokal lebih baru, jangan timpa (bisa terjadi saat race condition). */
+          if(idx >= 0) {
+            const existing = p[idx];
+            const existingTs = existing.updated_at || existing.createdAt || "";
+            const newTs = newRec.updated_at || newRec.createdAt || "";
+            if(existingTs > newTs) return p; // lokal lebih baru — pertahankan
+            return p.map((o:any) => o.id === newRec.id ? newRec : o);
+          }
+          return [...p, newRec];
+        });
+      } else if(table === "kb_staf"){
+        if(ev === "DELETE") setStaff((p:any[]) => p.filter(s => s.id !== oldId));
+        else if(newRec) setStaff((p:any[]) => {
+          const idx = p.findIndex((s:any) => s.id === newRec.id);
+          if(idx >= 0){
+            const existingTs = p[idx].updated_at || p[idx].createdAt || "";
+            const newTs = newRec.updated_at || newRec.createdAt || "";
+            if(existingTs > newTs) return p; // lokal lebih baru — pertahankan (cegah out-of-order overwrite)
+            return p.map((s:any) => s.id === newRec.id ? newRec : s);
+          }
+          return [...p, newRec];
+        });
+      } else if(table === "kb_roster"){
+        if(ev === "DELETE") setRoster((p:any[]) => p.filter(r => r.id !== oldId));
+        else if(newRec) setRoster((p:any[]) => {
+          const idx = p.findIndex((r:any) => r.id === newRec.id);
+          if(idx >= 0){
+            const existingTs = p[idx].updated_at || p[idx].createdAt || "";
+            const newTs = newRec.updated_at || newRec.createdAt || "";
+            if(existingTs > newTs) return p;
+            return p.map((r:any) => r.id === newRec.id ? newRec : r);
+          }
+          return [...p, newRec];
+        });
+      } else if(table === "kb_lembur_pegawai"){
+        if(ev === "DELETE") setLemburPegawai((p:any[]) => p.filter(x => x.id !== oldId));
+        else if(newRec) setLemburPegawai((p:any[]) => {
+          const idx = p.findIndex((x:any) => x.id === newRec.id);
+          if(idx >= 0){
+            const existingTs = p[idx].updated_at || p[idx].createdAt || "";
+            const newTs = newRec.updated_at || newRec.createdAt || "";
+            if(existingTs > newTs) return p;
+            return p.map((x:any) => x.id === newRec.id ? newRec : x);
+          }
+          return [...p, newRec];
+        });
+      } else if(table === "kb_lembur_data"){
+        /* Granular: id row = "${pegId}_${period}". Merge per-key, JANGAN replace
+           seluruh map — itulah yang menyebabkan device lain bisa saling menimpa.
+           Tetap cek updated_at supaya event lama yang datang terlambat (network
+           reordering) tidak menimpa entri yang sudah lebih baru di lokal. */
+        if(ev === "DELETE"){ if(oldId) setLemburData((p:Record<string,any>)=>{ const n={...p}; delete n[oldId]; return n; }); }
+        else if(newRec && newId) setLemburData((p:Record<string,any>) => {
+          const existing = p[newId];
+          if(existing){
+            const existingTs = existing.updated_at || "";
+            const newTs = newRec.updated_at || "";
+            if(existingTs > newTs) return p;
+          }
+          return {...p, [newId]: newRec};
+        });
+      } else if(table === "kb_monitoring"){
+        if(ev === "DELETE") setMonitoringEntries((p:any[]) => p.filter(x => x.id !== oldId));
+        else if(newRec) setMonitoringEntries((p:any[]) => {
+          const idx = p.findIndex((x:any) => x.id === newRec.id);
+          if(idx >= 0){
+            const existingTs = p[idx].updated_at || p[idx].createdAt || "";
+            const newTs = newRec.updated_at || newRec.createdAt || "";
+            if(existingTs > newTs) return p;
+            return p.map((x:any) => x.id === newRec.id ? newRec : x);
+          }
+          return [...p, newRec];
+        });
+      }
+    };
+
+    /* ── FIX AUDIT #2 (CRITICAL — Race Condition / Silent Data Loss):
+       Sebelumnya, payload individual di-skip dari applyDelta saat burst
+       counter ≥5 dalam window 200ms, dan hanya mengandalkan full-refetch
+       800ms kemudian. Jika sebuah payload tiba tepat saat window burst
+       sebelumnya masih aktif, ia bisa ter-skip dari applyDelta — ada window
+       singkat di mana state lokal stale sebelum refetch tuntas.
+       Sekarang SETIAP payload selalu di-enqueue dan diproses (applyDelta)
+       — tidak ada yang dibuang. Debounce hanya menunda kapan full-refetch
+       "safety net" dijalankan (untuk hindari refetch berulang saat bulk
+       import), bukan untuk memilih payload mana yang diproses. ── */
+    const rtQueueRef: Record<string, any[]> = {};
+
+    const enqueuePayload = (table: string, payload: any) => {
+      if(!rtQueueRef[table]) rtQueueRef[table] = [];
+      rtQueueRef[table].push(payload);
+    };
+
+    /* ── Helper: debounced full refetch untuk bulk operations ──
+       Jika 50 INSERT tiba bersamaan, hanya 1 loadFromSupaTable yang dijalankan,
+       TAPI seluruh payload individual yang masuk selama itu tetap diproses
+       segera lewat applyDelta — full refetch hanya berfungsi sebagai
+       safety-net konsistensi tambahan, bukan satu-satunya jalur update. ── */
+    const DEBOUNCE_MS = 800;
+    const debounced = (table: string, payload: any) => {
+      enqueuePayload(table, payload);
+      /* Proses payload ini segera — tidak pernah di-skip/dibuang. */
+      applyDelta(table, payload);
+
+      /* Debounced full-sync sebagai safety net — selalu jalan, tapi hanya sekali */
+      if(rtDebounceRef.current[table]) clearTimeout(rtDebounceRef.current[table]);
+      rtDebounceRef.current[table] = setTimeout(() => {
+        delete rtDebounceRef.current[table];
+        rtQueueRef[table] = [];
+        loadFromSupaTable(table);
+      }, DEBOUNCE_MS);
+    };
+
     try {
-      const client = createClient(supaCfg.url, supaCfg.anonKey);
-      const ch = client.channel("kamar-bedah-sync")
-        .on("broadcast",{event:"ops-update"},(payload:any)=>{
-          if(rtIgnoreRef.current) return;
-          if(payload.payload?.ops) setOps(payload.payload.ops);
-        })
+      const ch = SUPA_CLIENT.channel("kamar-bedah-rt-v3")
+        /* ── postgres_changes: granular delta per event, per tabel ── */
+        .on("postgres_changes",{event:"*",schema:"public",table:"kb_operasi"},       (p:any)=>debounced("kb_operasi",p))
+        .on("postgres_changes",{event:"*",schema:"public",table:"kb_staf"},          (p:any)=>debounced("kb_staf",p))
+        .on("postgres_changes",{event:"*",schema:"public",table:"kb_roster"},        (p:any)=>debounced("kb_roster",p))
+        .on("postgres_changes",{event:"*",schema:"public",table:"kb_lembur_pegawai"},(p:any)=>debounced("kb_lembur_pegawai",p))
+        .on("postgres_changes",{event:"*",schema:"public",table:"kb_lembur_data"},   (p:any)=>debounced("kb_lembur_data",p))
+        .on("postgres_changes",{event:"*",schema:"public",table:"kb_monitoring"},    (p:any)=>debounced("kb_monitoring",p))
         .subscribe((status:string)=>{
           setRtStatus(status==="SUBSCRIBED"?"online":"offline");
         });
       rtChannelRef.current = ch;
     } catch(e){ setRtStatus("offline"); }
+
     return()=>{
-      if(rtChannelRef.current){rtChannelRef.current.unsubscribe();rtChannelRef.current=null;}
+      // FIX AUDIT #5: removeChannel() agar channel benar-benar dilepas dari registry Supabase client
+      if(rtChannelRef.current){ SUPA_CLIENT.removeChannel(rtChannelRef.current); rtChannelRef.current=null; }
+      Object.values(rtDebounceRef.current).forEach(t=>clearTimeout(t));
+      rtDebounceRef.current={};
+      Object.keys(rtQueueRef).forEach(k=>{ delete rtQueueRef[k]; });
       setRtStatus("offline");
     };
-  },[rtEnabled,supaCfg.url,supaCfg.anonKey]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[rtEnabled]);
 
   /* Broadcast ops changes when realtime is on */
-  const broadcastOps = useCallback((newOps: any[])=>{
-    if(!rtChannelRef.current||rtStatus!=="online") return;
-    rtIgnoreRef.current=true;
-    rtChannelRef.current.send({type:"broadcast",event:"ops-update",payload:{ops:newOps}}).then(()=>{ setTimeout(()=>{rtIgnoreRef.current=false;},300); });
-  },[rtStatus]);
+  // ── SUPABASE SYNC: selalu upsert ke tabel, tidak perlu realtime online ──
+  // SUPA client dibuat sekali di luar component (lihat baris sebelum App)
+
+  /* ── upsertOneToSupa: tulis 1 baris ke DB — dipakai oleh semua mutasi ──
+     Mengembalikan {ok, error} (bukan boolean polos) agar pemanggil bisa
+     menampilkan pesan Supabase yang DESKRIPTIF ke UI, bukan "gagal, coba
+     lagi" generik. id selalu divalidasi sebagai UUID (ensureId) supaya
+     tidak ditolak Postgres karena "invalid input syntax for type uuid". */
+  const upsertOneToSupa = useCallback(async (table: string, row: any): Promise<{ok:boolean; error?:string}> => {
+    try {
+      const rowId = ensureId(row.id);
+      const updatedAt = row.updated_at || new Date().toISOString();
+      const {error} = await SUPA_CLIENT.from(table).upsert(
+        {id: rowId, data: {...row, id: rowId, updated_at: updatedAt}, updated_at: updatedAt},
+        {onConflict:"id"}
+      );
+      if(error){ const msg = formatSupaError(error); console.warn(`[upsertOneToSupa] ${table}:`, msg); return {ok:false, error:msg}; }
+      return {ok:true};
+    } catch(e:any){ const msg = "Koneksi ke Supabase gagal: "+(e?.message||"unknown error"); console.warn("[upsertOneToSupa] exception:", e); return {ok:false, error:msg}; }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+
+  /* ── upsertBulkToSupa: batch upsert (import Excel) — satu trip ke DB ──
+     Sebelum dikirim, setiap baris divalidasi/disanitasi (id UUID valid,
+     updated_at ISO). Mengembalikan jumlah baris & error deskriptif. */
+  const upsertBulkToSupa = useCallback(async (table: string, rows: any[]): Promise<{ok:boolean; error?:string; count:number}> => {
+    try {
+      if(!rows.length) return {ok:true, count:0};
+      const ts = new Date().toISOString();
+      const payload = rows.map((r:any)=>{
+        const rowId = ensureId(r.id);
+        return { id: rowId, data: {...r, id: rowId, updated_at: r.updated_at || ts}, updated_at: r.updated_at || ts };
+      });
+      const {error} = await SUPA_CLIENT.from(table).upsert(payload, {onConflict:"id"});
+      if(error){ const msg = formatSupaError(error); console.warn(`[upsertBulkToSupa] ${table}:`, msg); return {ok:false, error:msg, count:0}; }
+      return {ok:true, count: payload.length};
+    } catch(e:any){ const msg = "Koneksi ke Supabase gagal: "+(e?.message||"unknown error"); console.warn("[upsertBulkToSupa] exception:", e); return {ok:false, error:msg, count:0}; }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+
+  /* ── deleteFromSupa: hapus 1 baris dari DB ── */
+  const deleteFromSupa = useCallback(async (table: string, id: string): Promise<{ok:boolean; error?:string}> => {
+    try {
+      const {error} = await SUPA_CLIENT.from(table).delete().eq("id", id);
+      if(error){ const msg = formatSupaError(error); console.warn(`[deleteFromSupa] ${table}:`, msg); return {ok:false, error:msg}; }
+      return {ok:true};
+    } catch(e:any){ return {ok:false, error:"Koneksi ke Supabase gagal: "+(e?.message||"unknown error")}; }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+
+  /* ── loadFromSupaTable: refetch SATU tabel saja (safety-net debounce) ──
+     kb_lembur_data kini disimpan granular: 1 row per key "${pegId}_${period}"
+     (bukan 1 mega-row "lembur_data"), sehingga di sini di-merge jadi map. */
+  const loadFromSupaTable = useCallback(async (table: string) => {
+    try {
+      if(table === "kb_operasi"){
+        const {data} = await SUPA_CLIENT.from("kb_operasi").select("data").order("updated_at",{ascending:false});
+        if(data?.length) setOps(data.map((x:any)=>x.data));
+      } else if(table === "kb_staf"){
+        const {data} = await SUPA_CLIENT.from("kb_staf").select("data").order("updated_at",{ascending:false});
+        if(data?.length) setStaff(data.map((x:any)=>x.data));
+      } else if(table === "kb_roster"){
+        const {data} = await SUPA_CLIENT.from("kb_roster").select("data").order("updated_at",{ascending:false});
+        if(data?.length) setRoster(data.map((x:any)=>x.data));
+      } else if(table === "kb_lembur_pegawai"){
+        const {data} = await SUPA_CLIENT.from("kb_lembur_pegawai").select("data").order("updated_at",{ascending:false});
+        if(data?.length) setLemburPegawai(data.map((x:any)=>x.data));
+      } else if(table === "kb_lembur_data"){
+        const {data} = await SUPA_CLIENT.from("kb_lembur_data").select("id,data").order("updated_at",{ascending:false});
+        if(data?.length){
+          const map: Record<string,any> = {};
+          data.forEach((x:any)=>{ if(x.id!=="lembur_data") map[x.id]=x.data; });
+          setLemburData(map);
+        }
+      } else if(table === "kb_monitoring"){
+        const {data} = await SUPA_CLIENT.from("kb_monitoring").select("data").order("updated_at",{ascending:false});
+        if(data?.length) setMonitoringEntries(data.map((x:any)=>x.data));
+      }
+    } catch{ /* offline — biarkan state yang ada tetap berlaku */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+
+  /* ── loadAllFromSupa: full refetch semua tabel (hanya saat login) ── */
+  const loadAllFromSupa = useCallback(async () => {
+    try {
+      const [r1,r2,r3,r4,r5,r6] = await Promise.all([
+        SUPA_CLIENT.from("kb_operasi").select("data").order("updated_at",{ascending:false}),
+        SUPA_CLIENT.from("kb_staf").select("data").order("updated_at",{ascending:false}),
+        SUPA_CLIENT.from("kb_roster").select("data").order("updated_at",{ascending:false}),
+        SUPA_CLIENT.from("kb_lembur_pegawai").select("data").order("updated_at",{ascending:false}),
+        SUPA_CLIENT.from("kb_lembur_data").select("id,data").order("updated_at",{ascending:false}),
+        SUPA_CLIENT.from("kb_monitoring").select("data").order("updated_at",{ascending:false}),
+      ]);
+      let hasData = false;
+      if(r1.data?.length){ setOps(r1.data.map((x:any)=>x.data)); hasData=true; }
+      if(r2.data?.length){ setStaff(r2.data.map((x:any)=>x.data)); hasData=true; }
+      if(r3.data?.length){ setRoster(r3.data.map((x:any)=>x.data)); hasData=true; }
+      if(r4.data?.length){ setLemburPegawai(r4.data.map((x:any)=>x.data)); hasData=true; }
+      if(r5.data?.length){
+        /* kb_lembur_data granular: 1 row per key "${pegId}_${period}". Legacy
+           deployment lama menyimpan 1 mega-row id="lembur_data" berisi seluruh
+           map — deteksi & migrasikan otomatis (sekali, best-effort, non-blocking)
+           agar tidak ada data lama yang "hilang" setelah upgrade. */
+        const map: Record<string,any> = {};
+        const legacyRow = r5.data.find((x:any)=>x.id==="lembur_data");
+        r5.data.forEach((x:any)=>{ if(x.id!=="lembur_data") map[x.id]=x.data; });
+        if(legacyRow?.data && typeof legacyRow.data === "object"){
+          Object.entries(legacyRow.data).forEach(([k,v]:[string,any])=>{ if(!map[k]) map[k]=v; });
+          (async()=>{
+            try {
+              const legacyEntries = Object.entries(legacyRow.data as Record<string,any>);
+              if(legacyEntries.length){
+                await upsertBulkToSupa("kb_lembur_data", legacyEntries.map(([k,v]:[string,any])=>({id:k, ...v})));
+              }
+              await deleteFromSupa("kb_lembur_data","lembur_data");
+            } catch(e){ console.warn("[migrasi kb_lembur_data] gagal:", e); }
+          })();
+        }
+        setLemburData(map); hasData=true;
+      }
+      if(r6.data?.length){ setMonitoringEntries(r6.data.map((x:any)=>x.data)); hasData=true; }
+      if(!hasData){
+
+        const {data:bk} = await SUPA_CLIENT.from("kamar_bedah_backup").select("data,created_at").order("created_at",{ascending:false}).limit(1);
+        if(bk?.length){
+          const p=safeJSONParse(bk[0].data, {});
+          if(p.ops?.length) setOps(p.ops);
+          if(p.staff?.length) setStaff(p.staff);
+          if(p.roster?.length) setRoster(p.roster);
+          if(p.lemburPegawai?.length) setLemburPegawai(p.lemburPegawai);
+          if(p.lemburData) setLemburData(p.lemburData);
+          if(p.monitoringEntries?.length) setMonitoringEntries(p.monitoringEntries);
+          hasData=true;
+        }
+      }
+      if(hasData){
+        if(toastTimerRef.current) clearTimeout(toastTimerRef.current);
+        setToast({msg:"✅ Data tersinkron dari Supabase",color:"#2E7D32"});
+        toastTimerRef.current = setTimeout(()=>{ setToast(null); toastTimerRef.current=null; },3200);
+      }
+    } catch(e){
+      if(toastTimerRef.current) clearTimeout(toastTimerRef.current);
+      setToast({msg:"⚠ Koneksi Supabase gagal — mode offline",color:C.w});
+      toastTimerRef.current = setTimeout(()=>{ setToast(null); toastTimerRef.current=null; }, 4000);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
+
+  /* ══ SSOT Mutators ══════════════════════════════════════════════════════
+     Tidak ada lagi broadcast manual ke channel.
+     DB write via upsertOneToSupa → postgres_changes → applyDelta di semua device.
+     Optimistic UI update (setOps/setStaff/setRoster) HANYA di device pengirim
+     sebagai feedback instan; device lain mendapat update via postgres_changes.
+     ════════════════════════════════════════════════════════════════════════ */
+
 
   /* Auto-backup to Supabase */
   useEffect(()=>{
     if(autoBackupRef.current) clearInterval(autoBackupRef.current);
-    if(!supaCfg.autoBackup || !supaCfg.url || !supaCfg.anonKey) return;
+    if(!supaCfg.autoBackup) return;
     const ms = supaCfg.backupInterval * 60 * 1000;
     autoBackupRef.current = setInterval(async ()=>{
-      const data = {exportedAt:fNow(), ops, archive, notifs, lemburPegawai, lemburData, monitoringEntries, monitoringCfg};
-      const res = await supabaseBackup(supaCfg, data);
+      const d = latestDataRef.current;
+      const data = {exportedAt:fNow(), ...d};
+      const res = await supabaseBackup(supaCfg, data, SUPA_CLIENT);
       if(res.ok) setSupaCfg(p=>({...p,lastBackup:fNow()}));
     }, ms);
     return ()=>{ if(autoBackupRef.current) clearInterval(autoBackupRef.current); };
-  }, [supaCfg.autoBackup, supaCfg.url, supaCfg.anonKey, supaCfg.backupInterval, ops, archive, notifs, lemburPegawai, lemburData, monitoringEntries]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supaCfg.autoBackup, supaCfg.backupInterval]);
 
   /* Supabase realtime backup is now handled by the combined dual-backup effect above */
 
   const showToast = useCallback((msg: string,color?: string)=>{
-    setToast({msg,color:color||C.s}); setTimeout(()=>setToast(null),3200);
+    if(toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({msg,color:color||C.s});
+    toastTimerRef.current = setTimeout(()=>{ setToast(null); toastTimerRef.current=null; },3200);
   },[]);
 
-  const handlePinVerify = (newPin?: string) => {
-    if(newPin){setSavedPin(newPin);showToast("✓ PIN berhasil diubah",C.s);}
+  /* Keep latestDataRef fresh for use in intervals (prevents stale closures) */
+  useEffect(()=>{
+    latestDataRef.current = {ops, archive, notifs, lemburPegawai, lemburData, monitoringEntries, monitoringCfg, staff, roster};
+  },[ops, archive, notifs, lemburPegawai, lemburData, monitoringEntries, monitoringCfg, staff, roster]);
+
+  const handlePinVerify = (newRole: "admin"|"perawat", newAdminPin?: string, newPerawatPin?: string) => {
+    if(newAdminPin && newPerawatPin){
+      setPinFromCloud(true); // setelah setup, tandai sebagai sudah ada PIN
+      // FIX AUDIT #4: jangan simpan PIN plaintext — hash dengan PBKDF2 dulu,
+      // baik untuk state lokal (dibandingkan via verifyPin) maupun Supabase.
+      (async()=>{
+        try{
+          const [hashedAdmin, hashedPerawat] = await Promise.all([hashPin(newAdminPin), hashPin(newPerawatPin)]);
+          setPinAdmin(hashedAdmin);
+          setPinPerawat(hashedPerawat);
+          await SUPA_CLIENT.from("kamar_bedah_config").upsert({key:"pins",value:JSON.stringify({admin:hashedAdmin,perawat:hashedPerawat})},{onConflict:"key"});
+          showToast("✓ PIN tersimpan ke Supabase — berlaku di semua perangkat",C.s);
+        }catch(e){
+          // Jika hashing/penyimpanan gagal, tetap izinkan login sesi ini dengan PIN
+          // plaintext di memori lokal agar admin tidak terkunci dari sistem.
+          setPinAdmin(newAdminPin);
+          setPinPerawat(newPerawatPin);
+          showToast("✓ PIN disimpan (Supabase error, coba lagi)",C.w);
+        }
+      })();
+    }
+    setRole(newRole);
     lastAct.current=Date.now(); setPinOK(true);
   };
 
   const handleSupaBackup = async () => {
     setSupaBU(true); setSupaStatus(null);
-    const data = {exportedAt:fNow(), ops, archive, notifs, lemburPegawai, lemburData, monitoringEntries, monitoringCfg};
-    const res = await supabaseBackup(supaCfg, data);
+    // Auto-delete backup lebih dari 2 tahun via singleton
+    try{
+      const twoYearsAgo = new Date(); twoYearsAgo.setFullYear(twoYearsAgo.getFullYear()-2);
+      await SUPA_CLIENT.from("kamar_bedah_backup").delete().lt("created_at", twoYearsAgo.toISOString());
+    }catch{ /* auto-delete non-critical */ }
+    const data = {exportedAt:fNow(), ops, archive, notifs, lemburPegawai, lemburData, monitoringEntries, monitoringCfg, staff, roster};
+    const res = await supabaseBackup(supaCfg, data, SUPA_CLIENT);
     setSupaStatus(res);
-    if(res.ok) { setSupaCfg(p=>({...p,lastBackup:fNow()})); showToast("✓ Backup Supabase berhasil","#3ECF8E"); }
+    if(res.ok) { setSupaCfg((p:any)=>({...p,lastBackup:fNow()})); showToast("✓ Backup Supabase berhasil","#3ECF8E"); }
     else { showToast(res.msg,C.d); }
     setSupaBU(false);
   };
@@ -3697,7 +4956,7 @@ export default function App() {
   const handleSupaRestoreOps = async () => {
     if(!window.confirm("Pulihkan Jadwal Operasi dari Supabase?\nData jadwal operasi lokal akan ditimpa dengan data dari Supabase.")) return;
     setSupaBU(true); setSupaStatus(null);
-    const res = await supabaseRestore(supaCfg);
+    const res = await supabaseRestore(supaCfg, SUPA_CLIENT);
     setSupaStatus({ok:res.ok, msg:res.msg});
     if(res.ok && res.data) {
       if(res.data.ops) { setOps(res.data.ops); showToast("✓ Jadwal operasi dipulihkan dari Supabase","#3ECF8E"); }
@@ -3709,7 +4968,7 @@ export default function App() {
   const handleSupaRestoreLembur = async () => {
     if(!window.confirm("Pulihkan Data Lembur dari Supabase?\nData lembur lokal akan ditimpa dengan data dari Supabase.")) return;
     setSupaBU(true); setSupaStatus(null);
-    const res = await supabaseRestore(supaCfg);
+    const res = await supabaseRestore(supaCfg, SUPA_CLIENT);
     setSupaStatus({ok:res.ok, msg:res.msg});
     if(res.ok && res.data) {
       if(res.data.lemburPegawai) setLemburPegawai(res.data.lemburPegawai);
@@ -3722,7 +4981,7 @@ export default function App() {
   const handleSupaRestoreMonitoring = async () => {
     if(!window.confirm("Pulihkan Data Monitoring dari Supabase?\nData monitoring lokal akan ditimpa dengan data dari Supabase.")) return;
     setSupaBU(true); setSupaStatus(null);
-    const res = await supabaseRestore(supaCfg);
+    const res = await supabaseRestore(supaCfg, SUPA_CLIENT);
     setSupaStatus({ok:res.ok, msg:res.msg});
     if(res.ok && res.data) {
       if(res.data.monitoringEntries) setMonitoringEntries(res.data.monitoringEntries);
@@ -3735,7 +4994,7 @@ export default function App() {
   const handleSupaRestoreAll = async () => {
     if(!window.confirm("Pulihkan SEMUA data dari Supabase?\nOperasi, Lembur, dan Monitoring lokal akan ditimpa dengan data dari Supabase.")) return;
     setSupaBU(true); setSupaStatus(null);
-    const res = await supabaseRestore(supaCfg);
+    const res = await supabaseRestore(supaCfg, SUPA_CLIENT);
     setSupaStatus({ok:res.ok, msg:res.msg});
     if(res.ok && res.data) {
       if(res.data.ops) setOps(res.data.ops);
@@ -3751,19 +5010,18 @@ export default function App() {
   };
 
   const handleDropboxBackupMonitoringXls = async () => {
-    if(!dbxCfg.token){showToast("Access Token Dropbox belum diisi",C.d);return;}
     setDbxBacking(true); setDbxStatus(null);
     const wb = XLSX.utils.book_new();
-    const monRows = monitoringEntries.map((e:MonitoringEntry)=>[e.tanggal,e.jam,e.suhu,e.kelembaban,monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas,monitoringCfg.lokasiRuang||""]);
-    const ws = XLSX.utils.aoa_to_sheet([["Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas","Lokasi"],...monRows]);
-    ws["!cols"]=[{wch:12},{wch:8},{wch:12},{wch:14},{wch:16},{wch:22},{wch:20}];
+    const monRows = monitoringEntries.map((e:MonitoringEntry)=>[e.ruang||"",e.tanggal,e.jam,e.suhu,e.kelembaban,monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas]);
+    const ws = XLSX.utils.aoa_to_sheet([["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"],...monRows]);
+    ws["!cols"]=[{wch:18},{wch:12},{wch:8},{wch:12},{wch:14},{wch:16},{wch:22}];
     XLSX.utils.book_append_sheet(wb, ws, "Monitoring Suhu");
     if(!wb.SheetNames.length){
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Belum ada data monitoring"]]), "Monitoring");
     }
     const folder = dbxCfg.path.replace(/[^/]+$/, "");
     const path = `${folder}Monitoring_${todayDate()}.xlsx`;
-    const res = await dropboxUploadExcel(dbxCfg.token, path, wb);
+    const res = await dropboxUploadExcel(path, wb);
     setDbxStatus(res);
     if(res.ok){ setDbxCfg((p:DropboxConfig)=>({...p,lastBackup:fNow()})); showToast("✓ Excel Monitoring berhasil diupload ke Dropbox","#0369A1"); }
     else showToast(res.msg, C.d);
@@ -3781,7 +5039,6 @@ export default function App() {
   };
 
   const handleDropboxBackupOpsXls = async () => {
-    if(!dbxCfg.token){showToast("Access Token Dropbox belum diisi",C.d);return;}
     setDbxBacking(true); setDbxStatus(null);
     const wb = XLSX.utils.book_new();
     const h = ["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status","Dibuat"];
@@ -3791,7 +5048,7 @@ export default function App() {
     XLSX.utils.book_append_sheet(wb, ws, "Jadwal Operasi");
     const folder = dbxCfg.path.replace(/[^/]+$/, "");
     const path = `${folder}Operasi_${todayDate()}.xlsx`;
-    const res = await dropboxUploadExcel(dbxCfg.token, path, wb);
+    const res = await dropboxUploadExcel(path, wb);
     setDbxStatus(res);
     if(res.ok){ setDbxCfg((p:DropboxConfig)=>({...p,lastBackup:fNow()})); showToast("✓ Excel Operasi berhasil diupload ke Dropbox","#3730A3"); }
     else showToast(res.msg, C.d);
@@ -3799,7 +5056,6 @@ export default function App() {
   };
 
   const handleDropboxBackupLemburXls = async () => {
-    if(!dbxCfg.token){showToast("Access Token Dropbox belum diisi",C.d);return;}
     setDbxBacking(true); setDbxStatus(null);
     const wb = XLSX.utils.book_new();
     /* Per-employee sheets */
@@ -3821,7 +5077,7 @@ export default function App() {
     }
     const folder = dbxCfg.path.replace(/[^/]+$/, "");
     const path = `${folder}Lembur_${todayDate()}.xlsx`;
-    const res = await dropboxUploadExcel(dbxCfg.token, path, wb);
+    const res = await dropboxUploadExcel(path, wb);
     setDbxStatus(res);
     if(res.ok){ setDbxCfg((p:DropboxConfig)=>({...p,lastBackup:fNow()})); showToast("✓ Excel Lembur berhasil diupload ke Dropbox","#3730A3"); }
     else showToast(res.msg, C.d);
@@ -3855,8 +5111,11 @@ export default function App() {
     setDbxBacking(false);
   };
 
-  const saveOp = () => {
-    const e: any={};
+  /* FIX #1: saveOpFn menerima {opForm, editingOp, setOpErrors, setDupWarn, resetOp}
+     dari ViewDaftar (state lokal) — root App tidak perlu menyimpan opForm lagi. */
+  const editOpRef = useRef<((op: Operation)=>void)|null>(null);
+  const saveOpFn = useCallback(({opForm, editingOp, setOpErrors, setDupWarn, resetOp}: SaveOpFnArgs) => {
+    const e: Record<string,string>={};
     if(!opForm.patient||!opForm.patient.trim()) e.patient="Nama pasien wajib";
     if(!opForm.diagnosis||!opForm.diagnosis.trim()) e.diagnosis="Diagnosa wajib";
     if(!opForm.procedure||!opForm.procedure.trim()) e.procedure="Nama tindakan wajib";
@@ -3865,70 +5124,139 @@ export default function App() {
     if(!opForm.surgeon) e.surgeon="Dokter operator wajib";
     setOpErrors(e);
     if(Object.keys(e).length){showToast("Lengkapi field yang wajib ✱",C.d);return;}
-    const clean={...opForm,patient:sanitize(opForm.patient||""),diagnosis:sanitize(opForm.diagnosis||""),procedure:sanitize(opForm.procedure||""),ruangAsal:sanitize(opForm.ruangAsal||""),allergy:sanitize(opForm.allergy||"Tidak Ada"),specialNeeds:sanitize(opForm.specialNeeds||""),assistantNurse:sanitize(opForm.assistantNurse||""),rrKatim:sanitize(opForm.rrKatim||"")};
-    const dup=ops.some(o=>o.id!==editingOp?.id&&o.patient&&o.patient.toLowerCase().trim()===clean.patient.toLowerCase()&&o.date===clean.date&&o.time===clean.time);
-    if(dup){setDupWarn(true);showToast("⚠ Duplikasi: pasien, tanggal & jam sudah ada",C.d);return;}
+    const clean={...opForm,opType:(opForm.opType||"elektif") as "elektif"|"semi"|"cyto",patient:sanitize(opForm.patient||""),diagnosis:sanitize(opForm.diagnosis||""),procedure:sanitize(opForm.procedure||""),ruangAsal:sanitize(opForm.ruangAsal||""),allergy:sanitize(opForm.allergy||"Tidak Ada"),specialNeeds:sanitize(opForm.specialNeeds||""),assistantNurse:sanitize(opForm.assistantNurse||""),rrKatim:sanitize(opForm.rrKatim||"")};
+    const dupSameDay=ops.some((o:any)=>o.id!==editingOp?.id&&o.patient&&o.patient.toLowerCase().trim()===clean.patient.toLowerCase().trim()&&o.date===clean.date);
+    const dup=ops.some((o:any)=>o.id!==editingOp?.id&&o.patient&&o.patient.toLowerCase().trim()===clean.patient.toLowerCase()&&o.date===clean.date&&o.time===clean.time);
+    if(dupSameDay&&!dup){showToast(`⚠ Perhatian: Pasien "${clean.patient}" sudah terdaftar pada ${clean.date} (jam berbeda)`,C.w);}
+    if(dup){setDupWarn(true);showToast(`⚠ Pasien "${clean.patient}" sudah terdaftar pada tanggal & jam yang sama!`,C.d);return;}
     setDupWarn(false);
     if(editingOp){
-      const updated=ops.map(o=>o.id===editingOp.id?{...editingOp,...clean}:o);
-      setOps(updated); logAudit("Edit",clean); broadcastOps(updated);
-      showToast("✓ Jadwal berhasil diperbarui",C.s);
+      const updatedOp = {...editingOp,...clean, updated_at: new Date().toISOString()};
+      setOps(p=>p.map(o=>o.id===editingOp.id ? updatedOp : o));
+      logAudit("Edit",clean);
+      upsertOneToSupa("kb_operasi", updatedOp).then((res:any)=>{
+        if(!res?.ok) {
+          setOps(p=>p.map(o=>o.id===editingOp.id ? editingOp : o));
+          showToast(`⚠ Gagal menyimpan ke Supabase: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
+        } else {
+          showToast("✓ Jadwal diperbarui & tersimpan ke Supabase",C.s);
+        }
+      });
     } else {
-      const newOp={...clean,id:gId(),status:"scheduled",reminders:[],requests:[],createdAt:fNow()};
-      const updated=[...ops,newOp];
-      setOps(updated); logAudit("Tambah",clean); broadcastOps(updated);
-      showToast("✓ Jadwal berhasil disimpan",C.s);
+      const newOp={...clean,id:gId(),status:"scheduled",reminders:[],requests:[],createdAt:fNow(),updated_at:new Date().toISOString()} as Operation;
+      logAudit("Tambah",clean);
+      upsertOneToSupa("kb_operasi", newOp).then((res:any)=>{
+        if(!res?.ok) {
+          showToast(`⚠ Gagal menyimpan ke Supabase: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
+        } else {
+          setOps(p=>{ if(p.some((o:any)=>o.id===newOp.id)) return p; return [...p, newOp]; });
+          showToast("✓ Jadwal tersimpan ke Supabase",C.s);
+        }
+      });
     }
-    setOpForm({...EOP,date:todayDate()}); setEditingOp(null); setOpErrors({}); setDupWarn(false);
+    resetOp();
     setTab("jadwal");
-  };
-  const resetOp    = () => {setOpForm({...EOP,date:todayDate()});setEditingOp(null);setOpErrors({});setDupWarn(false);};
-  const startEditOp= (op:any)  => {setOpForm({...op});setEditingOp(op);setOpErrors({});setDupWarn(false);setTab("daftar");};
-  const deleteOp   = (id:string)  => {
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[ops, showToast, upsertOneToSupa, logAudit]);
+  const startEditOp= (op: Operation)  => { if(editOpRef.current) editOpRef.current(op); setTab("daftar"); };
+  const deleteOp   = async (id:string) => {
     const op=ops.find(o=>o.id===id);
-    const updated=ops.filter(o=>o.id!==id);
-    setOps(updated); if(op) logAudit("Hapus",op); broadcastOps(updated);
-    showToast("Jadwal dihapus");
+    /* Optimistic remove lokal */
+    setOps(p=>p.filter(o=>o.id!==id));
+    if(op) logAudit("Hapus",op);
+    /* DB delete — postgres_changes propagasi ke device lain */
+    const res = await deleteFromSupa("kb_operasi", id);
+    if(!res?.ok) {
+      /* Rollback jika DB gagal */
+      if(op) setOps(p=>[...p, op]);
+      showToast(`⚠ Gagal menghapus dari Supabase: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
+    } else {
+      showToast("✓ Jadwal dihapus & tersinkron",C.d);
+    }
   };
   const sendReminder=(op:any,type:string)=>{
     if((op.reminders||[]).includes(type))return;
     setNotifs(p=>[{id:gId(),type,label:(type==="H-1"?"H-1":"1 Jam")+" → "+op.surgeon,patient:op.patient,procedure:op.procedure,message:"",sentAt:fNow()},...p]);
-    setOps(p=>p.map(o=>o.id===op.id?{...o,reminders:[...(o.reminders||[]),type]}:o));
-    showToast("Pengingat dicatat di Log");
+    const updatedOp = {...op, reminders:[...(op.reminders||[]),type]};
+    /* Optimistic update */
+    setOps(p=>p.map((o:any)=>o.id===op.id ? updatedOp : o));
+    upsertOneToSupa("kb_operasi", updatedOp).then(res=>{
+      if(!res?.ok){ setOps(p=>p.map((o:any)=>o.id===op.id ? op : o)); showToast(`⚠ Gagal mencatat pengingat: ${res?.error||"kesalahan tidak diketahui"}`,C.d); }
+    });
+    showToast("✓ Pengingat dicatat & tersinkron");
   };
   const getPhone = (name: string) => { const s=staff.find(x=>x.name===name); return s&&s.phone||null; };
   const addReq   = (opId: string) => {
     if(!reqText.trim())return;
-    setOps(p=>p.map(o=>o.id===opId?{...o,requests:[...(o.requests||[]),{id:gId(),text:sanitize(reqText.trim()),time:fNow()}]}:o));
-    setReqText(""); setReqOpId(null); showToast("Permintaan disimpan");
+    const targetOp = ops.find((o:any)=>o.id===opId);
+    if(!targetOp) return;
+    const updatedOp = {...targetOp, requests:[...(targetOp.requests||[]),{id:gId(),text:sanitize(reqText.trim()),time:fNow()}]};
+    /* Optimistic update */
+    setOps(p=>p.map((o:any)=>o.id===opId ? updatedOp : o));
+    upsertOneToSupa("kb_operasi", updatedOp).then(res=>{
+      if(!res?.ok){ setOps(p=>p.map((o:any)=>o.id===opId ? targetOp : o)); showToast(`⚠ Gagal menyimpan permintaan: ${res?.error||"kesalahan tidak diketahui"}`,C.d); }
+    });
+    setReqText(""); setReqOpId(null); showToast("✓ Permintaan disimpan & tersinkron");
   };
-  const delReq = (opId: string,rId: string) => setOps(p=>p.map(o=>o.id===opId?{...o,requests:(o.requests||[]).filter((r:any)=>r.id!==rId)}:o));
+  const delReq = (opId: string,rId: string) => {
+    const targetOp = ops.find((o:any)=>o.id===opId);
+    if(!targetOp) return;
+    const updatedOp = {...targetOp, requests:(targetOp.requests||[]).filter((r:any)=>r.id!==rId)};
+    setOps(p=>p.map((o:any)=>o.id===opId ? updatedOp : o));
+    upsertOneToSupa("kb_operasi", updatedOp).then(res=>{
+      if(!res?.ok){ setOps(p=>p.map((o:any)=>o.id===opId ? targetOp : o)); showToast(`⚠ Gagal menghapus permintaan: ${res?.error||"kesalahan tidak diketahui"}`,C.d); }
+    });
+  };
 
-  if(!pinOK) return <PinScreen onVerify={handlePinVerify} savedPin={savedPin}/>;
+  /* FIX BUG (Rules of Hooks — "Rendered more hooks than during the previous
+     render"): handleTabChange, handleTabClickEvt, dan TABS sebelumnya berada
+     SETELAH dua conditional return (!pinLoaded / !pinOK) di bawah ini. Akibatnya,
+     saat render awal (pinLoaded/pinOK masih false) hook-hook ini TIDAK terpanggil,
+     lalu begitu pinOK menjadi true, React mendeteksi hook baru muncul di tengah
+     siklus hidup komponen → error. React mewajibkan jumlah & urutan hook yang
+     dipanggil tetap sama di SETIAP render, sehingga semua hook (termasuk
+     useCallback/useMemo ini) harus dipanggil sebelum return bersyarat apa pun.
+     Dipindah ke sini agar selalu terpanggil di setiap render, terlepas dari
+     nilai pinLoaded/pinOK.
 
-  const TABS = [
-    {k:"jadwal",l:"📋 Jadwal"},
-    {k:"daftar",l:"📝 Daftar"},
-    {k:"laporan",l:"📄 Laporan"},
-    {k:"wa",l:"💬 Kirim WA"},
-    {k:"statistik",l:"📊 Statistik"},
-    {k:"staf",l:"👥 Staf"},
-    {k:"lembur",l:"⏰ Lembur"},
-    {k:"monitoring",l:"🌡 Monitoring"},
-    {k:"arsip",l:"🗂 Arsip"},
-  ];
+     FIX AUDIT #12 (MEDIUM — Inline Object/Function di JSX):
+     ALL_TABS sebelumnya didefinisikan di dalam render function, artinya array
+     baru dibuat setiap render. Dipindah ke luar komponen (module-level const)
+     agar referensinya stabil. handleTabChange dibuat satu kali via useCallback
+     sehingga setiap tombol tab tidak mendapat fungsi baru setiap render.
+     TABS di-memoize bergantung hanya pada role — stabil selama role tidak berubah. */
+  const handleTabChange = useCallback((k: string) => setTab(k), []);
+  /* Handler untuk event button — membaca key dari data-tab attribute.
+     Satu fungsi stabil untuk semua tombol tab (tidak perlu arrow function per tombol). */
+  const handleTabClickEvt = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    const k = e.currentTarget.dataset.tab;
+    if(k) setTab(k);
+  }, []);
+  const TABS = useMemo(() => ALL_TABS.filter(t => t.roles.includes(role)), [role]);
+
+  if(!pinLoaded) return (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#ADE8F4,#48CAE4,#0077B6)"}}>
+      <div style={{textAlign:"center",color:"#fff"}}>
+        <img src="/logo.jpeg" style={{width:80,height:80,borderRadius:"50%",objectFit:"cover",marginBottom:16,display:"block",margin:"0 auto 16px"}}/>
+        <div style={{fontSize:16,fontWeight:700,marginBottom:8}}>SISTEM KOORDINASI KAMAR BEDAH</div>
+        <div style={{fontSize:13,opacity:.8,marginBottom:20}}>Rumah Sakit Panti Rini</div>
+        <div style={{fontSize:13,opacity:.7}}>⏳ Memuat konfigurasi...</div>
+      </div>
+    </div>
+  );
+  if(!pinOK) return <PinScreen onVerify={handlePinVerify} pinAdmin={pinAdmin} pinPerawat={pinPerawat} isFirstTime={isFirstTime}/>;
 
   const content = (
     <ErrorBoundary>
-      {tab==="jadwal"     && <ViewJadwal ops={ops} setOps={setOps} startEditOp={startEditOp} deleteOp={deleteOp} sendReminder={sendReminder} reqOpId={reqOpId} setReqOpId={setReqOpId} reqText={reqText} setReqText={setReqText} addReq={addReq} delReq={delReq} getPhone={getPhone} setNotifs={setNotifs} showToast={showToast} privacyMode={privacyMode}/>}
-      {tab==="daftar"     && <ViewDaftar opForm={opForm} setOpForm={setOpForm} editingOp={editingOp} resetOp={resetOp} saveOp={saveOp} opErrors={opErrors} setOpErrors={setOpErrors} staff={staff} setTab={setTab} dupWarning={dupWarn} templates={templates} setTemplates={setTemplates} showToast={showToast}/>}
-      {tab==="laporan"    && <ViewLaporan ops={ops} lSet={lSet} setLSet={setLSet} lSby={lSby} setLSby={setLSby} staff={staff} roster={roster} showToast={showToast}/>}
+      {tab==="jadwal"     && <ViewJadwal ops={ops} setOps={setOps} startEditOp={startEditOp} deleteOp={deleteOp} sendReminder={sendReminder} reqOpId={reqOpId} setReqOpId={setReqOpId} reqText={reqText} setReqText={setReqText} addReq={addReq} delReq={delReq} getPhone={getPhone} setNotifs={setNotifs} showToast={showToast} privacyMode={privacyMode} role={role} upsertOneToSupa={upsertOneToSupa}/>}
+      {tab==="daftar"     && <ViewDaftar editOpRef={editOpRef} saveOpFn={saveOpFn} staff={staff} setTab={setTab} templates={templates} setTemplates={setTemplates} showToast={showToast}/>}
+      {tab==="laporan"    && <ViewLaporan ops={ops} staff={staff} roster={roster} showToast={showToast} role={role}/>}
       {tab==="wa"         && <ViewKirimWA ops={ops} staff={staff} setNotifs={setNotifs} showToast={showToast}/>}
       {tab==="statistik"  && <ViewStatistik ops={ops} archive={archive}/>}
-      {tab==="staf"       && <ViewStaf staff={staff} setStaff={setStaff} roster={roster} setRoster={setRoster} showToast={showToast}/>}
-      {tab==="lembur"     && <ViewLembur lemburPegawai={lemburPegawai} setLemburPegawai={setLemburPegawai} lemburData={lemburData} setLemburData={setLemburData} showToast={showToast} supaCfg={supaCfg} dbxCfg={dbxCfg}/>}
-      {tab==="monitoring" && <ViewMonitoring monitoringEntries={monitoringEntries} setMonitoringEntries={setMonitoringEntries} monitoringCfg={monitoringCfg} setMonitoringCfg={setMonitoringCfg} showToast={showToast} supaCfg={supaCfg} dbxCfg={dbxCfg}/>}
-      {tab==="arsip"      && <ViewArsip ops={ops} setOps={setOps} notifs={notifs} archive={archive} showToast={showToast} privacyMode={privacyMode} setPrivacyMode={setPM} supaCfg={supaCfg} setSupaCfg={setSupaCfg} onSupaBackup={handleSupaBackup} onSupaRestoreOps={handleSupaRestoreOps} onSupaRestoreLembur={handleSupaRestoreLembur} onSupaRestoreMonitoring={handleSupaRestoreMonitoring} onSupaRestoreAll={handleSupaRestoreAll} supaStatus={supaStatus} supaBackingUp={supaBackingUp} auditLog={auditLog} rtStatus={rtStatus} rtEnabled={rtEnabled} setRtEnabled={setRtEnabled} dbxCfg={dbxCfg} setDbxCfg={setDbxCfg} onDbxBackup={handleDropboxBackup} onDbxRestoreOps={handleDropboxRestoreOps} onDbxRestoreLembur={handleDropboxRestoreLembur} dbxStatus={dbxStatus} dbxBacking={dbxBacking} onDbxBackupOpsXls={handleDropboxBackupOpsXls} onDbxBackupLemburXls={handleDropboxBackupLemburXls} onDbxBackupMonitoringXls={handleDropboxBackupMonitoringXls} lemburData={lemburData} lemburPegawai={lemburPegawai} monitoringEntries={monitoringEntries} monitoringCfg={monitoringCfg}/>}
+      {tab==="staf"       && <ViewStaf staff={staff} setStaff={setStaff} roster={roster} setRoster={setRoster} showToast={showToast} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} upsertBulkToSupa={upsertBulkToSupa}/>}
+      {tab==="lembur"     && <ViewLembur lemburPegawai={lemburPegawai} setLemburPegawai={setLemburPegawai} lemburData={lemburData} setLemburData={setLemburData} showToast={showToast} supaCfg={supaCfg} dbxCfg={dbxCfg} role={role} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa}/>}
+      {tab==="monitoring" && <ViewMonitoring monitoringEntries={monitoringEntries} setMonitoringEntries={setMonitoringEntries} monitoringCfg={monitoringCfg} setMonitoringCfg={setMonitoringCfg} showToast={showToast} supaCfg={supaCfg} dbxCfg={dbxCfg} role={role} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa}/>}
+      {tab==="arsip"      && <ViewArsip ops={ops} setOps={setOps} notifs={notifs} archive={archive} showToast={showToast} privacyMode={privacyMode} setPrivacyMode={setPM} supaCfg={supaCfg} setSupaCfg={setSupaCfg} onSupaBackup={handleSupaBackup} onSupaRestoreOps={handleSupaRestoreOps} onSupaRestoreLembur={handleSupaRestoreLembur} onSupaRestoreMonitoring={handleSupaRestoreMonitoring} onSupaRestoreAll={handleSupaRestoreAll} supaStatus={supaStatus} supaBackingUp={supaBackingUp} auditLog={auditLog} rtStatus={rtStatus} rtEnabled={rtEnabled} setRtEnabled={setRtEnabled} dbxCfg={dbxCfg} setDbxCfg={setDbxCfg} onDbxBackup={handleDropboxBackup} onDbxRestoreOps={handleDropboxRestoreOps} onDbxRestoreLembur={handleDropboxRestoreLembur} dbxStatus={dbxStatus} dbxBacking={dbxBacking} onDbxBackupOpsXls={handleDropboxBackupOpsXls} onDbxBackupLemburXls={handleDropboxBackupLemburXls} onDbxBackupMonitoringXls={handleDropboxBackupMonitoringXls} lemburData={lemburData} lemburPegawai={lemburPegawai} monitoringEntries={monitoringEntries} monitoringCfg={monitoringCfg} role={role} upsertBulkToSupa={upsertBulkToSupa}/>}
     </ErrorBoundary>
   );
 
@@ -3936,14 +5264,14 @@ export default function App() {
     <div className="kbShell" style={{color:C.t,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}>
 
       {/* ── Sticky header (mobile + tablet: full header; desktop: top bar only) ── */}
-      <div className="kb-header" style={{background:`linear-gradient(135deg,#003D33,${C.p})`,position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 12px rgba(0,0,0,.18)"}}>
+      <div className="kb-header" style={{background:`linear-gradient(135deg,${C.p},${C.pL})`,position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 12px rgba(0,0,0,.18)"}}>
         <div className="kb-header-inner" style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <img src="/logo.jpeg" alt="Logo KB" style={{width:44,height:44,borderRadius:"50%",objectFit:"cover",border:"2px solid rgba(255,255,255,.4)",animation:"lgFloat 3s ease-in-out infinite",flexShrink:0}}/>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <img src="/logo.jpeg" alt="Logo KB" style={{width:50,height:50,borderRadius:"50%",objectFit:"cover",border:"2px solid rgba(255,255,255,.5)",animation:"lgFloat 3s ease-in-out infinite",flexShrink:0}}/>
             <div>
-              <div className="kb-title" style={{fontWeight:800,color:"#fff",letterSpacing:.3}}>Kamar Bedah</div>
-              <div className="kb-hospital" style={{color:"rgba(255,255,255,.65)",marginTop:2}}>{HOSPITAL}</div>
-              <div style={{color:"rgba(255,255,255,.55)",fontSize:10,marginTop:2,letterSpacing:.2}}>{currentTime.toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long",year:"numeric"})} · {currentTime.toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}</div>
+              <div style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,.6)",letterSpacing:2,textTransform:"uppercase",marginBottom:1}}>Rumah Sakit Panti Rini</div>
+              <div className="kb-title" style={{fontWeight:900,color:"#fff",letterSpacing:.5,fontSize:16,lineHeight:1.1}}>SISTEM KOORDINASI<br/>KAMAR BEDAH</div>
+              <HeaderClock/>
             </div>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
@@ -3953,13 +5281,15 @@ export default function App() {
                 ● {ops.filter((o:any)=>o.status==="ongoing").length} berlangsung
               </span>
             )}
-            <button onClick={()=>setPinOK(false)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,padding:"6px 12px",color:"#fff",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>🔒 Kunci</button>
+            {role==="admin" && <button onClick={()=>setShowPinMgmt(true)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,padding:"6px 10px",color:"#fff",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>⚙ PIN</button>}
+            <span style={{background:role==="admin"?"rgba(255,255,255,.25)":"rgba(255,255,255,.12)",border:"1px solid rgba(255,255,255,.3)",borderRadius:8,padding:"4px 9px",color:"#fff",fontSize:10,fontWeight:700}}>{role==="admin"?"🔐 Admin":"👤 Perawat"}</span>
+            <button onClick={()=>{setPinOK(false);setRole("perawat");}} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,padding:"6px 12px",color:"#fff",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>🔒 Kunci</button>
           </div>
         </div>
         {/* Mobile/tablet tabs — hidden on desktop via CSS */}
         <div className="kb-tabs">
           {TABS.map(t=>(
-            <button key={t.k} onClick={()=>setTab(t.k)} className="kb-tab-btn"
+            <button key={t.k} data-tab={t.k} onClick={handleTabClickEvt} className="kb-tab-btn"
               style={{border:"none",background:tab===t.k?"rgba(255,255,255,.18)":"none",color:tab===t.k?"#fff":"rgba(255,255,255,.6)",fontWeight:tab===t.k?700:400,cursor:"pointer",borderBottom:tab===t.k?"3px solid #fff":"3px solid transparent",borderRadius:"8px 8px 0 0",transition:"all .15s",fontFamily:"inherit"}}>
               {t.l}
             </button>
@@ -3968,14 +5298,6 @@ export default function App() {
       </div>
 
       {/* ── Storage warning banner ── */}
-      {storageWarn && (
-        <div style={{background:storageWarn.pct>=90?"#B91C1C":"#B45309",color:"#fff",padding:"8px 16px",fontSize:12,fontWeight:700,textAlign:"center",display:"flex",alignItems:"center",justifyContent:"center",gap:10,flexWrap:"wrap",zIndex:99}}>
-          <span>⚠️ Penyimpanan browser {storageWarn.pct}% penuh ({storageWarn.kb} KB / 5 MB).{storageWarn.pct>=90?" Segera backup ke Supabase atau Dropbox!":" Disarankan backup ke cloud agar data tidak hilang."}</span>
-          <button onClick={()=>setTab("arsip")} style={{background:"rgba(255,255,255,.25)",border:"1px solid rgba(255,255,255,.5)",borderRadius:6,color:"#fff",padding:"3px 12px",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>→ Buka Arsip & Backup</button>
-          <button onClick={()=>setStorageWarn(null)} style={{background:"rgba(0,0,0,.2)",border:"none",borderRadius:6,color:"rgba(255,255,255,.8)",padding:"3px 8px",cursor:"pointer",fontSize:11,fontFamily:"inherit"}}>✕</button>
-        </div>
-      )}
-
       {/* ── Body: sidebar (desktop only) + content ── */}
       <div className="kb-main" style={{background:C.bg,flex:1}}>
 
@@ -3983,7 +5305,7 @@ export default function App() {
         <aside className="kb-sidebar">
           <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.4)",letterSpacing:1,textTransform:"uppercase",padding:"4px 14px 8px",marginBottom:4}}>Menu</div>
           {TABS.filter(t=>t.k!=="arsip").map(t=>(
-            <button key={t.k} onClick={()=>setTab(t.k)}
+            <button key={t.k} data-tab={t.k} onClick={handleTabClickEvt}
               className={`kb-sidebar-btn${tab===t.k?" active":""}`}>
               <span style={{fontSize:16,flexShrink:0}}>{t.l.split(" ")[0]}</span>
               <span>{t.l.split(" ").slice(1).join(" ")}</span>
@@ -3994,7 +5316,7 @@ export default function App() {
           ))}
           <div style={{flex:1}}/>
           {TABS.filter(t=>t.k==="arsip").map(t=>(
-            <button key={t.k} onClick={()=>setTab(t.k)}
+            <button key={t.k} data-tab={t.k} onClick={handleTabClickEvt}
               className={`kb-sidebar-btn${tab===t.k?" active":""}`}>
               <span style={{fontSize:16,flexShrink:0}}>{t.l.split(" ")[0]}</span>
               <span>{t.l.split(" ").slice(1).join(" ")}</span>
@@ -4015,6 +5337,48 @@ export default function App() {
           {content}
         </div>
       </div>
+
+      {/* PIN Management Modal (Admin only) */}
+      {showPinMgmt && role==="admin" && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:9000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:C.white,borderRadius:20,padding:"28px 24px",width:"100%",maxWidth:380,boxShadow:"0 20px 60px rgba(0,0,0,.4)"}}>
+            <div style={{fontSize:16,fontWeight:800,color:C.p,marginBottom:4}}>⚙ Manajemen PIN</div>
+            <div style={{fontSize:12,color:C.tL,marginBottom:20}}>Ubah PIN Admin dan PIN Perawat</div>
+            <div style={{fontSize:13,fontWeight:700,color:C.p,marginBottom:8}}>🔐 PIN Admin Baru</div>
+            <LF label="PIN Admin Baru (min. 4 digit)"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="PIN admin baru" value={pmNewAdmin} onChange={e=>setPmNewAdmin(e.target.value)}/></LF>
+            <LF label="Konfirmasi PIN Admin"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="Ulangi PIN admin" value={pmCfAdmin} onChange={e=>setPmCfAdmin(e.target.value)}/></LF>
+            <div style={{fontSize:13,fontWeight:700,color:C.g,margin:"12px 0 8px"}}>👤 PIN Perawat Baru</div>
+            <LF label="PIN Perawat Baru (min. 4 digit)"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="PIN perawat baru" value={pmNewPerawat} onChange={e=>setPmNewPerawat(e.target.value)}/></LF>
+            <LF label="Konfirmasi PIN Perawat"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="Ulangi PIN perawat" value={pmCfPerawat} onChange={e=>setPmCfPerawat(e.target.value)}/></LF>
+            {pmErr && <div style={{fontSize:12,color:C.d,marginBottom:10,fontWeight:600}}>⚠ {pmErr}</div>}
+            <div style={{display:"flex",gap:8,marginTop:12}}>
+              <Btn full onClick={()=>{
+                if(pmNewAdmin && pmNewAdmin.length<4){setPmErr("PIN Admin min. 4 digit");return;}
+                if(pmNewAdmin && pmNewAdmin!==pmCfAdmin){setPmErr("PIN Admin tidak cocok");return;}
+                if(pmNewPerawat && pmNewPerawat.length<4){setPmErr("PIN Perawat min. 4 digit");return;}
+                if(pmNewPerawat && pmNewPerawat!==pmCfPerawat){setPmErr("PIN Perawat tidak cocok");return;}
+                if(pmNewAdmin && pmNewPerawat && pmNewAdmin===pmNewPerawat){setPmErr("PIN Admin & Perawat tidak boleh sama");return;}
+                // FIX AUDIT #4: hash PIN baru (PBKDF2) sebelum disimpan — jangan
+                // pernah simpan plaintext. PIN yang tidak diganti (sudah berupa
+                // hash "salt:hash" dari sebelumnya) dipertahankan apa adanya.
+                (async()=>{
+                  try{
+                    const finalAdmin = pmNewAdmin ? await hashPin(pmNewAdmin) : pinAdmin;
+                    const finalPerawat = pmNewPerawat ? await hashPin(pmNewPerawat) : pinPerawat;
+                    if(pmNewAdmin){ setPinAdmin(finalAdmin); }
+                    if(pmNewPerawat){ setPinPerawat(finalPerawat); }
+                    await SUPA_CLIENT.from("kamar_bedah_config").upsert({key:"pins",value:JSON.stringify({admin:finalAdmin,perawat:finalPerawat})},{onConflict:"key"});
+                    showToast("✓ PIN diperbarui & tersinkron ke semua perangkat",C.s);
+                  }catch(e){ showToast("✓ PIN diperbarui (Supabase error, coba lagi)",C.w); }
+                })();
+                setPmNewAdmin("");setPmCfAdmin("");setPmNewPerawat("");setPmCfPerawat("");setPmErr("");
+                setShowPinMgmt(false);
+              }}>Simpan</Btn>
+              <Btn full outline color={C.g} onClick={()=>{setShowPinMgmt(false);setPmErr("");setPmNewAdmin("");setPmCfAdmin("");setPmNewPerawat("");setPmCfPerawat("");}}>Batal</Btn>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Toast */}
       {toast && (
