@@ -3013,12 +3013,23 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
   };
 
   const saveEntry = async () => {
-    if(!rowForm.tanggalAwal||!rowForm.jamMasuk||!rowForm.jamKeluar){
-      showToast("Tanggal awal lembur, jam masuk & keluar wajib diisi",C.d); return;
+    const jenis = rowForm.jenisEntri || "kerja";
+    if(!rowForm.tanggalAwal){
+      showToast("Tanggal awal lembur wajib diisi",C.d); return;
     }
+    if(jenis==="kerja" && (!rowForm.jamMasuk||!rowForm.jamKeluar)){
+      showToast("Jam masuk & keluar wajib diisi untuk Kerja Lembur",C.d); return;
+    }
+    if(jenis==="ambil" && (rowForm.jumlahJamAmbil===undefined||rowForm.jumlahJamAmbil===""||Number(rowForm.jumlahJamAmbil)<=0)){
+      showToast("Jumlah jam diambil wajib diisi (lebih dari 0) untuk Pengambilan Lembur",C.d); return;
+    }
+    /* Normalisasi: pastikan field yang tidak relevan untuk jenis ini tidak menyimpan sisa data lama */
+    const cleanForm = jenis==="kerja"
+      ? {...rowForm, jenisEntri:"kerja", jumlahJamAmbil:""}
+      : {...rowForm, jenisEntri:"ambil", jamMasuk:"", jamKeluar:""};
     const upd = editRow
-      ? entries.map((e:any)=>e.id===editRow?{...e,...rowForm}:e)
-      : [...entries,{id:gId(),...rowForm,no:entries.length+1}];
+      ? entries.map((e:any)=>e.id===editRow?{...e,...cleanForm}:e)
+      : [...entries,{id:gId(),...cleanForm,no:entries.length+1}];
     showToast("⟳ Menyimpan...",C.p);
     const ok = await writeLemburKey({...rec, entries:upd});
     if(ok){ setEditRow(null); setRowForm({}); showToast("✓ Baris disimpan & tersinkron",C.s); }
@@ -3108,10 +3119,33 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     /* Table rows */
     entries.forEach((e:any,i:number)=>{
       const r=8+i;
-      [e.no,e.tanggalAwal||e.jadwalDinas||"",e.tanggalAkhir||"",e.jamMasuk,e.jamKeluar,e.keperluanLembur,e.keterangan,e.ttd||""].forEach((v,c)=>setC(r,c,String(v||""),false,c===0||c===3||c===4,true,i%2===0?"F0FFF8":undefined));
+      const isAmbil = e.jenisEntri==="ambil";
+      const masukCol  = isAmbil ? "—" : e.jamMasuk;
+      const keluarCol = isAmbil ? "—" : e.jamKeluar;
+      const kepCol    = isAmbil ? `[PENGAMBILAN -${Number(e.jumlahJamAmbil)||0} jam] ${e.keperluanLembur||""}`.trim() : e.keperluanLembur;
+      [e.no,e.tanggalAwal||e.jadwalDinas||"",e.tanggalAkhir||"",masukCol,keluarCol,kepCol,e.keterangan,e.ttd||""].forEach((v,c)=>setC(r,c,String(v||""),false,c===0||c===3||c===4,true,i%2===0?"F0FFF8":undefined));
     });
+    /* Ringkasan saldo: Didapat / Diambil / Saldo Bersih */
+    const totalMinsKerjaX = entries.reduce((s:number,e:any)=>{
+      if(e.jenisEntri==="ambil") return s;
+      if(!e.jamMasuk||!e.jamKeluar) return s;
+      const [h1,m1]=e.jamMasuk.split(":").map(Number);
+      const [h2,m2]=e.jamKeluar.split(":").map(Number);
+      let m=(h2*60+m2)-(h1*60+m1); if(m<0) m+=24*60; return s+(m>0?m:0);
+    },0);
+    const totalMinsAmbilX = entries.reduce((s:number,e:any)=>{
+      if(e.jenisEntri!=="ambil") return s;
+      const jam = Number(e.jumlahJamAmbil)||0;
+      return s + Math.round(jam*60);
+    },0);
+    const saldoMinsX = totalMinsKerjaX - totalMinsAmbilX;
+    const fmtJamX = (mins:number) => `${mins<0?"-":""}${Math.floor(Math.abs(mins)/60)} jam ${Math.abs(mins)%60} menit`;
+    const sumRow = 8+entries.length;
+    setC(sumRow,5,"Total Didapat:",true,false); setC(sumRow,6,fmtJamX(totalMinsKerjaX),true,false);
+    setC(sumRow+1,5,"Total Diambil:",true,false); setC(sumRow+1,6,fmtJamX(totalMinsAmbilX),true,false);
+    setC(sumRow+2,5,"Saldo Bulan Ini:",true,false); setC(sumRow+2,6,fmtJamX(saldoMinsX),true,false);
     /* Signatures */
-    const sigRow=9+entries.length;
+    const sigRow=sumRow+4;
     setC(sigRow,0,"",false,false);
     setC(sigRow+1,0,`Mengetahui,`,true,true);
     setC(sigRow+1,4,`Menyetujui,`,true,true);
@@ -3146,13 +3180,20 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     const k=`${p.id}_${rekapYM}`;
     const rec2:any = lemburData[k]||{entries:[]};
     const ents:any[] = rec2.entries||[];
-    const totalMins = ents.reduce((s:number,e:any)=>{
+    const totalMinsKerja = ents.reduce((s:number,e:any)=>{
+      if(e.jenisEntri==="ambil") return s;
       if(!e.jamMasuk||!e.jamKeluar) return s;
       const [h1,m1]=e.jamMasuk.split(":").map(Number);
       const [h2,m2]=e.jamKeluar.split(":").map(Number);
       let m=(h2*60+m2)-(h1*60+m1); if(m<0) m+=24*60; return s+(m>0?m:0);
     },0);
-    return {id:p.id, name:p.name, nik:p.nik||"—", jumlahHari:ents.length, totalMins, entries:ents, kepRuang:rec2.kepRuang||"", kepBidang:rec2.kepBidang||""};
+    const totalMinsAmbil = ents.reduce((s:number,e:any)=>{
+      if(e.jenisEntri!=="ambil") return s;
+      const jam = Number(e.jumlahJamAmbil)||0;
+      return s + Math.round(jam*60);
+    },0);
+    const totalMins = totalMinsKerja - totalMinsAmbil; // saldo bersih
+    return {id:p.id, name:p.name, nik:p.nik||"—", jumlahHari:ents.length, totalMins, totalMinsKerja, totalMinsAmbil, entries:ents, kepRuang:rec2.kepRuang||"", kepBidang:rec2.kepBidang||""};
   });
 
   const downloadRekapExcel = () => {
@@ -3174,25 +3215,29 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     setC(2,0,`Bulan: ${ymLabel(rekapYM)}`,false,true);
     setC(3,0,"",false,false);
     /* Header row */
-    const TH=["No","Nama Pegawai","NIK / NIP","Jumlah Hari Lembur","Total Jam Lembur","Keterangan"];
+    const TH=["No","Nama Pegawai","NIK / NIP","Jumlah Hari Lembur","Jam Didapat","Jam Diambil","Saldo Bersih","Keterangan"];
     TH.forEach((h,i)=>setC(4,i,h,true,true,true,"16685F",11));
     /* Data rows */
     const merges=[
-      merge(0,0,0,5),merge(1,0,1,5),merge(2,0,2,5),merge(3,0,3,5),
+      merge(0,0,0,7),merge(1,0,1,7),merge(2,0,2,7),merge(3,0,3,7),
     ];
+    const fmtJamExcel = (mins:number) => `${mins<0?"-":""}${Math.floor(Math.abs(mins)/60)} jam ${Math.abs(mins)%60} menit`;
     rekapRows.forEach((r:any,i:number)=>{
       const row=5+i;
       const bg=i%2===0?"F0FFF8":undefined;
-      const jam=`${Math.floor(r.totalMins/60)} jam ${r.totalMins%60} menit`;
       setC(row,0,String(i+1),false,true,true,bg);
       setC(row,1,r.name,true,false,true,bg);
       setC(row,2,r.nik,false,false,true,bg);
       setC(row,3,String(r.jumlahHari),false,true,true,bg);
-      setC(row,4,r.totalMins>0?jam:"—",false,true,true,bg);
-      setC(row,5,r.kepRuang?`Kep. Ruang: ${r.kepRuang}`:"",false,false,true,bg);
+      setC(row,4,r.totalMinsKerja>0?fmtJamExcel(r.totalMinsKerja):"—",false,true,true,bg);
+      setC(row,5,r.totalMinsAmbil>0?fmtJamExcel(r.totalMinsAmbil):"—",false,true,true,bg);
+      setC(row,6,fmtJamExcel(r.totalMins),false,true,true,bg);
+      setC(row,7,r.kepRuang?`Kep. Ruang: ${r.kepRuang}`:"",false,false,true,bg);
     });
     /* Footer total */
     const footRow=5+rekapRows.length;
+    const grandMinsKerja=rekapRows.reduce((s:number,r:any)=>s+r.totalMinsKerja,0);
+    const grandMinsAmbil=rekapRows.reduce((s:number,r:any)=>s+r.totalMinsAmbil,0);
     const grandMins=rekapRows.reduce((s:number,r:any)=>s+r.totalMins,0);
     const grandHari=rekapRows.reduce((s:number,r:any)=>s+r.jumlahHari,0);
     setC(footRow,0,"TOTAL",true,true,true,"E0F2F1");
@@ -3200,11 +3245,13 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     merges.push(merge(footRow,0,footRow,2));
     setC(footRow,2,"",false,false,true,"E0F2F1");
     setC(footRow,3,String(grandHari)+" hari",true,true,true,"E0F2F1");
-    setC(footRow,4,`${Math.floor(grandMins/60)} jam ${grandMins%60} menit`,true,true,true,"E0F2F1");
-    setC(footRow,5,"",false,false,true,"E0F2F1");
+    setC(footRow,4,fmtJamExcel(grandMinsKerja),true,true,true,"E0F2F1");
+    setC(footRow,5,fmtJamExcel(grandMinsAmbil),true,true,true,"E0F2F1");
+    setC(footRow,6,fmtJamExcel(grandMins),true,true,true,"E0F2F1");
+    setC(footRow,7,"",false,false,true,"E0F2F1");
     ws["!merges"]=merges;
-    ws["!cols"]=[{wch:4},{wch:28},{wch:18},{wch:20},{wch:22},{wch:28}];
-    ws["!ref"]=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:footRow,c:5}});
+    ws["!cols"]=[{wch:4},{wch:28},{wch:18},{wch:18},{wch:18},{wch:18},{wch:18},{wch:28}];
+    ws["!ref"]=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:footRow,c:7}});
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,"Rekap Lembur");
     /* Detail sheets per employee */
@@ -3221,7 +3268,11 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
       ["No","Tgl Awal Lembur","Tgl Akhir Lembur","Jam Masuk","Jam Keluar","Keperluan","Keterangan"].forEach((h,i)=>s2(1,i,h,true,true,true,"16685F"));
       r.entries.forEach((e:any,i:number)=>{
         const row=2+i; const bg=i%2===0?"F0FFF8":undefined;
-        [String(e.no),e.tanggalAwal||e.jadwalDinas||"",e.tanggalAkhir||"",e.jamMasuk||"",e.jamKeluar||"",e.keperluanLembur||"",e.keterangan||""].forEach((v,c)=>s2(row,c,v,false,c===0||c===3||c===4,true,bg));
+        const isAmbil = e.jenisEntri==="ambil";
+        const masukCol  = isAmbil ? "—" : (e.jamMasuk||"");
+        const keluarCol = isAmbil ? "—" : (e.jamKeluar||"");
+        const kepCol    = isAmbil ? `[PENGAMBILAN -${Number(e.jumlahJamAmbil)||0} jam] ${e.keperluanLembur||""}`.trim() : (e.keperluanLembur||"");
+        [String(e.no),e.tanggalAwal||e.jadwalDinas||"",e.tanggalAkhir||"",masukCol,keluarCol,kepCol,e.keterangan||""].forEach((v,c)=>s2(row,c,v,false,c===0||c===3||c===4,true,bg));
       });
       ws2["!ref"]=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:2+r.entries.length,c:6}});
       ws2["!cols"]=[{wch:4},{wch:16},{wch:16},{wch:14},{wch:14},{wch:24},{wch:20}];
@@ -3276,14 +3327,28 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
           found = true;
           const ents: any[] = ld[k].entries||[];
           if(!ents.length) return;
-          const totalMins = ents.reduce((s:number,e:any)=>{
+          const totalMinsKerja = ents.reduce((s:number,e:any)=>{
+            if(e.jenisEntri==="ambil") return s;
             if(!e.jamMasuk||!e.jamKeluar) return s;
             const [h1,m1]=e.jamMasuk.split(":").map(Number);
             const [h2,m2]=e.jamKeluar.split(":").map(Number);
             let m=(h2*60+m2)-(h1*60+m1); if(m<0) m+=24*60; return s+(m>0?m:0);
           },0);
-          const rows = ents.map((e:any,i:number)=>[i+1,e.tanggalAwal||"",e.tanggalAkhir||"",e.jamMasuk||"",e.jamKeluar||"",e.keperluanLembur||"",e.keterangan||"",e.ttd||""]);
-          rows.push(["","","","","","TOTAL",`${Math.floor(totalMins/60)} jam ${totalMins%60} menit`,""]);
+          const totalMinsAmbil = ents.reduce((s:number,e:any)=>{
+            if(e.jenisEntri!=="ambil") return s;
+            const jam = Number(e.jumlahJamAmbil)||0;
+            return s + Math.round(jam*60);
+          },0);
+          const totalMins = totalMinsKerja - totalMinsAmbil;
+          const fmtJamDbx = (mins:number) => `${mins<0?"-":""}${Math.floor(Math.abs(mins)/60)} jam ${Math.abs(mins)%60} menit`;
+          const rows = ents.map((e:any,i:number)=>{
+            const isAmbil = e.jenisEntri==="ambil";
+            const kep = isAmbil ? `[PENGAMBILAN -${Number(e.jumlahJamAmbil)||0} jam] ${e.keperluanLembur||""}`.trim() : (e.keperluanLembur||"");
+            return [i+1,e.tanggalAwal||"",e.tanggalAkhir||"",isAmbil?"—":(e.jamMasuk||""),isAmbil?"—":(e.jamKeluar||""),kep,e.keterangan||"",e.ttd||""];
+          });
+          rows.push(["","","","","","Total Didapat",fmtJamDbx(totalMinsKerja),""]);
+          rows.push(["","","","","","Total Diambil",fmtJamDbx(totalMinsAmbil),""]);
+          rows.push(["","","","","","Saldo Bulan Ini",fmtJamDbx(totalMins),""]);
           const ws=XLSX.utils.aoa_to_sheet([
             [`PENCATATAN LEMBUR — ${HOSPITAL}`],
             [`Nama: ${p.name}   NIK: ${p.nik||"-"}   Bulan: ${ymLabel(dbxLemburYM)}`],
@@ -3359,7 +3424,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
 
               {/* Actions */}
               <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
-                <Btn onClick={()=>{setEditRow(null);setRowForm({tanggalAwal:"",tanggalAkhir:"",jamMasuk:"",jamKeluar:"",keperluanLembur:"",keterangan:"",ttd:""});}} style={{flex:1}}>✚ Tambah Baris</Btn>
+                <Btn onClick={()=>{setEditRow(null);setRowForm({jenisEntri:"kerja",tanggalAwal:"",tanggalAkhir:"",jamMasuk:"",jamKeluar:"",jumlahJamAmbil:"",keperluanLembur:"",keterangan:"",ttd:""});}} style={{flex:1}}>✚ Tambah Baris</Btn>
                 <button onClick={()=>fileRef.current?.click()} style={{flex:1,background:C.iBg,border:`1px solid ${C.i}`,borderRadius:10,color:C.i,fontSize:12,fontWeight:700,padding:"10px 14px",cursor:"pointer",fontFamily:"inherit"}}>📥 Import Jadwal dari Excel</button>
                 <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(f)handleImportJadwal(f);e.target.value="";}}/>
                 <Btn onClick={downloadExcel} style={{flex:1,background:"#1565C0",color:"#fff"}}>⬇ Download Excel</Btn>
@@ -3370,20 +3435,50 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                 <Card style={{marginBottom:14,background:"#F0FFF8",border:`1.5px solid ${C.p}33`}}>
                   <SH label={editRow?"✏️ Edit Baris":"✚ Tambah Baris Lembur"} color={C.p}/>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                    <div style={{gridColumn:"1 / -1"}}>
+                      <LF label="Jenis Entri" req>
+                        <select
+                          style={iS}
+                          value={rowForm.jenisEntri||"kerja"}
+                          onChange={e=>setRowForm((p:any)=>({...p,jenisEntri:e.target.value}))}
+                        >
+                          <option value="kerja">🟢 Kerja Lembur</option>
+                          <option value="ambil">🟠 Pengambilan Lembur</option>
+                        </select>
+                      </LF>
+                    </div>
                     <LF label="Tanggal Awal Lembur" req>
                       <input style={iS} type="date" value={rowForm.tanggalAwal||""} onChange={e=>setRowForm((p:any)=>({...p,tanggalAwal:e.target.value}))}/>
                     </LF>
                     <LF label="Tanggal Akhir Lembur">
                       <input style={iS} type="date" value={rowForm.tanggalAkhir||""} onChange={e=>setRowForm((p:any)=>({...p,tanggalAkhir:e.target.value}))}/>
                     </LF>
-                    <LF label="Jam Absen Masuk" req>
-                      <input style={iS} type="time" value={rowForm.jamMasuk||""} onChange={e=>setRowForm((p:any)=>({...p,jamMasuk:e.target.value}))}/>
-                    </LF>
-                    <LF label="Jam Absen Keluar" req>
-                      <input style={iS} type="time" value={rowForm.jamKeluar||""} onChange={e=>setRowForm((p:any)=>({...p,jamKeluar:e.target.value}))}/>
-                    </LF>
+                    {(rowForm.jenisEntri||"kerja")==="kerja" ? (
+                      <>
+                        <LF label="Jam Absen Masuk" req>
+                          <input style={iS} type="time" value={rowForm.jamMasuk||""} onChange={e=>setRowForm((p:any)=>({...p,jamMasuk:e.target.value}))}/>
+                        </LF>
+                        <LF label="Jam Absen Keluar" req>
+                          <input style={iS} type="time" value={rowForm.jamKeluar||""} onChange={e=>setRowForm((p:any)=>({...p,jamKeluar:e.target.value}))}/>
+                        </LF>
+                      </>
+                    ) : (
+                      <div style={{gridColumn:"1 / -1"}}>
+                        <LF label="Jumlah Jam Diambil" req>
+                          <input
+                            style={iS}
+                            type="number"
+                            min={0}
+                            step={0.5}
+                            placeholder="cth: 2 (jam)"
+                            value={rowForm.jumlahJamAmbil??""}
+                            onChange={e=>setRowForm((p:any)=>({...p,jumlahJamAmbil:e.target.value}))}
+                          />
+                        </LF>
+                      </div>
+                    )}
                     <LF label="Keperluan Lembur">
-                      <input style={iS} placeholder="cth: Menyiapkan alat operasi" value={rowForm.keperluanLembur||""} onChange={e=>setRowForm((p:any)=>({...p,keperluanLembur:e.target.value}))}/>
+                      <input style={iS} placeholder={(rowForm.jenisEntri||"kerja")==="ambil"?"cth: Pulang awal / izin pribadi":"cth: Menyiapkan alat operasi"} value={rowForm.keperluanLembur||""} onChange={e=>setRowForm((p:any)=>({...p,keperluanLembur:e.target.value}))}/>
                     </LF>
                     <LF label="Keterangan">
                       <input style={iS} placeholder="Catatan tambahan..." value={rowForm.keterangan||""} onChange={e=>setRowForm((p:any)=>({...p,keterangan:e.target.value}))}/>
@@ -3423,23 +3518,36 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                       </thead>
                       <tbody>
                         {entries.map((e:any,i:number)=>{
-                          const dur = e.jamMasuk&&e.jamKeluar ? (()=>{
+                          const isAmbil = e.jenisEntri==="ambil";
+                          const dur = !isAmbil && e.jamMasuk&&e.jamKeluar ? (()=>{
                             const [h1,m1]=e.jamMasuk.split(":").map(Number);
                             const [h2,m2]=e.jamKeluar.split(":").map(Number);
                             let mins=(h2*60+m2)-(h1*60+m1);
                             if(mins<0) mins+=24*60;
                             if(mins===0) return "—";
                             return `${Math.floor(mins/60)}j ${mins%60}m`;
-                          })() : "—";
+                          })() : null;
+                          const jamAmbil = isAmbil ? Number(e.jumlahJamAmbil)||0 : 0;
                           return (
-                            <tr key={e.id} style={{background:i%2===0?"#FAFBFD":"#F0FFF8",borderBottom:`1px solid ${C.b}`}}>
+                            <tr key={e.id} style={{background:isAmbil?"#FFF4ED":(i%2===0?"#FAFBFD":"#F0FFF8"),borderBottom:`1px solid ${C.b}`}}>
                               <td style={{padding:"8px 10px",textAlign:"center",fontWeight:700,color:C.p}}>{e.no}</td>
                               <td style={{padding:"8px 10px",fontWeight:600,color:C.t}}>{e.tanggalAwal||e.jadwalDinas||"—"}</td>
                               <td style={{padding:"8px 10px",fontWeight:600,color:C.t}}>{e.tanggalAkhir||"—"}</td>
-                              <td style={{padding:"8px 10px",color:"#1565C0",fontWeight:600}}>{e.jamMasuk||"—"}</td>
-                              <td style={{padding:"8px 10px",color:"#B71C1C",fontWeight:600}}>{e.jamKeluar||"—"}</td>
-                              <td style={{padding:"8px 10px",color:C.s,fontWeight:700,whiteSpace:"nowrap"}}>{dur}</td>
-                              <td style={{padding:"8px 10px",color:C.t}}>{e.keperluanLembur||"—"}</td>
+                              <td style={{padding:"8px 10px",color:"#1565C0",fontWeight:600}}>{isAmbil?"—":(e.jamMasuk||"—")}</td>
+                              <td style={{padding:"8px 10px",color:"#B71C1C",fontWeight:600}}>{isAmbil?"—":(e.jamKeluar||"—")}</td>
+                              <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
+                                {isAmbil ? (
+                                  <span style={{background:"#FFE0CC",color:"#C2410C",fontWeight:800,padding:"3px 9px",borderRadius:12,fontSize:11,border:"1px solid #FDBA8C"}}>
+                                    - {jamAmbil} jam
+                                  </span>
+                                ) : (
+                                  <span style={{color:C.s,fontWeight:700}}>{dur}</span>
+                                )}
+                              </td>
+                              <td style={{padding:"8px 10px",color:C.t}}>
+                                {isAmbil && <span style={{background:"#FFE0CC",color:"#C2410C",fontWeight:800,fontSize:10,padding:"2px 6px",borderRadius:6,marginRight:6}}>[PENGAMBILAN]</span>}
+                                {e.keperluanLembur||"—"}
+                              </td>
                               <td style={{padding:"8px 10px",color:C.tL}}>{e.keterangan||"—"}</td>
                               <td style={{padding:"8px 10px",color:C.g,fontStyle:e.ttd?"normal":"italic"}}>{e.ttd||"·"}</td>
                               <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
@@ -3451,13 +3559,39 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                         })}
                       </tbody>
                       {entries.length>0 && (()=>{
-                        const totalMins=entries.reduce((sum:number,e:any)=>{
+                        const totalMinsKerja=entries.reduce((sum:number,e:any)=>{
+                          if(e.jenisEntri==="ambil") return sum;
                           if(!e.jamMasuk||!e.jamKeluar) return sum;
                           const [h1,m1]=e.jamMasuk.split(":").map(Number);
                           const [h2,m2]=e.jamKeluar.split(":").map(Number);
                           let m=(h2*60+m2)-(h1*60+m1); if(m<0) m+=24*60; return sum+(m>0?m:0);
                         },0);
-                        return <tfoot><tr style={{background:"#E0F2F1"}}><td colSpan={4} style={{padding:"8px 10px",fontWeight:700,color:"#16685F",textAlign:"right"}}>Total Lembur:</td><td colSpan={5} style={{padding:"8px 10px",fontWeight:800,color:C.s}}>{Math.floor(totalMins/60)} jam {totalMins%60} menit</td></tr></tfoot>;
+                        const totalMinsAmbil=entries.reduce((sum:number,e:any)=>{
+                          if(e.jenisEntri!=="ambil") return sum;
+                          const jam = Number(e.jumlahJamAmbil)||0;
+                          return sum + Math.round(jam*60);
+                        },0);
+                        const saldoMins = totalMinsKerja - totalMinsAmbil;
+                        const fmtJam = (mins:number) => {
+                          const sign = mins<0 ? "-" : "";
+                          const abs = Math.abs(mins);
+                          return `${sign}${Math.floor(abs/60)} jam ${abs%60} menit`;
+                        };
+                        return (
+                          <tfoot>
+                            <tr style={{background:"#E0F2F1"}}>
+                              <td colSpan={10} style={{padding:"10px 10px",fontWeight:700,color:"#16685F",fontSize:12}}>
+                                <div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"center",justifyContent:"flex-end"}}>
+                                  <span>Total Didapat: <b style={{color:C.s}}>{fmtJam(totalMinsKerja)}</b></span>
+                                  <span style={{color:"#D1D5DB"}}>|</span>
+                                  <span>Total Diambil: <b style={{color:"#C2410C"}}>{fmtJam(totalMinsAmbil)}</b></span>
+                                  <span style={{color:"#D1D5DB"}}>|</span>
+                                  <span>Saldo Bulan Ini: <b style={{color:saldoMins<0?C.d:"#16685F"}}>{fmtJam(saldoMins)}</b></span>
+                                </div>
+                              </td>
+                            </tr>
+                          </tfoot>
+                        );
                       })()}
                     </table>
                   </div>
