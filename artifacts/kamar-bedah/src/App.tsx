@@ -2226,9 +2226,20 @@ function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMo
       });
       if(!me.length){showToast("Tidak ada data monitoring untuk periode ini",C.w);return;}
       const h = ["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"];
-      const rows = me.map((e:any)=>[e.ruang||"",e.tanggal,e.jam,e.suhu,e.kelembaban,monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas]);
+      const rows = me
+        .sort((a:any,b:any)=>
+          (MON_ROOMS.indexOf(a.ruang??"")-MON_ROOMS.indexOf(b.ruang??"")) ||
+          a.tanggal.localeCompare(b.tanggal) ||
+          a.jam.localeCompare(b.jam)
+        )
+        .map((e:any)=>[
+          e.ruang??monitoringCfg?.lokasiRuang??"",
+          e.tanggal, e.jam, e.suhu, e.kelembaban,
+          monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",
+          e.petugas
+        ]);
       const ws = XLSX.utils.aoa_to_sheet([h,...rows]);
-      ws["!cols"]=[{wch:12},{wch:8},{wch:12},{wch:14},{wch:16},{wch:22},{wch:20}];
+      ws["!cols"]=[{wch:18},{wch:12},{wch:8},{wch:12},{wch:14},{wch:16},{wch:22}];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Monitoring Suhu");
       XLSX.writeFile(wb, `Monitoring_Suhu${arsipTahun?"_"+arsipTahun:""}${arsipBulan?"_"+arsipBulan:""}_${todayDate()}.xlsx`);
@@ -3693,106 +3704,155 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
   );
 }
 
-/* ─── MONITORING SUHU & KELEMBABAN ─────────────────────────────────── */
-interface MonitoringEntry { id:string; ruang:string; tanggal:string; jam:string; suhu:number; kelembaban:number; petugas:string; createdAt:string; }
+/* ─── MONITORING SUHU & KELEMBABAN (Multi-Room) ─────────────────────── */
+interface MonitoringEntry {
+  id: string;
+  ruang: string;        // nama ruangan (hardcoded dari MON_ROOMS)
+  tanggal: string;
+  jam: string;
+  suhu: number;
+  kelembaban: number;
+  petugas: string;
+  createdAt: string;
+}
 interface MonitoringCfg { suhuMin:number; suhuMax:number; rhMin:number; rhMax:number; lokasiRuang:string; kepalaKamarBedah:string; }
 const defaultMonCfg: MonitoringCfg = { suhuMin:19, suhuMax:24, rhMin:45, rhMax:65, lokasiRuang:"Kamar Bedah", kepalaKamarBedah:"" };
-const MON_JAMS = ["07:00","14:00","21:00"];
+const MON_JAMS  = ["07:00","14:00","21:00"];
+/* MON_ROOMS: 3 ruangan hardcoded sesuai spesifikasi.
+   Urutan ini digunakan di seluruh UI, Excel, dan ID deterministik. */
 const MON_ROOMS = ["Kamar Bedah 1","Kamar Bedah 2","Ruang Instrumen"];
 /* monId: id deterministik berbasis (ruang,tanggal,jam) — bukan random — sehingga
    menyimpan ulang slot yang sama akan UPSERT (timpa baris yang sama) bukan
    membuat baris baru yang menumpuk sebagai duplikat "hantu" di Supabase.
    KRITIS: ruang disertakan agar data antar-ruangan tidak saling menimpa. */
-const monId = (ruang: string, tanggal: string, jam: string) => `mon_${ruang.replace(/\s+/g,"_")}_${tanggal}_${jam}`;
+const monId = (ruang: string, tanggal: string, jam: string) =>
+  `mon_${ruang.replace(/\s+/g,"_")}_${tanggal}_${jam}`;
 const MON_MONTHS_ID = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 const MC = { pri:"#0369A1", priL:"#0284C7", priBg:"#EFF6FF", ok:"#16A34A", okBg:"#DCFCE7", err:"#DC2626", errBg:"#FEE2E2" };
+/* Warna per ruangan untuk chart multi-line */
+const MON_ROOM_COLORS = ["#0369A1","#7C3AED","#B45309"];
 
 function monIsOK(suhu:number, rh:number, cfg:MonitoringCfg):boolean {
   return suhu>=cfg.suhuMin && suhu<=cfg.suhuMax && rh>=cfg.rhMin && rh<=cfg.rhMax;
 }
 
-function monXlsx(entries:MonitoringEntry[], cfg:MonitoringCfg, ym:string, type:"harian"|"rekap"|"akreditasi", showToast:(m:string,c?:string)=>void) {
-  const [ys,ms]=ym.split("-"); const year=+ys; const month=+ms;
-  const me=[...entries].filter(e=>e.tanggal.startsWith(ym))
-    .sort((a,b)=>(a.ruang||"").localeCompare(b.ruang||"")||a.tanggal.localeCompare(b.tanggal)||a.jam.localeCompare(b.jam));
+function monXlsx(
+  entries: MonitoringEntry[],
+  cfg: MonitoringCfg,
+  ym: string,
+  type: "harian"|"rekap"|"akreditasi",
+  showToast: (m:string,c?:string)=>void
+) {
+  const [ys,ms] = ym.split("-"); const year=+ys; const month=+ms;
+  /* Filter & sort: Ruangan → Tanggal → Jam */
+  const me = [...entries]
+    .filter(e=>e.tanggal.startsWith(ym))
+    .sort((a,b)=>
+      MON_ROOMS.indexOf(a.ruang??"")-MON_ROOMS.indexOf(b.ruang??"") ||
+      a.tanggal.localeCompare(b.tanggal) ||
+      a.jam.localeCompare(b.jam)
+    );
   if(!me.length){showToast("Tidak ada data untuk periode ini","#E65100");return;}
-  const mName=MON_MONTHS_ID[month-1];
-  const wb=XLSX.utils.book_new();
+  const mName = MON_MONTHS_ID[month-1];
+  const wb = XLSX.utils.book_new();
 
-  /* ── Sheet 1: Monitoring Harian — tambah kolom Ruangan ── */
-  let lastRuang=""; let lastDate="";
-  const rows1=me.map(e=>{
-    const ok=monIsOK(e.suhu,e.kelembaban,cfg);
-    const r=[
-      e.ruang!==lastRuang?e.ruang:""         ,  // Ruangan (group)
-      e.tanggal!==lastDate||e.ruang!==lastRuang?e.tanggal:"",
-      e.jam,e.suhu,e.kelembaban,
-      cfg.suhuMin+"-"+cfg.suhuMax,cfg.rhMin+"-"+cfg.rhMax,
-      ok?"SESUAI":"TIDAK SESUAI",e.petugas
+  /* ── Sheet 1: Monitoring Harian (tambah kolom Ruangan) ── */
+  let lastKey = "";
+  const rows1 = me.map(e=>{
+    const ok = monIsOK(e.suhu,e.kelembaban,cfg);
+    const key = `${e.ruang??""}_${e.tanggal}`;
+    const showRuang = key!==lastKey;
+    lastKey = key;
+    return [
+      showRuang ? (e.ruang??"-") : "",   // Ruangan (dikelompokkan)
+      showRuang ? e.tanggal : "",         // Tanggal (dikelompokkan)
+      e.jam,
+      e.suhu,
+      e.kelembaban,
+      cfg.suhuMin+"-"+cfg.suhuMax,
+      cfg.rhMin+"-"+cfg.rhMax,
+      ok?"SESUAI":"TIDAK SESUAI",
+      e.petugas,
     ];
-    if(e.ruang!==lastRuang){lastRuang=e.ruang;lastDate="";} // reset date grouping per room
-    lastDate=e.tanggal;
-    return r;
   });
-  const ws1=XLSX.utils.aoa_to_sheet([["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Standar Suhu","Standar RH","Status","Petugas"],...rows1]);
+  const ws1 = XLSX.utils.aoa_to_sheet([
+    ["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Standar Suhu","Standar RH","Status","Petugas"],
+    ...rows1
+  ]);
   ws1["!cols"]=[{wch:18},{wch:14},{wch:8},{wch:10},{wch:14},{wch:13},{wch:12},{wch:16},{wch:16}];
   XLSX.utils.book_append_sheet(wb,ws1,"Monitoring Harian");
 
-  /* ── Sheet 2: Rekap Bulanan — dipecah per ruangan ── */
-  const rekapRows:any[]=[
-    ["REKAP MONITORING SUHU & KELEMBABAN",""],
-    [mName+" "+year,""],["",""],
-    ["Ruangan","Rata-rata Suhu (°C)","Rata-rata RH (%)","Jumlah Ukur","Tidak Sesuai","Kepatuhan (%)"]
-  ];
-  let totalUkur=0; let totalTidakS=0;
-  MON_ROOMS.forEach(r=>{
-    const re=me.filter(e=>(e.ruang||"")===(r));
-    const sv=re.map(e=>e.suhu).filter(v=>v>0);
-    const rv=re.map(e=>e.kelembaban).filter(v=>v>0);
-    const aS=sv.length?+(sv.reduce((a,b)=>a+b,0)/sv.length).toFixed(2):"-";
-    const aR=rv.length?+(rv.reduce((a,b)=>a+b,0)/rv.length).toFixed(2):"-";
-    const ts=re.filter(e=>!monIsOK(e.suhu,e.kelembaban,cfg)).length;
-    const pct=re.length?+((re.length-ts)/re.length*100).toFixed(1):"-";
-    rekapRows.push([r,aS,aR,re.length,ts,pct]);
-    totalUkur+=re.length; totalTidakS+=ts;
+  /* ── Helper: hitung statistik per ruangan ── */
+  const statPerRoom = MON_ROOMS.map(ruang=>{
+    const rows = me.filter(e=>(e.ruang??""  )===ruang);
+    const suhuV = rows.map(e=>e.suhu).filter(v=>v>0);
+    const rhV   = rows.map(e=>e.kelembaban).filter(v=>v>0);
+    const avgS  = suhuV.length ? +(suhuV.reduce((a,b)=>a+b,0)/suhuV.length).toFixed(2):0;
+    const avgR  = rhV.length   ? +(rhV.reduce((a,b)=>a+b,0)/rhV.length).toFixed(2)    :0;
+    const tS    = rows.filter(e=>!monIsOK(e.suhu,e.kelembaban,cfg)).length;
+    const pct   = rows.length  ? +((rows.length-tS)/rows.length*100).toFixed(1)        :0;
+    return {ruang, rows, avgS, avgR, tidakS:tS, pct};
   });
-  rekapRows.push(["","","",""]);
-  rekapRows.push(["TOTAL",
-    me.length?+(me.map(e=>e.suhu).filter(v=>v>0).reduce((a,b)=>a+b,0)/me.map(e=>e.suhu).filter(v=>v>0).length).toFixed(2):"-",
-    me.length?+(me.map(e=>e.kelembaban).filter(v=>v>0).reduce((a,b)=>a+b,0)/me.map(e=>e.kelembaban).filter(v=>v>0).length).toFixed(2):"-",
-    totalUkur,totalTidakS,
-    totalUkur?+((totalUkur-totalTidakS)/totalUkur*100).toFixed(1):"-"
+
+  /* ── Sheet 2: Rekap Bulanan (dipecah per ruangan) ── */
+  const rekapHeader = [
+    ["REKAP MONITORING SUHU & KELEMBABAN","","","",""],
+    [`${mName} ${year}`,"","","",""],
+    [""],
+    ["Ruangan","Rata-rata Suhu (°C)","Rata-rata RH (%)","Jumlah Pengukuran","Tidak Sesuai","Kepatuhan (%)"],
+  ];
+  const rekapRows = statPerRoom.map(s=>[s.ruang,s.avgS,s.avgR,s.rows.length,s.tidakS,s.pct]);
+  /* Baris total gabungan */
+  const allSuhuV = me.map(e=>e.suhu).filter(v=>v>0);
+  const allRhV   = me.map(e=>e.kelembaban).filter(v=>v>0);
+  const allAvgS  = allSuhuV.length ? +(allSuhuV.reduce((a,b)=>a+b,0)/allSuhuV.length).toFixed(2):0;
+  const allAvgR  = allRhV.length   ? +(allRhV.reduce((a,b)=>a+b,0)/allRhV.length).toFixed(2)    :0;
+  const allTidakS= me.filter(e=>!monIsOK(e.suhu,e.kelembaban,cfg)).length;
+  const allPct   = me.length ? +((me.length-allTidakS)/me.length*100).toFixed(1) : 0;
+  const ws2 = XLSX.utils.aoa_to_sheet([
+    ...rekapHeader,
+    ...rekapRows,
+    [""],
+    ["TOTAL / GABUNGAN",allAvgS,allAvgR,me.length,allTidakS,allPct],
   ]);
-  const ws2=XLSX.utils.aoa_to_sheet(rekapRows);
-  ws2["!cols"]=[{wch:20},{wch:18},{wch:16},{wch:12},{wch:14},{wch:13}];
-  ws2["!merges"]=[{s:{r:0,c:0},e:{r:0,c:5}},{s:{r:1,c:0},e:{r:1,c:5}}];
+  ws2["!cols"]=[{wch:22},{wch:20},{wch:18},{wch:20},{wch:18},{wch:14}];
+  ws2["!merges"]=[{s:{r:0,c:0},e:{r:0,c:4}},{s:{r:1,c:0},e:{r:1,c:4}}];
   XLSX.utils.book_append_sheet(wb,ws2,"Rekap Bulanan");
 
-  /* ── Sheet 3: Laporan Akreditasi — rekap per ruangan + kolom TTD ── */
+  /* ── Sheet 3: Laporan Akreditasi (dipecah per ruangan) ── */
   if(type==="akreditasi"){
-    const aRows:any[]=[
-      ["LAPORAN MONITORING SUHU DAN KELEMBABAN KAMAR BEDAH","","","","",""],
-      ["Bulan: "+mName+" "+year,"","","","",""],
-      [HOSPITAL,"","","","",""],["","","","","",""],
-      ["Ruangan","Rata-rata Suhu (°C)","Rata-rata RH (%)","Jumlah Ukur","Tidak Sesuai","Kepatuhan (%)"],
+    const aRows: any[][] = [
+      ["LAPORAN MONITORING SUHU DAN KELEMBABAN KAMAR BEDAH","","",""],
+      [`Bulan: ${mName} ${year}`,"","",""],
+      [/* HOSPITAL — gunakan konstanta global */ "RS Panti Rini","","",""],
+      ["","","",""],
     ];
-    MON_ROOMS.forEach(r=>{
-      const re=me.filter(e=>(e.ruang||"")===r);
-      const sv=re.map(e=>e.suhu).filter(v=>v>0);
-      const rv=re.map(e=>e.kelembaban).filter(v=>v>0);
-      const aS=sv.length?+(sv.reduce((a,b)=>a+b,0)/sv.length).toFixed(2):"-";
-      const aR=rv.length?+(rv.reduce((a,b)=>a+b,0)/rv.length).toFixed(2):"-";
-      const ts=re.filter(e=>!monIsOK(e.suhu,e.kelembaban,cfg)).length;
-      const pct=re.length?+((re.length-ts)/re.length*100).toFixed(1):"-";
-      aRows.push([r,aS,aR,re.length,ts,pct]);
+    statPerRoom.forEach(s=>{
+      aRows.push([`▌ ${s.ruang}`,"","",""]);
+      aRows.push(["Parameter","Nilai","",""]);
+      aRows.push(["Rata-rata Suhu (°C)",s.avgS,"",""]);
+      aRows.push(["Rata-rata Kelembaban (%)",s.avgR,"",""]);
+      aRows.push(["Jumlah Pengukuran",s.rows.length,"",""]);
+      aRows.push(["Tidak Sesuai Standar",s.tidakS,"",""]);
+      aRows.push(["Kepatuhan (%)",s.pct,"",""]);
+      aRows.push(["","","",""]);
     });
-    aRows.push(["","","","","",""]);
-    aRows.push(["Petugas Monitoring","","","","Kepala Kamar Bedah",""]);
-    aRows.push(["","","","","",""]);aRows.push(["","","","","",""]);aRows.push(["","","","","",""]);
-    aRows.push(["(..........................)","","","","(..........................)",")"]);
-    const ws3=XLSX.utils.aoa_to_sheet(aRows);
-    ws3["!cols"]=[{wch:22},{wch:18},{wch:16},{wch:12},{wch:14},{wch:13}];
-    ws3["!merges"]=[{s:{r:0,c:0},e:{r:0,c:5}},{s:{r:1,c:0},e:{r:1,c:5}},{s:{r:2,c:0},e:{r:2,c:5}}];
+    aRows.push(["GABUNGAN SEMUA RUANGAN","","",""]);
+    aRows.push(["Rata-rata Suhu (°C)",allAvgS,"",""]);
+    aRows.push(["Rata-rata Kelembaban (%)",allAvgR,"",""]);
+    aRows.push(["Kepatuhan (%)",allPct,"",""]);
+    aRows.push(["","","",""]);
+    aRows.push(["Petugas Monitoring","","Kepala Kamar Bedah",""]);
+    aRows.push(["","","",""]);
+    aRows.push(["","","",""]);
+    aRows.push(["(..........................)","","("+cfg.kepalaKamarBedah+")",""]);
+    const ws3 = XLSX.utils.aoa_to_sheet(aRows);
+    ws3["!cols"]=[{wch:28},{wch:16},{wch:28},{wch:16}];
+    ws3["!merges"]=[
+      {s:{r:0,c:0},e:{r:0,c:3}},
+      {s:{r:1,c:0},e:{r:1,c:3}},
+      {s:{r:2,c:0},e:{r:2,c:3}},
+    ];
     XLSX.utils.book_append_sheet(wb,ws3,"Laporan Akreditasi");
   }
   XLSX.writeFile(wb,"Monitoring_"+(type==="harian"?"Harian":type==="rekap"?"Rekap":"Akreditasi")+"_"+ym+".xlsx");
@@ -3800,207 +3860,335 @@ function monXlsx(entries:MonitoringEntry[], cfg:MonitoringCfg, ym:string, type:"
 }
 
 function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,setMonitoringCfg,showToast,supaCfg,dbxCfg,role,upsertOneToSupa,deleteFromSupa}:any) {
-  const [subTab,setSubTab]=useState("harian");
-  const [selMonth,setSelMonth]=useState(todayDate().slice(0,7));
-  const [supaMonBusy,setSupaMonBusy]=useState(false);
-  const [supaMonYM,setSupaMonYM]=useState(todayDate().slice(0,7));
-  const [dbxMonBusy,setDbxMonBusy]=useState(false);
-  const [dbxMonYM,setDbxMonYM]=useState(todayDate().slice(0,7));
-  const [formDate,setFormDate]=useState(todayDate());
-  const [grafikRuang,setGrafikRuang]=useState<string>("Kamar Bedah 1");
-  type SL={suhu:string;kelembaban:string;petugas:string};
-  const ES:SL={suhu:"",kelembaban:"",petugas:""};
-  /* multiSlots: { [ruang]: { [jam]: SL } } */
-  type MultiSlots=Record<string,Record<string,SL>>;
-  const mkMultiSlots=():MultiSlots=>Object.fromEntries(MON_ROOMS.map(r=>[r,{"07:00":{...ES},"14:00":{...ES},"21:00":{...ES}}]));
-  const [multiSlots,setMultiSlots]=useState<MultiSlots>(mkMultiSlots);
-  const [cfgForm,setCfgForm]=useState<MonitoringCfg>({...monitoringCfg});
+  const [subTab,setSubTab]       = useState("harian");
+  const [selMonth,setSelMonth]   = useState(todayDate().slice(0,7));
+  const [supaMonBusy,setSupaMonBusy] = useState(false);
+  const [supaMonYM,setSupaMonYM] = useState(todayDate().slice(0,7));
+  const [dbxMonBusy,setDbxMonBusy]   = useState(false);
+  const [dbxMonYM,setDbxMonYM]   = useState(todayDate().slice(0,7));
+  const [formDate,setFormDate]   = useState(todayDate());
+  /* grafik: filter ruangan; default "all" */
+  const [grafikRuang,setGrafikRuang] = useState("all");
+  const [cfgForm,setCfgForm]     = useState<MonitoringCfg>({...monitoringCfg});
+
+  /* ── Slot state: { [ruang]: { [jam]: {suhu,kelembaban,petugas} } } ── */
+  type SL = {suhu:string;kelembaban:string;petugas:string};
+  const ES: SL = {suhu:"",kelembaban:"",petugas:""};
+  const mkSlots = (): Record<string,Record<string,SL>> =>
+    Object.fromEntries(MON_ROOMS.map(r=>[r, Object.fromEntries(MON_JAMS.map(j=>[j,{...ES}]))]));
+  const [slots,setSlots] = useState<Record<string,Record<string,SL>>>(mkSlots);
+
+  /* Isi ulang form slots ketika tanggal berubah */
   useEffect(()=>{
-    if(!monitoringEntries) return;
-    const ns=mkMultiSlots();
+    const ns = mkSlots();
     MON_ROOMS.forEach(ruang=>{
       MON_JAMS.forEach(jam=>{
-        const ex=monitoringEntries.find((e:MonitoringEntry)=>e.ruang===ruang&&e.tanggal===formDate&&e.jam===jam);
+        const ex = (monitoringEntries as MonitoringEntry[]).find(e=>
+          e.ruang===ruang && e.tanggal===formDate && e.jam===jam
+        );
         if(ex) ns[ruang][jam]={suhu:String(ex.suhu),kelembaban:String(ex.kelembaban),petugas:ex.petugas};
       });
     });
-    setMultiSlots(ns);
-  },[formDate, monitoringEntries]);
-  const handleSave= async ()=>{
-    const nw:MonitoringEntry[]=[];
+    setSlots(ns);
+  },[formDate]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ── handleSave: kumpulkan semua slot terisi dari 3 ruangan ── */
+  const handleSave = async ()=>{
+    const nw: MonitoringEntry[] = [];
     MON_ROOMS.forEach(ruang=>{
       MON_JAMS.forEach(jam=>{
-        const s=multiSlots[ruang][jam];
-        if(s.suhu&&s.kelembaban) nw.push({id:monId(ruang,formDate,jam),ruang,tanggal:formDate,jam,suhu:parseFloat(s.suhu),kelembaban:parseFloat(s.kelembaban),petugas:s.petugas,createdAt:fNow()});
+        const s = slots[ruang][jam];
+        if(s.suhu && s.kelembaban){
+          nw.push({
+            id:        monId(ruang,formDate,jam),
+            ruang,
+            tanggal:   formDate,
+            jam,
+            suhu:      parseFloat(s.suhu),
+            kelembaban:parseFloat(s.kelembaban),
+            petugas:   s.petugas,
+            createdAt: fNow(),
+          });
+        }
       });
     });
     if(!nw.length){showToast("Isi minimal satu slot suhu/kelembaban","#E65100");return;}
     showToast(`⟳ Menyimpan ${nw.length} data monitoring...`,MC.pri);
-    /* Tulis per-slot (granular, id deterministik) — bukan replace seluruh array,
-       sehingga slot/tanggal lain yang sedang diedit device lain tidak tersentuh. */
+    /* Upsert granular per slot — arsitektur identik dengan eksisting */
     const results = await Promise.all(nw.map((e:MonitoringEntry)=>upsertOneToSupa?.("kb_monitoring", e)));
-    const failed = results.filter((r:any)=>!r?.ok);
+    const failed  = results.filter((r:any)=>!r?.ok);
     if(failed.length){
       showToast(`⚠ Gagal menyimpan ${failed.length} data: ${failed[0]?.error||"kesalahan tidak diketahui"}`,MC.err);
       return;
     }
+    /* Update local state: filter lama berdasarkan (ruang AND tanggal AND jam) */
     setMonitoringEntries((p:MonitoringEntry[])=>{
-      /* Filter lama: cocokkan tanggal DAN ruangan DAN jam agar Realtime tidak bentrok */
-      const filtered=p.filter((e:MonitoringEntry)=>!nw.some(n=>n.ruang===e.ruang&&n.tanggal===e.tanggal&&n.jam===e.jam));
+      const filtered = p.filter((e:MonitoringEntry)=>
+        !(nw.some(n=>n.ruang===e.ruang && n.tanggal===e.tanggal && n.jam===e.jam))
+      );
       return [...filtered,...nw];
     });
     showToast("✓ "+nw.length+" data monitoring "+formDate+" disimpan & tersinkron",MC.ok);
   };
 
-  const downloadMonFromSupa = async (type:"harian"|"rekap"|"akreditasi") => {
-    // SUPA_CLIENT sudah singleton — guard tidak diperlukan
+  /* ── Download dari Supabase backup ── */
+  const downloadMonFromSupa = async (type:"harian"|"rekap"|"akreditasi")=>{
     setSupaMonBusy(true);
     try {
       const {data,error} = await SUPA_CLIENT.from("kamar_bedah_backup").select("data").order("created_at",{ascending:false}).limit(1);
       if(error||!data?.length) throw new Error(error?.message||"Data tidak ditemukan di Supabase");
-      const raw = typeof data[0].data==="string"?JSON.parse(data[0].data):data[0].data;
+      const raw  = typeof data[0].data==="string"?JSON.parse(data[0].data):data[0].data;
       const me:MonitoringEntry[] = (raw.monitoringEntries||raw.data?.monitoringEntries||[]).filter((e:MonitoringEntry)=>e.tanggal?.startsWith(supaMonYM));
-      const cfg2:MonitoringCfg = raw.monitoringCfg||raw.data?.monitoringCfg||monitoringCfg;
+      const cfg2:MonitoringCfg   = raw.monitoringCfg||raw.data?.monitoringCfg||monitoringCfg;
       if(!me.length){showToast("Tidak ada data monitoring "+supaMonYM+" di Supabase",MC.err);setSupaMonBusy(false);return;}
-      monXlsx(me, cfg2, supaMonYM, type, showToast);
+      monXlsx(me,cfg2,supaMonYM,type,showToast);
       showToast("✓ Monitoring dari Supabase ("+supaMonYM+") diunduh",MC.ok);
     } catch(err:any){showToast("Gagal: "+(err?.message||"Error Supabase"),MC.err);}
     setSupaMonBusy(false);
   };
 
-  const downloadMonFromDropbox = async (type:"harian"|"rekap"|"akreditasi") => {
+  /* ── Download dari Dropbox backup ── */
+  const downloadMonFromDropbox = async (type:"harian"|"rekap"|"akreditasi")=>{
     setDbxMonBusy(true);
     try {
       const res = await dropboxDownload(dbxCfg);
       if(!res.ok||!res.data) throw new Error(res.msg||"Gagal mengambil data dari Dropbox");
       const me2:MonitoringEntry[] = (res.data.monitoringEntries||[]).filter((e:MonitoringEntry)=>e.tanggal?.startsWith(dbxMonYM));
-      const cfg2:MonitoringCfg = res.data.monitoringCfg||monitoringCfg;
+      const cfg2:MonitoringCfg   = res.data.monitoringCfg||monitoringCfg;
       if(!me2.length){showToast("Tidak ada data monitoring "+dbxMonYM+" di Dropbox",MC.err);setDbxMonBusy(false);return;}
-      monXlsx(me2, cfg2, dbxMonYM, type, showToast);
+      monXlsx(me2,cfg2,dbxMonYM,type,showToast);
       showToast("✓ Monitoring dari Dropbox ("+dbxMonYM+") diunduh",MC.ok);
     } catch(err:any){showToast("Gagal: "+(err?.message||"Error Dropbox"),MC.err);}
     setDbxMonBusy(false);
   };
 
-  /* ── derived variables (grafik pakai filter ruangan) ── */
-  const me=monitoringEntries.filter((e:MonitoringEntry)=>e.tanggal.startsWith(selMonth))
-    .sort((a:MonitoringEntry,b:MonitoringEntry)=>(a.ruang||"").localeCompare(b.ruang||"")||a.tanggal.localeCompare(b.tanggal)||a.jam.localeCompare(b.jam));
-  const meGrafik = grafikRuang==="Semua" ? me : me.filter((e:MonitoringEntry)=>e.ruang===grafikRuang);
-  const suhuV=meGrafik.map((e:MonitoringEntry)=>e.suhu).filter((v:number)=>v>0);
-  const rhV=meGrafik.map((e:MonitoringEntry)=>e.kelembaban).filter((v:number)=>v>0);
-  const avgS=suhuV.length?+(suhuV.reduce((a:number,b:number)=>a+b,0)/suhuV.length).toFixed(1):0;
-  const avgR=rhV.length?+(rhV.reduce((a:number,b:number)=>a+b,0)/rhV.length).toFixed(1):0;
-  const tidakS=meGrafik.filter((e:MonitoringEntry)=>!monIsOK(e.suhu,e.kelembaban,monitoringCfg)).length;
-  const cmpPct=meGrafik.length?+((meGrafik.length-tidakS)/meGrafik.length*100).toFixed(1):0;
-  const chartData=meGrafik.map((e:MonitoringEntry)=>({name:e.tanggal.slice(8)+"/"+(e.jam==="07:00"?"07":e.jam==="14:00"?"14":"21"),suhu:e.suhu,kelembaban:e.kelembaban}));
-  const monInS:React.CSSProperties={padding:"8px 12px",border:"1px solid #D1D5DB",borderRadius:8,fontSize:14,width:"100%",background:"#fff",fontFamily:"inherit",outline:"none"};
-  const mLabel=MON_MONTHS_ID[+selMonth.slice(5)-1]+" "+selMonth.slice(0,4);
+  /* ── Derived data untuk grafik & statistik ── */
+  const meAll = (monitoringEntries as MonitoringEntry[])
+    .filter(e=>e.tanggal.startsWith(selMonth))
+    .sort((a,b)=>a.ruang?.localeCompare(b.ruang??"")||a.tanggal.localeCompare(b.tanggal)||a.jam.localeCompare(b.jam));
+  /* Data difilter berdasarkan pilihan ruangan di tab Grafik */
+  const me = grafikRuang==="all" ? meAll : meAll.filter(e=>e.ruang===grafikRuang);
+  const suhuV  = me.map(e=>e.suhu).filter(v=>v>0);
+  const rhV    = me.map(e=>e.kelembaban).filter(v=>v>0);
+  const avgS   = suhuV.length ? +(suhuV.reduce((a:number,b:number)=>a+b,0)/suhuV.length).toFixed(1):0;
+  const avgR   = rhV.length   ? +(rhV.reduce((a:number,b:number)=>a+b,0)/rhV.length).toFixed(1)   :0;
+  const tidakS = me.filter(e=>!monIsOK(e.suhu,e.kelembaban,monitoringCfg)).length;
+  const cmpPct = me.length ? +((me.length-tidakS)/me.length*100).toFixed(1):0;
+  const mLabel = MON_MONTHS_ID[+selMonth.slice(5)-1]+" "+selMonth.slice(0,4);
 
-  const downloadGrafikExcel = () => {
-    if(!meGrafik.length){showToast("Tidak ada data untuk bulan ini","#E65100");return;}
+  /* chartData: satu titik per (ruang, tanggal, jam) — label: tgl/jam singkat */
+  const chartData = me.map(e=>({
+    name: e.tanggal.slice(8)+"/"+(e.jam==="07:00"?"07":e.jam==="14:00"?"14":"21"),
+    ruang: e.ruang,
+    suhu:  e.suhu,
+    kelembaban: e.kelembaban,
+  }));
+
+  /* Untuk grafik multi-line (semua ruangan), buat structure per tanggal+jam */
+  const buildMultiChartData = (key:"suhu"|"kelembaban") => {
+    const map: Record<string,any> = {};
+    meAll.forEach(e=>{
+      const label = e.tanggal.slice(8)+"/"+(e.jam==="07:00"?"07":e.jam==="14:00"?"14":"21")+"_"+e.tanggal;
+      if(!map[label]) map[label]={name:e.tanggal.slice(8)+"/"+(e.jam==="07:00"?"07":e.jam==="14:00"?"14":"21")};
+      map[label][e.ruang??"-"] = e[key];
+    });
+    return Object.values(map);
+  };
+
+  const downloadGrafikExcel = ()=>{
+    if(!me.length){showToast("Tidak ada data untuk bulan ini","#E65100");return;}
     const wb = XLSX.utils.book_new();
-    const rows = meGrafik.map((e:MonitoringEntry)=>[e.ruang||"",e.tanggal,e.jam,e.suhu,e.kelembaban,monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas]);
-    const ws = XLSX.utils.aoa_to_sheet([["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"],...rows,
-      [],[`Rata-rata Suhu: ${avgS}°C`,`Rata-rata RH: ${avgR}%`,`Kepatuhan: ${cmpPct}%`,"","","",""]
+    const rows = me.map(e=>[e.ruang??"-",e.tanggal,e.jam,e.suhu,e.kelembaban,monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas]);
+    const ws   = XLSX.utils.aoa_to_sheet([
+      ["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"],
+      ...rows,
+      [],
+      [`Rata-rata Suhu: ${avgS}°C`,`Rata-rata RH: ${avgR}%`,`Kepatuhan: ${cmpPct}%`,"","","",""]
     ]);
     ws["!cols"]=[{wch:18},{wch:14},{wch:8},{wch:12},{wch:14},{wch:16},{wch:22}];
     XLSX.utils.book_append_sheet(wb,ws,"Data Grafik");
-    XLSX.writeFile(wb,`Grafik_Monitoring_${selMonth}_${grafikRuang.replace(/\s+/g,"_")}.xlsx`);
-    showToast("✓ Data grafik "+mLabel+" ("+grafikRuang+") diunduh",MC.ok);
+    XLSX.writeFile(wb,`Grafik_Monitoring_${selMonth}.xlsx`);
+    showToast("✓ Data grafik "+mLabel+" diunduh",MC.ok);
   };
+
+  /* Inner style override untuk input di dalam komponen ini */
+  const iSm: React.CSSProperties = {padding:"6px 8px",border:"1px solid #D1D5DB",borderRadius:7,fontSize:13,width:"100%",background:"#fff",fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
+
+  /* Data tabel Harian (gunakan meAll agar tidak terpengaruh filter grafik) */
+  const meHarian = meAll;
 
   return (
     <div>
+      {/* ── Header ── */}
       <div style={{marginBottom:14}}>
         <div style={{fontWeight:800,fontSize:18,color:MC.pri,marginBottom:2}}>🌡 Monitoring Suhu &amp; Kelembaban</div>
-        <div style={{fontSize:12,color:"#64748B"}}>3 Ruangan · Standar Suhu {monitoringCfg.suhuMin}-{monitoringCfg.suhuMax}°C · RH {monitoringCfg.rhMin}-{monitoringCfg.rhMax}%</div>
+        <div style={{fontSize:12,color:"#64748B"}}>
+          {MON_ROOMS.join(" · ")} · Standar Suhu {monitoringCfg.suhuMin}-{monitoringCfg.suhuMax}°C · RH {monitoringCfg.rhMin}-{monitoringCfg.rhMax}%
+        </div>
       </div>
+
+      {/* ── Sub-tabs ── */}
       <div style={{display:"flex",gap:6,marginBottom:18,flexWrap:"wrap"}}>
         {[{k:"harian",l:"📋 Harian"},{k:"grafik",l:"📊 Grafik"},{k:"unduh",l:"📥 Unduh"},{k:"standar",l:"⚙ Standar"}].map(t=>(
           <button key={t.k} onClick={()=>setSubTab(t.k)} style={{padding:"7px 18px",borderRadius:20,border:"none",background:subTab===t.k?MC.pri:"#E2E8F0",color:subTab===t.k?"#fff":"#475569",fontWeight:600,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>{t.l}</button>
         ))}
       </div>
+
+      {/* Month + date pickers (shared) */}
       {(subTab==="harian"||subTab==="grafik"||subTab==="unduh")&&(
         <div style={{display:"flex",gap:10,alignItems:"flex-end",marginBottom:18,flexWrap:"wrap"}}>
-          <div><div style={{fontSize:11,fontWeight:700,color:"#64748B",marginBottom:4}}>Bulan</div><input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)} style={{...monInS,width:"auto"}}/></div>
-          {subTab==="harian"&&<div><div style={{fontSize:11,fontWeight:700,color:"#64748B",marginBottom:4}}>Tanggal Input</div><input type="date" value={formDate} onChange={e=>setFormDate(e.target.value)} style={{...monInS,width:"auto"}}/></div>}
+          <div>
+            <div style={{fontSize:11,fontWeight:700,color:"#64748B",marginBottom:4}}>Bulan</div>
+            <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)} style={{...iSm,width:"auto"}}/>
+          </div>
+          {subTab==="harian"&&(
+            <div>
+              <div style={{fontSize:11,fontWeight:700,color:"#64748B",marginBottom:4}}>Tanggal Input</div>
+              <input type="date" value={formDate} onChange={e=>setFormDate(e.target.value)} style={{...iSm,width:"auto"}}/>
+            </div>
+          )}
         </div>
       )}
-      {/* ── HARIAN ── */}
+
+      {/* ══════════════════════════════════════════════════════
+          TAB HARIAN
+         ══════════════════════════════════════════════════════ */}
       {subTab==="harian"&&(
         <div>
-          {/* ── Form Input: 3 seksi ruangan sekaligus ── */}
+          {/* Form input: 1 tabel per ruangan */}
           <div style={{background:"linear-gradient(135deg,#EFF6FF,#F0FDF4)",border:"1px solid #BAE6FD",borderRadius:14,padding:18,marginBottom:18}}>
             <div style={{fontWeight:700,color:MC.pri,fontSize:14,marginBottom:16}}>📝 Input Pemantauan — {fD(formDate)}</div>
-            {MON_ROOMS.map((ruang,ri)=>{
-              const roomColors=[{bg:"#EFF6FF",hd:"#DBEAFE",border:"#BAE6FD",accent:MC.pri},{bg:"#F0FDF4",hd:"#DCFCE7",border:"#86EFAC",accent:MC.ok},{bg:"#FFF7ED",hd:"#FED7AA",border:"#FDBA74",accent:"#EA580C"}];
-              const rc=roomColors[ri%3];
-              return (
-                <div key={ruang} style={{background:rc.bg,border:"1px solid "+rc.border,borderRadius:12,padding:"14px 16px",marginBottom:ri<MON_ROOMS.length-1?12:0}}>
-                  <div style={{fontWeight:800,color:rc.accent,fontSize:13,marginBottom:10}}>🏥 {ruang}</div>
-                  <div style={{overflowX:"auto"}}>
-                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                      <thead><tr>{["Jam","Suhu (°C)","Kelembaban (%)","Petugas","Status"].map(h=><th key={h} style={{padding:"7px 10px",background:rc.hd,color:rc.accent,fontWeight:700,textAlign:"left",borderBottom:"2px solid "+rc.border,whiteSpace:"nowrap",fontSize:12}}>{h}</th>)}</tr></thead>
-                      <tbody>
-                        {MON_JAMS.map(jam=>{
-                          const s=multiSlots[ruang]?.[jam]||{suhu:"",kelembaban:"",petugas:""};
-                          const sv=parseFloat(s.suhu);const rv=parseFloat(s.kelembaban);
-                          const hasV=!!(s.suhu&&s.kelembaban&&!isNaN(sv)&&!isNaN(rv));
-                          const ok:boolean|null=hasV?monIsOK(sv,rv,monitoringCfg):null;
-                          return (
-                            <tr key={jam} style={{background:"#fff",borderBottom:"1px solid #E2E8F0"}}>
-                              <td style={{padding:"7px 10px",fontWeight:700,color:rc.accent,whiteSpace:"nowrap"}}>{jam}</td>
-                              <td style={{padding:"5px 7px"}}><input type="number" step="0.1" min="10" max="40" placeholder="mis. 21.5" value={s.suhu} onChange={e=>setMultiSlots(p=>({...p,[ruang]:{...p[ruang],[jam]:{...p[ruang][jam],suhu:e.target.value}}}))} style={{...monInS,width:95}}/></td>
-                              <td style={{padding:"5px 7px"}}><input type="number" step="1" min="0" max="100" placeholder="mis. 55" value={s.kelembaban} onChange={e=>setMultiSlots(p=>({...p,[ruang]:{...p[ruang],[jam]:{...p[ruang][jam],kelembaban:e.target.value}}}))} style={{...monInS,width:82}}/></td>
-                              <td style={{padding:"5px 7px"}}><input type="text" placeholder="Nama petugas" value={s.petugas} onChange={e=>setMultiSlots(p=>({...p,[ruang]:{...p[ruang],[jam]:{...p[ruang][jam],petugas:e.target.value}}}))} style={{...monInS,minWidth:120}}/></td>
-                              <td style={{padding:"7px 10px",whiteSpace:"nowrap"}}>
-                                {ok===null?<span style={{color:"#94A3B8",fontSize:12}}>—</span>:ok?<span style={{background:MC.okBg,color:MC.ok,fontWeight:700,fontSize:11,padding:"3px 10px",borderRadius:20}}>✓ SESUAI</span>:<span style={{background:MC.errBg,color:MC.err,fontWeight:700,fontSize:11,padding:"3px 10px",borderRadius:20}}>✕ TIDAK SESUAI</span>}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+            {MON_ROOMS.map((ruang,ri)=>(
+              <div key={ruang} style={{marginBottom:ri<MON_ROOMS.length-1?22:0}}>
+                {/* Section header ruangan */}
+                <div style={{
+                  display:"flex",alignItems:"center",gap:8,marginBottom:10,
+                  paddingBottom:6,borderBottom:"2px solid "+MON_ROOM_COLORS[ri]+"33"
+                }}>
+                  <span style={{
+                    background:MON_ROOM_COLORS[ri],color:"#fff",fontSize:11,
+                    fontWeight:800,padding:"3px 10px",borderRadius:14
+                  }}>{ruang}</span>
                 </div>
-              );
-            })}
-            <div style={{marginTop:16}}><Btn color={MC.pri} onClick={handleSave} style={{background:MC.pri,color:"#fff",border:"none"}}>💾 Simpan Semua Data — {formDate}</Btn></div>
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                    <thead>
+                      <tr>
+                        {["Jam","Suhu (°C)","Kelembaban (%)","Petugas","Status"].map(h=>(
+                          <th key={h} style={{padding:"7px 10px",background:"#DBEAFE",color:MC.pri,fontWeight:700,textAlign:"left",borderBottom:"2px solid #BAE6FD",whiteSpace:"nowrap",fontSize:12}}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {MON_JAMS.map(jam=>{
+                        const s   = slots[ruang]?.[jam] ?? {suhu:"",kelembaban:"",petugas:""};
+                        const sv  = parseFloat(s.suhu);
+                        const rv  = parseFloat(s.kelembaban);
+                        const hasV= !!(s.suhu&&s.kelembaban&&!isNaN(sv)&&!isNaN(rv));
+                        const ok: boolean|null = hasV ? monIsOK(sv,rv,monitoringCfg) : null;
+                        return (
+                          <tr key={jam} style={{background:"#fff",borderBottom:"1px solid #E2E8F0"}}>
+                            <td style={{padding:"7px 10px",fontWeight:700,color:MON_ROOM_COLORS[ri],whiteSpace:"nowrap"}}>{jam}</td>
+                            <td style={{padding:"5px 7px"}}>
+                              <input type="number" step="0.1" min="10" max="40" placeholder="mis. 21.5"
+                                value={s.suhu}
+                                onChange={e=>setSlots(p=>({...p,[ruang]:{...p[ruang],[jam]:{...p[ruang][jam],suhu:e.target.value}}}))}
+                                style={{...iSm,width:90}}/>
+                            </td>
+                            <td style={{padding:"5px 7px"}}>
+                              <input type="number" step="1" min="0" max="100" placeholder="mis. 55"
+                                value={s.kelembaban}
+                                onChange={e=>setSlots(p=>({...p,[ruang]:{...p[ruang],[jam]:{...p[ruang][jam],kelembaban:e.target.value}}}))}
+                                style={{...iSm,width:80}}/>
+                            </td>
+                            <td style={{padding:"5px 7px"}}>
+                              <input type="text" placeholder="Nama petugas"
+                                value={s.petugas}
+                                onChange={e=>setSlots(p=>({...p,[ruang]:{...p[ruang],[jam]:{...p[ruang][jam],petugas:e.target.value}}}))}
+                                style={{...iSm,minWidth:120}}/>
+                            </td>
+                            <td style={{padding:"7px 10px",whiteSpace:"nowrap"}}>
+                              {ok===null
+                                ? <span style={{color:"#94A3B8",fontSize:12}}>—</span>
+                                : ok
+                                  ? <span style={{background:MC.okBg,color:MC.ok,fontWeight:700,fontSize:11,padding:"3px 9px",borderRadius:20}}>✓ SESUAI</span>
+                                  : <span style={{background:MC.errBg,color:MC.err,fontWeight:700,fontSize:11,padding:"3px 9px",borderRadius:20}}>✕ TIDAK SESUAI</span>
+                              }
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))}
+            <div style={{marginTop:18}}>
+              <Btn color={MC.pri} onClick={handleSave} style={{background:MC.pri,color:"#fff",border:"none"}}>
+                💾 Simpan Semua Data {formDate}
+              </Btn>
+            </div>
           </div>
-          {/* ── Tabel data tersimpan ── */}
+
+          {/* Tabel data tersimpan — tambah kolom "Ruangan" */}
           <div style={{background:"#fff",border:"1px solid #E2E8F0",borderRadius:12,overflow:"hidden"}}>
             <div style={{background:"linear-gradient(90deg,"+MC.pri+","+MC.priL+")",padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <span style={{color:"#fff",fontWeight:700,fontSize:14}}>📋 Data {mLabel}</span>
-              <span style={{color:"rgba(255,255,255,.75)",fontSize:12}}>{me.length} entri · {MON_ROOMS.length} ruangan</span>
+              <span style={{color:"rgba(255,255,255,.75)",fontSize:12}}>{meHarian.length} entri</span>
             </div>
-            {me.length===0?(
-              <div style={{padding:32,textAlign:"center",color:"#94A3B8"}}><div style={{fontSize:32,marginBottom:8}}>🌡</div><div style={{fontWeight:600}}>Belum ada data monitoring bulan ini</div><div style={{fontSize:12,marginTop:4}}>Gunakan form di atas untuk menambahkan data</div></div>
+            {meHarian.length===0?(
+              <div style={{padding:32,textAlign:"center",color:"#94A3B8"}}>
+                <div style={{fontSize:32,marginBottom:8}}>🌡</div>
+                <div style={{fontWeight:600}}>Belum ada data monitoring bulan ini</div>
+                <div style={{fontSize:12,marginTop:4}}>Gunakan form di atas untuk menambahkan data</div>
+              </div>
             ):(
               <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-                  <thead style={{background:"#F8FAFC"}}><tr>{["Ruangan","Tanggal","Jam","Suhu","RH","Std Suhu","Std RH","Status","Petugas",""].map(h=><th key={h} style={{padding:"8px 12px",textAlign:"left",fontWeight:700,color:"#475569",fontSize:11,borderBottom:"1px solid #E2E8F0",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                  <thead style={{background:"#F8FAFC"}}>
+                    <tr>
+                      {["Ruangan","Tanggal","Jam","Suhu","RH","Std Suhu","Std RH","Status","Petugas",""].map(h=>(
+                        <th key={h} style={{padding:"8px 10px",textAlign:"left",fontWeight:700,color:"#475569",fontSize:11,borderBottom:"1px solid #E2E8F0",whiteSpace:"nowrap"}}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
                   <tbody>
-                    {me.map((e:MonitoringEntry,i:number)=>{
-                      const ok=monIsOK(e.suhu,e.kelembaban,monitoringCfg);
-                      const prevRuang=i>0?me[i-1].ruang:""; const prevDate=i>0?me[i-1].tanggal:"";
-                      const isNewRuang=e.ruang!==prevRuang;
+                    {meHarian.map((e:MonitoringEntry,i:number)=>{
+                      const ok        = monIsOK(e.suhu,e.kelembaban,monitoringCfg);
+                      const prevRuang = i>0 ? meHarian[i-1].ruang : "";
+                      const prevDate  = i>0 ? meHarian[i-1].tanggal : "";
+                      const ri        = MON_ROOMS.indexOf(e.ruang??-1 as any);
                       return (
-                        <tr key={e.id} style={{borderBottom:"1px solid #F1F5F9",background:isNewRuang?"#EFF6FF":i%2===0?"#fff":"#FAFBFC"}}>
-                          <td style={{padding:"7px 12px",fontWeight:isNewRuang?700:400,color:MC.pri,fontSize:isNewRuang?12:11}}>{isNewRuang?e.ruang:""}</td>
-                          <td style={{padding:"7px 12px",fontWeight:(e.tanggal!==prevDate||isNewRuang)?700:400,color:"#374151"}}>{(e.tanggal!==prevDate||isNewRuang)?e.tanggal:""}</td>
-                          <td style={{padding:"7px 12px",fontWeight:700,color:MC.pri}}>{e.jam}</td>
-                          <td style={{padding:"7px 12px",fontWeight:700,color:ok?MC.ok:MC.err}}>{e.suhu}°C</td>
-                          <td style={{padding:"7px 12px",fontWeight:700,color:ok?MC.ok:MC.err}}>{e.kelembaban}%</td>
-                          <td style={{padding:"7px 12px",color:"#64748B",fontSize:12}}>{monitoringCfg.suhuMin}-{monitoringCfg.suhuMax}</td>
-                          <td style={{padding:"7px 12px",color:"#64748B",fontSize:12}}>{monitoringCfg.rhMin}-{monitoringCfg.rhMax}</td>
-                          <td style={{padding:"7px 12px"}}><span style={{background:ok?MC.okBg:MC.errBg,color:ok?MC.ok:MC.err,fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:12}}>{ok?"SESUAI":"TIDAK SESUAI"}</span></td>
-                          <td style={{padding:"7px 12px",color:"#374151"}}>{e.petugas}</td>
-                          <td style={{padding:"7px 12px"}}><button onClick={async ()=>{
-                            const res = await deleteFromSupa?.("kb_monitoring", e.id);
-                            if(!res?.ok){ showToast(`⚠ Gagal menghapus: ${res?.error||"kesalahan tidak diketahui"}`,C.d); return; }
-                            setMonitoringEntries((p:any[])=>p.filter((x:any)=>x.id!==e.id));
-                            showToast("✓ Data dihapus & tersinkron",C.d);
-                          }} style={{background:"none",border:"none",cursor:"pointer",color:"#EF4444",fontSize:16}}>✕</button></td>
+                        <tr key={e.id} style={{borderBottom:"1px solid #F1F5F9",background:i%2===0?"#fff":"#FAFBFC"}}>
+                          <td style={{padding:"7px 10px"}}>
+                            {e.ruang!==prevRuang&&(
+                              <span style={{background:MON_ROOM_COLORS[ri]??MC.pri,color:"#fff",fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:10,whiteSpace:"nowrap"}}>
+                                {e.ruang??"-"}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{padding:"7px 10px",fontWeight:e.tanggal!==prevDate||e.ruang!==prevRuang?700:400,color:"#374151"}}>
+                            {e.tanggal!==prevDate||e.ruang!==prevRuang?e.tanggal:""}
+                          </td>
+                          <td style={{padding:"7px 10px",fontWeight:700,color:MON_ROOM_COLORS[ri]??MC.pri}}>{e.jam}</td>
+                          <td style={{padding:"7px 10px",fontWeight:700,color:ok?MC.ok:MC.err}}>{e.suhu}°C</td>
+                          <td style={{padding:"7px 10px",fontWeight:700,color:ok?MC.ok:MC.err}}>{e.kelembaban}%</td>
+                          <td style={{padding:"7px 10px",color:"#64748B",fontSize:12}}>{monitoringCfg.suhuMin}-{monitoringCfg.suhuMax}</td>
+                          <td style={{padding:"7px 10px",color:"#64748B",fontSize:12}}>{monitoringCfg.rhMin}-{monitoringCfg.rhMax}</td>
+                          <td style={{padding:"7px 10px"}}>
+                            <span style={{background:ok?MC.okBg:MC.errBg,color:ok?MC.ok:MC.err,fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:12}}>
+                              {ok?"SESUAI":"TIDAK SESUAI"}
+                            </span>
+                          </td>
+                          <td style={{padding:"7px 10px",color:"#374151"}}>{e.petugas}</td>
+                          <td style={{padding:"7px 10px"}}>
+                            <button onClick={async ()=>{
+                              const res = await deleteFromSupa?.("kb_monitoring", e.id);
+                              if(!res?.ok){showToast(`⚠ Gagal menghapus: ${res?.error||"kesalahan tidak diketahui"}`,C.d);return;}
+                              setMonitoringEntries((p:any[])=>p.filter((x:any)=>x.id!==e.id));
+                              showToast("✓ Data dihapus & tersinkron",C.d);
+                            }} style={{background:"none",border:"none",cursor:"pointer",color:"#EF4444",fontSize:16}}>✕</button>
+                          </td>
                         </tr>
                       );
                     })}
@@ -4011,18 +4199,27 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
           </div>
         </div>
       )}
-      {/* ── GRAFIK ── */}
+
+      {/* ══════════════════════════════════════════════════════
+          TAB GRAFIK (dengan dropdown pilih ruangan)
+         ══════════════════════════════════════════════════════ */}
       {subTab==="grafik"&&(
         <div>
-          {/* Filter ruangan + month selector + download */}
+          {/* Controls: month picker + room filter + download */}
           <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:14,flexWrap:"wrap"}}>
             <div style={{flex:1,minWidth:160}}>
-              <input style={{...monInS,fontSize:13}} type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}/>
+              <input style={{padding:"7px 12px",border:"1px solid #D1D5DB",borderRadius:8,fontSize:13,width:"100%",background:"#fff",fontFamily:"inherit"}}
+                type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}/>
             </div>
-            {/* Dropdown Pilih Ruangan */}
-            <div style={{minWidth:180}}>
-              <select value={grafikRuang} onChange={e=>setGrafikRuang(e.target.value)} style={{...monInS,fontSize:13,appearance:"none",cursor:"pointer",paddingRight:28}}>
-                {[...MON_ROOMS,"Semua"].map(r=><option key={r} value={r}>{r}</option>)}
+            {/* Dropdown pilih ruangan */}
+            <div style={{minWidth:200}}>
+              <select
+                value={grafikRuang}
+                onChange={e=>setGrafikRuang(e.target.value)}
+                style={{padding:"7px 12px",border:"1px solid #D1D5DB",borderRadius:8,fontSize:13,background:"#fff",fontFamily:"inherit",cursor:"pointer",outline:"none"}}
+              >
+                <option value="all">🏥 Semua Ruangan</option>
+                {MON_ROOMS.map(r=><option key={r} value={r}>{r}</option>)}
               </select>
             </div>
             <button onClick={()=>setSelMonth(todayDate().slice(0,7))} style={{padding:"7px 14px",background:selMonth===todayDate().slice(0,7)?"#0EA5E9":"#F0F9FF",color:selMonth===todayDate().slice(0,7)?"#fff":"#0369A1",border:"1px solid #BAE6FD",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
@@ -4032,12 +4229,16 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
               ⬇ Download Excel
             </button>
           </div>
-          {/* Label ruangan aktif */}
-          <div style={{marginBottom:14,fontSize:12,color:"#64748B",fontWeight:600}}>
-            Menampilkan: <span style={{color:MC.pri,fontWeight:800}}>{grafikRuang}</span> — {mLabel}
-          </div>
+
+          {/* Stat cards — berdasarkan ruangan yang difilter */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,marginBottom:20}}>
-            {([{l:"Rata-rata Suhu",v:avgS+"°C",ico:"🌡",bg:"#DBEAFE",c:"#1D4ED8"},{l:"Rata-rata RH",v:avgR+"%",ico:"💧",bg:"#DCFCE7",c:"#16A34A"},{l:"Total Ukur",v:String(meGrafik.length),ico:"📊",bg:"#FEF3C7",c:"#B45309"},{l:"Tidak Sesuai",v:String(tidakS),ico:"⚠️",bg:"#FEE2E2",c:"#DC2626"},{l:"Kepatuhan",v:cmpPct+"%",ico:"✅",bg:"#F0FDF4",c:"#16A34A"}] as {l:string;v:string;ico:string;bg:string;c:string}[]).map(s=>(
+            {([
+              {l:"Rata-rata Suhu",v:avgS+"°C",ico:"🌡",bg:"#DBEAFE",c:"#1D4ED8"},
+              {l:"Rata-rata RH",   v:avgR+"%", ico:"💧",bg:"#DCFCE7",c:"#16A34A"},
+              {l:"Total Ukur",    v:String(me.length),ico:"📊",bg:"#FEF3C7",c:"#B45309"},
+              {l:"Tidak Sesuai",  v:String(tidakS),ico:"⚠️",bg:"#FEE2E2",c:"#DC2626"},
+              {l:"Kepatuhan",     v:cmpPct+"%",ico:"✅",bg:"#F0FDF4",c:"#16A34A"},
+            ] as {l:string;v:string;ico:string;bg:string;c:string}[]).map(s=>(
               <div key={s.l} style={{background:s.bg,borderRadius:12,padding:"12px 10px",textAlign:"center",border:"1px solid "+s.c+"20"}}>
                 <div style={{fontSize:20,marginBottom:3}}>{s.ico}</div>
                 <div style={{fontSize:17,fontWeight:800,color:s.c}}>{s.v}</div>
@@ -4045,49 +4246,124 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
               </div>
             ))}
           </div>
-          {chartData.length===0?(
-            <div style={{textAlign:"center",padding:48,color:"#94A3B8"}}><div style={{fontSize:40,marginBottom:10}}>📊</div><div style={{fontWeight:600}}>Belum ada data untuk ruangan &amp; bulan ini</div></div>
+
+          {/* Label ruangan aktif */}
+          {grafikRuang!=="all"&&(
+            <div style={{background:MC.priBg,borderRadius:8,padding:"6px 14px",marginBottom:12,fontSize:12,color:MC.pri,fontWeight:700,display:"inline-block"}}>
+              📍 Menampilkan: {grafikRuang}
+            </div>
+          )}
+
+          {me.length===0?(
+            <div style={{textAlign:"center",padding:48,color:"#94A3B8"}}>
+              <div style={{fontSize:40,marginBottom:10}}>📊</div>
+              <div style={{fontWeight:600}}>Belum ada data untuk pilihan ini</div>
+            </div>
           ):(
             <>
+              {/* ── Grafik Suhu ── */}
               <div style={{background:"#fff",border:"1px solid #E2E8F0",borderRadius:12,padding:"16px 16px 8px",marginBottom:14}}>
-                <div style={{fontWeight:700,color:MC.pri,marginBottom:10,fontSize:13}}>🌡 Grafik Suhu — {grafikRuang} · {mLabel}</div>
-                <ResponsiveContainer width="100%" height={200}>
-                  <LineChart data={chartData} margin={{top:4,right:20,left:0,bottom:4}}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9"/>
-                    <XAxis dataKey="name" tick={{fontSize:9}} interval={Math.max(0,Math.floor(chartData.length/10)-1)}/>
-                    <YAxis domain={[15,30]} tick={{fontSize:11}} unit="°C" width={44}/>
-                    <Tooltip formatter={(v:any)=>[v+"°C","Suhu"]}/>
-                    <ReferenceLine y={monitoringCfg.suhuMin} stroke="#EF4444" strokeDasharray="4 3" label={{value:"Min "+monitoringCfg.suhuMin,position:"insideTopRight",fontSize:9,fill:"#EF4444"}}/>
-                    <ReferenceLine y={monitoringCfg.suhuMax} stroke="#EF4444" strokeDasharray="4 3" label={{value:"Maks "+monitoringCfg.suhuMax,position:"insideBottomRight",fontSize:9,fill:"#EF4444"}}/>
-                    <Line type="monotone" dataKey="suhu" stroke={MC.pri} strokeWidth={2.5} dot={{r:2,fill:MC.pri}} activeDot={{r:5}}/>
-                  </LineChart>
+                <div style={{fontWeight:700,color:MC.pri,marginBottom:10,fontSize:13}}>🌡 Grafik Suhu — {mLabel}{grafikRuang!=="all"?` (${grafikRuang})`:""}</div>
+                <ResponsiveContainer width="100%" height={220}>
+                  {grafikRuang==="all"?(
+                    /* Multi-line: 1 garis per ruangan */
+                    <LineChart data={buildMultiChartData("suhu")} margin={{top:4,right:20,left:0,bottom:4}}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9"/>
+                      <XAxis dataKey="name" tick={{fontSize:9}} interval={Math.max(0,Math.floor(buildMultiChartData("suhu").length/8)-1)}/>
+                      <YAxis domain={[15,30]} tick={{fontSize:11}} unit="°C" width={44}/>
+                      <Tooltip/>
+                      <ReferenceLine y={monitoringCfg.suhuMin} stroke="#EF4444" strokeDasharray="4 3" label={{value:"Min "+monitoringCfg.suhuMin,position:"insideTopRight",fontSize:9,fill:"#EF4444"}}/>
+                      <ReferenceLine y={monitoringCfg.suhuMax} stroke="#EF4444" strokeDasharray="4 3" label={{value:"Maks "+monitoringCfg.suhuMax,position:"insideBottomRight",fontSize:9,fill:"#EF4444"}}/>
+                      {MON_ROOMS.map((r,i)=>(
+                        <Line key={r} type="monotone" dataKey={r} stroke={MON_ROOM_COLORS[i]} strokeWidth={2} dot={{r:2}} activeDot={{r:5}} name={r} connectNulls/>
+                      ))}
+                    </LineChart>
+                  ):(
+                    /* Single-line */
+                    <LineChart data={chartData} margin={{top:4,right:20,left:0,bottom:4}}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9"/>
+                      <XAxis dataKey="name" tick={{fontSize:9}} interval={Math.max(0,Math.floor(chartData.length/10)-1)}/>
+                      <YAxis domain={[15,30]} tick={{fontSize:11}} unit="°C" width={44}/>
+                      <Tooltip formatter={(v:any)=>[v+"°C","Suhu"]}/>
+                      <ReferenceLine y={monitoringCfg.suhuMin} stroke="#EF4444" strokeDasharray="4 3" label={{value:"Min "+monitoringCfg.suhuMin,position:"insideTopRight",fontSize:9,fill:"#EF4444"}}/>
+                      <ReferenceLine y={monitoringCfg.suhuMax} stroke="#EF4444" strokeDasharray="4 3" label={{value:"Maks "+monitoringCfg.suhuMax,position:"insideBottomRight",fontSize:9,fill:"#EF4444"}}/>
+                      <Line type="monotone" dataKey="suhu" stroke={MC.pri} strokeWidth={2.5} dot={{r:2,fill:MC.pri}} activeDot={{r:5}}/>
+                    </LineChart>
+                  )}
                 </ResponsiveContainer>
+                {/* Legend multi-room */}
+                {grafikRuang==="all"&&(
+                  <div style={{display:"flex",gap:14,justifyContent:"center",marginTop:8}}>
+                    {MON_ROOMS.map((r,i)=>(
+                      <div key={r} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:"#475569"}}>
+                        <div style={{width:20,height:3,background:MON_ROOM_COLORS[i],borderRadius:2}}/>
+                        {r}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
+
+              {/* ── Grafik Kelembaban ── */}
               <div style={{background:"#fff",border:"1px solid #E2E8F0",borderRadius:12,padding:"16px 16px 8px"}}>
-                <div style={{fontWeight:700,color:MC.ok,marginBottom:10,fontSize:13}}>💧 Grafik Kelembaban — {grafikRuang} · {mLabel}</div>
-                <ResponsiveContainer width="100%" height={200}>
-                  <LineChart data={chartData} margin={{top:4,right:20,left:0,bottom:4}}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9"/>
-                    <XAxis dataKey="name" tick={{fontSize:9}} interval={Math.max(0,Math.floor(chartData.length/10)-1)}/>
-                    <YAxis domain={[30,90]} tick={{fontSize:11}} unit="%" width={44}/>
-                    <Tooltip formatter={(v:any)=>[v+"%","Kelembaban"]}/>
-                    <ReferenceLine y={monitoringCfg.rhMin} stroke="#EF4444" strokeDasharray="4 3" label={{value:"Min "+monitoringCfg.rhMin,position:"insideTopRight",fontSize:9,fill:"#EF4444"}}/>
-                    <ReferenceLine y={monitoringCfg.rhMax} stroke="#EF4444" strokeDasharray="4 3" label={{value:"Maks "+monitoringCfg.rhMax,position:"insideBottomRight",fontSize:9,fill:"#EF4444"}}/>
-                    <Line type="monotone" dataKey="kelembaban" stroke={MC.ok} strokeWidth={2.5} dot={{r:2,fill:MC.ok}} activeDot={{r:5}}/>
-                  </LineChart>
+                <div style={{fontWeight:700,color:MC.ok,marginBottom:10,fontSize:13}}>💧 Grafik Kelembaban — {mLabel}{grafikRuang!=="all"?` (${grafikRuang})`:""}</div>
+                <ResponsiveContainer width="100%" height={220}>
+                  {grafikRuang==="all"?(
+                    <LineChart data={buildMultiChartData("kelembaban")} margin={{top:4,right:20,left:0,bottom:4}}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9"/>
+                      <XAxis dataKey="name" tick={{fontSize:9}} interval={Math.max(0,Math.floor(buildMultiChartData("kelembaban").length/8)-1)}/>
+                      <YAxis domain={[30,90]} tick={{fontSize:11}} unit="%" width={44}/>
+                      <Tooltip/>
+                      <ReferenceLine y={monitoringCfg.rhMin} stroke="#EF4444" strokeDasharray="4 3" label={{value:"Min "+monitoringCfg.rhMin,position:"insideTopRight",fontSize:9,fill:"#EF4444"}}/>
+                      <ReferenceLine y={monitoringCfg.rhMax} stroke="#EF4444" strokeDasharray="4 3" label={{value:"Maks "+monitoringCfg.rhMax,position:"insideBottomRight",fontSize:9,fill:"#EF4444"}}/>
+                      {MON_ROOMS.map((r,i)=>(
+                        <Line key={r} type="monotone" dataKey={r} stroke={MON_ROOM_COLORS[i]} strokeWidth={2} dot={{r:2}} activeDot={{r:5}} name={r} connectNulls/>
+                      ))}
+                    </LineChart>
+                  ):(
+                    <LineChart data={chartData} margin={{top:4,right:20,left:0,bottom:4}}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9"/>
+                      <XAxis dataKey="name" tick={{fontSize:9}} interval={Math.max(0,Math.floor(chartData.length/10)-1)}/>
+                      <YAxis domain={[30,90]} tick={{fontSize:11}} unit="%" width={44}/>
+                      <Tooltip formatter={(v:any)=>[v+"%","Kelembaban"]}/>
+                      <ReferenceLine y={monitoringCfg.rhMin} stroke="#EF4444" strokeDasharray="4 3" label={{value:"Min "+monitoringCfg.rhMin,position:"insideTopRight",fontSize:9,fill:"#EF4444"}}/>
+                      <ReferenceLine y={monitoringCfg.rhMax} stroke="#EF4444" strokeDasharray="4 3" label={{value:"Maks "+monitoringCfg.rhMax,position:"insideBottomRight",fontSize:9,fill:"#EF4444"}}/>
+                      <Line type="monotone" dataKey="kelembaban" stroke={MC.ok} strokeWidth={2.5} dot={{r:2,fill:MC.ok}} activeDot={{r:5}}/>
+                    </LineChart>
+                  )}
                 </ResponsiveContainer>
+                {grafikRuang==="all"&&(
+                  <div style={{display:"flex",gap:14,justifyContent:"center",marginTop:8}}>
+                    {MON_ROOMS.map((r,i)=>(
+                      <div key={r} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:"#475569"}}>
+                        <div style={{width:20,height:3,background:MON_ROOM_COLORS[i],borderRadius:2}}/>
+                        {r}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           )}
         </div>
       )}
-      {/* ── UNDUH ── */}
+
+      {/* ══════════════════════════════════════════════════════
+          TAB UNDUH (tidak berubah struktur, hanya pass entries yg sudah punya field ruang)
+         ══════════════════════════════════════════════════════ */}
       {subTab==="unduh"&&(
         <div>
           <div style={{display:"grid",gap:12,marginBottom:16}}>
-            {([{type:"harian" as const,ico:"📋",title:"Laporan Monitoring Harian",desc:"Data harian + rekap statistik bulanan",c:"#0369A1",bg:"#EFF6FF"},{type:"rekap" as const,ico:"📊",title:"Rekap Bulanan",desc:"Statistik ringkas: rata-rata suhu, RH, kepatuhan",c:"#7C3AED",bg:"#F5F3FF"},{type:"akreditasi" as const,ico:"🏅",title:"Laporan Akreditasi",desc:"Laporan lengkap dengan format akreditasi & kolom tanda tangan",c:"#B45309",bg:"#FFFBEB"}]).map(r=>(
+            {([
+              {type:"harian"    as const,ico:"📋",title:"Laporan Monitoring Harian",   desc:"Data harian 3 ruangan + rekap statistik bulanan",c:"#0369A1",bg:"#EFF6FF"},
+              {type:"rekap"     as const,ico:"📊",title:"Rekap Bulanan",               desc:"Statistik per ruangan: rata-rata suhu, RH, kepatuhan (tidak dicampur)",c:"#7C3AED",bg:"#F5F3FF"},
+              {type:"akreditasi"as const,ico:"🏅",title:"Laporan Akreditasi",          desc:"Laporan lengkap per ruangan + format akreditasi & kolom tanda tangan",c:"#B45309",bg:"#FFFBEB"},
+            ]).map(r=>(
               <div key={r.type} style={{background:r.bg,border:"1px solid "+r.c+"25",borderRadius:12,padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
-                <div style={{flex:1}}><div style={{fontWeight:700,color:r.c,fontSize:14,marginBottom:3}}>{r.ico} {r.title}</div><div style={{fontSize:12,color:"#64748B"}}>{r.desc}</div></div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,color:r.c,fontSize:14,marginBottom:3}}>{r.ico} {r.title}</div>
+                  <div style={{fontSize:12,color:"#64748B"}}>{r.desc}</div>
+                </div>
                 <Btn color={r.c} onClick={()=>monXlsx(monitoringEntries,monitoringCfg,selMonth,r.type,showToast)} style={{background:r.c,color:"#fff",border:"none",whiteSpace:"nowrap",flexShrink:0}}>⬇ Excel</Btn>
               </div>
             ))}
@@ -4095,14 +4371,15 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
           <div style={{background:"#F8FAFC",borderRadius:10,padding:"12px 14px",fontSize:12,color:"#64748B",border:"1px solid #E2E8F0",lineHeight:1.7,marginBottom:14}}>
             <b>📌 Penyimpanan:</b> Data monitoring disertakan dalam backup otomatis JSON bersama data operasi dan lembur. Aktifkan di tab Arsip → Setelan → Dropbox.
           </div>
-          {/* ── Supabase cloud download ── */}
+
+          {/* Supabase cloud download */}
           <div style={{background:"#EEF2FF",border:"1.5px solid #6366F133",borderRadius:14,padding:"16px 16px 14px"}}>
             <div style={{fontWeight:700,color:"#4F46E5",fontSize:14,marginBottom:6}}>☁️ Download Monitoring dari Supabase</div>
             <div style={{fontSize:12,color:"#64748B",marginBottom:12}}>Unduh data monitoring langsung dari cloud Supabase, tanpa bergantung data perangkat ini. Data tersinkron dari semua device.</div>
             <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
               <div style={{flex:1,minWidth:160}}>
                 <div style={{fontSize:12,fontWeight:700,color:"#64748B",marginBottom:4}}>Pilih Bulan</div>
-                <input style={iS} type="month" value={supaMonYM} onChange={e=>setSupaMonYM(e.target.value)} disabled={supaMonBusy}/>
+                <input style={iSm} type="month" value={supaMonYM} onChange={e=>setSupaMonYM(e.target.value)} disabled={supaMonBusy}/>
               </div>
             </div>
             <div style={{display:"grid",gap:8}}>
@@ -4118,14 +4395,14 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
             {!supaCfg?.url && <div style={{fontSize:11,color:"#EF4444",marginTop:10}}>⚠ Supabase belum dikonfigurasi — atur di tab Arsip → Setelan.</div>}
           </div>
 
-          {/* ── Dropbox download ── */}
+          {/* Dropbox download */}
           <div style={{background:"#EFF6FF",border:"1.5px solid #0061FF33",borderRadius:14,padding:"16px 16px 14px",marginTop:14}}>
             <div style={{fontWeight:700,color:"#0061FF",fontSize:14,marginBottom:6}}>📦 Download Monitoring dari Dropbox</div>
             <div style={{fontSize:12,color:"#64748B",marginBottom:12}}>Unduh data monitoring dari backup Dropbox sesuai pilihan bulan dan format laporan.</div>
             <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
               <div style={{flex:1,minWidth:160}}>
                 <div style={{fontSize:12,fontWeight:700,color:"#64748B",marginBottom:4}}>Pilih Bulan</div>
-                <input style={iS} type="month" value={dbxMonYM} onChange={e=>setDbxMonYM(e.target.value)} disabled={dbxMonBusy}/>
+                <input style={iSm} type="month" value={dbxMonYM} onChange={e=>setDbxMonYM(e.target.value)} disabled={dbxMonBusy}/>
               </div>
             </div>
             <div style={{display:"grid",gap:8}}>
@@ -4141,20 +4418,39 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
           </div>
         </div>
       )}
-      {/* ── STANDAR ── */}
+
+      {/* ══════════════════════════════════════════════════════
+          TAB STANDAR (tidak berubah)
+         ══════════════════════════════════════════════════════ */}
       {subTab==="standar"&&(
         <div style={{maxWidth:480}}>
           <div style={{background:"#fff",border:"1px solid #E2E8F0",borderRadius:12,padding:18}}>
             <div style={{fontWeight:700,color:MC.pri,fontSize:14,marginBottom:16}}>⚙ Konfigurasi Standar Monitoring</div>
+            <div style={{fontSize:12,color:"#64748B",marginBottom:14,background:MC.priBg,padding:"8px 12px",borderRadius:8}}>
+              Standar yang diatur di sini berlaku untuk ketiga ruangan: <b>{MON_ROOMS.join(", ")}</b>
+            </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
               {[{k:"suhuMin",l:"Suhu Min (°C)"},{k:"suhuMax",l:"Suhu Maks (°C)"},{k:"rhMin",l:"RH Min (%)"},{k:"rhMax",l:"RH Maks (%)"}].map(f=>(
-                <div key={f.k}><div style={{fontSize:12,fontWeight:700,color:"#64748B",marginBottom:4}}>{f.l}</div><input type="number" step="0.5" value={(cfgForm as any)[f.k]} onChange={e=>setCfgForm((p:MonitoringCfg)=>({...p,[f.k]:parseFloat(e.target.value)||0}))} style={iS}/></div>
+                <div key={f.k}>
+                  <div style={{fontSize:12,fontWeight:700,color:"#64748B",marginBottom:4}}>{f.l}</div>
+                  <input type="number" step="0.5" value={(cfgForm as any)[f.k]}
+                    onChange={e=>setCfgForm((p:MonitoringCfg)=>({...p,[f.k]:parseFloat(e.target.value)||0}))}
+                    style={iSm}/>
+                </div>
               ))}
             </div>
-            <div style={{marginBottom:12}}><div style={{fontSize:12,fontWeight:700,color:"#64748B",marginBottom:4}}>Lokasi / Nama Ruang</div><input type="text" value={cfgForm.lokasiRuang} onChange={e=>setCfgForm((p:MonitoringCfg)=>({...p,lokasiRuang:e.target.value}))} style={iS} placeholder="Kamar Bedah"/></div>
-            <div style={{marginBottom:16}}><div style={{fontSize:12,fontWeight:700,color:"#64748B",marginBottom:4}}>Kepala Kamar Bedah</div><input type="text" value={cfgForm.kepalaKamarBedah} onChange={e=>setCfgForm((p:MonitoringCfg)=>({...p,kepalaKamarBedah:e.target.value}))} style={iS} placeholder="Nama kepala kamar bedah"/></div>
-            <div style={{background:MC.okBg,borderRadius:8,padding:"8px 12px",marginBottom:16,fontSize:12,color:MC.ok,border:"1px solid #BBF7D0"}}>Standar aktif: Suhu {monitoringCfg.suhuMin}-{monitoringCfg.suhuMax}°C · RH {monitoringCfg.rhMin}-{monitoringCfg.rhMax}%</div>
-            <Btn color={MC.pri} onClick={()=>{setMonitoringCfg(cfgForm);showToast("✓ Pengaturan standar disimpan",MC.ok);}} style={{background:MC.pri,color:"#fff",border:"none"}}>💾 Simpan Pengaturan</Btn>
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#64748B",marginBottom:4}}>Kepala Kamar Bedah</div>
+              <input type="text" value={cfgForm.kepalaKamarBedah}
+                onChange={e=>setCfgForm((p:MonitoringCfg)=>({...p,kepalaKamarBedah:e.target.value}))}
+                style={iSm} placeholder="Nama kepala kamar bedah"/>
+            </div>
+            <div style={{background:MC.okBg,borderRadius:8,padding:"8px 12px",marginBottom:16,fontSize:12,color:MC.ok,border:"1px solid #BBF7D0"}}>
+              Standar aktif: Suhu {monitoringCfg.suhuMin}-{monitoringCfg.suhuMax}°C · RH {monitoringCfg.rhMin}-{monitoringCfg.rhMax}%
+            </div>
+            <Btn color={MC.pri} onClick={()=>{setMonitoringCfg(cfgForm);showToast("✓ Pengaturan standar disimpan",MC.ok);}} style={{background:MC.pri,color:"#fff",border:"none"}}>
+              💾 Simpan Pengaturan
+            </Btn>
           </div>
         </div>
       )}
@@ -4437,7 +4733,7 @@ export default function App() {
       const resLmb = await dropboxUploadExcel(`${folder}Auto_Lembur_${stamp}.xlsx`, wbLmb);
       /* — Monitoring Excel — */
       const wbMon = XLSX.utils.book_new();
-      const monRows = monitoringEntries.map((e:MonitoringEntry)=>[e.ruang||"",e.tanggal,e.jam,e.suhu,e.kelembaban,monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas]);
+      const monRows = monitoringEntries.map((e:MonitoringEntry)=>[e.ruang??monitoringCfg.lokasiRuang??"",e.tanggal,e.jam,e.suhu,e.kelembaban,monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas]);
       const wsMonMain = XLSX.utils.aoa_to_sheet([["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"],...monRows]);
       wsMonMain["!cols"]=[{wch:18},{wch:12},{wch:8},{wch:12},{wch:14},{wch:16},{wch:22}];
       XLSX.utils.book_append_sheet(wbMon, wsMonMain, "Monitoring Suhu");
@@ -5012,7 +5308,7 @@ export default function App() {
   const handleDropboxBackupMonitoringXls = async () => {
     setDbxBacking(true); setDbxStatus(null);
     const wb = XLSX.utils.book_new();
-    const monRows = monitoringEntries.map((e:MonitoringEntry)=>[e.ruang||"",e.tanggal,e.jam,e.suhu,e.kelembaban,monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas]);
+    const monRows = monitoringEntries.map((e:MonitoringEntry)=>[e.ruang??monitoringCfg.lokasiRuang??"",e.tanggal,e.jam,e.suhu,e.kelembaban,monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas]);
     const ws = XLSX.utils.aoa_to_sheet([["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"],...monRows]);
     ws["!cols"]=[{wch:18},{wch:12},{wch:8},{wch:12},{wch:14},{wch:16},{wch:22}];
     XLSX.utils.book_append_sheet(wb, ws, "Monitoring Suhu");
