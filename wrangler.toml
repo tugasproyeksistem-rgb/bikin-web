@@ -1,2 +1,14 @@
+# PERHATIAN: File ini BUKAN config untuk deploy Worker "sistem-informasi-kamar-bedah".
+# Config yang benar untuk Worker tersebut ada di:
+#   artifacts/kamar-bedah/wrangler.toml
+#
+# Untuk deploy manual, jalankan dari folder yang benar:
+#   cd artifacts/kamar-bedah
+#   npx wrangler deploy
+#
+# JANGAN jalankan "npx wrangler deploy" dari root repo ini (root project),
+# karena akan membaca file ini dan gagal dengan error
+# "Missing entry-point to Worker script or to assets directory".
+
 [vars]
 VITE_PROXY_SHARED_SECRET = "ae197b7288ca7c08e3a2846315453f727481a18352fe554df3fdcbdf36b982ca"
