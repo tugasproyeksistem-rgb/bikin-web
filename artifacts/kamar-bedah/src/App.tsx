@@ -43,7 +43,7 @@ const BT    = ["A+","A-","B+","B-","AB+","AB-","O+","O-","Tidak Diketahui"];
 const ST    = { surgeon:"Dokter Bedah", anesthesiologist:"Dokter Anestesi", circulating:"PERAWAT Instrumen", anesthesia_nurse:"Perawat Anestesi", onloop:"Perawat Onloop", katim:"RR / Katim" };
 const OT    = { elektif:{label:"Elektif",c:"#1565C0",bg:"#E3F2FD"}, semi:{label:"Semi-Elektif",c:"#E65100",bg:"#FFF3E0"}, cyto:{label:"⚠ CYTO",c:"#B71C1C",bg:"#FFCDD2"} };
 const STS   = { scheduled:{l:"Terjadwal",c:"#1565C0",bg:"#E3F2FD"}, ongoing:{l:"Berlangsung",c:"#00897B",bg:"#E0F2F1"}, done:{l:"Selesai",c:"#2E7D32",bg:"#E8F5E9"}, batal:{l:"Batal/Tunda",c:"#C62828",bg:"#FFEBEE"} };
-const C     = { p:"#0077B6",pL:"#00B4D8",pBg:"#CAF0F8", d:"#D62828",dBg:"#FFEBEE",dL:"#FF8FA3", w:"#E07800",wBg:"#FFF8E1", i:"#1565C0",iBg:"#E3F2FD", s:"#2E7D32",sBg:"#F0FFF4", wa:"#25D366",waBg:"#DCFCE7", g:"#5C677D",gBg:"#F0F4F8", t:"#023047",tL:"#577590", b:"#D0E8F2",white:"#FFFFFF",bg:"#F0F8FF" };
+const C     = { p:"#16685F",pL:"#2D9A87",pBg:"#E4F3F0", d:"#D62828",dBg:"#FFEBEE",dL:"#FF8FA3", w:"#E07800",wBg:"#FFF8E1", i:"#1565C0",iBg:"#E3F2FD", s:"#2E7D32",sBg:"#F0FFF4", wa:"#25D366",waBg:"#DCFCE7", g:"#5C677D",gBg:"#F0F4F8", t:"#234B45",tL:"#577590", b:"#D0E8F2",white:"#FFFFFF",bg:"#F4F7F6", gold:"#C9A961" };
 const EOP: Partial<Operation> = {patient:"",age:"",rm:"",opType:"elektif",diagnosis:"",procedure:"",ruangAsal:"",room:ROOMS[0],date:"",time:"",surgeon:"",anesthesiologist:"",assistantNurse:"",circulatingNurse:"",anesthesiaNurse:"",onloopNurse:"",rrKatim:"",allergy:"Tidak Ada",specialNeeds:"",bloodType:"O+"};
 const PAGE_SIZE = 10;
 const DEFAULT_RECIPIENT = "Suster Thresmiati CB, bu Niken, pak Jaka dan teman sejawat, mohon ijin laporan kamar bedah:";
@@ -519,9 +519,9 @@ const escHtml = (s: any): string =>
 
 /* Download sebagai Word (.doc via HTML) */
 function downloadAsWord(title: string, rows: string[][], filename: string) {
-  const thead = rows[0].map(h=>`<th style="background:#0077B6;color:#fff;padding:6px 10px;font-size:11px">${escHtml(h)}</th>`).join("");
+  const thead = rows[0].map(h=>`<th style="background:#16685F;color:#fff;padding:6px 10px;font-size:11px">${escHtml(h)}</th>`).join("");
   const tbody = rows.slice(1).map((r,i)=>`<tr style="background:${i%2===0?"#F0FFF8":"#fff"}">${r.map(c=>`<td style="padding:5px 10px;border-bottom:1px solid #e0e0e0;font-size:11px">${escHtml(c)}</td>`).join("")}</tr>`).join("");
-  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${escHtml(title)}</title></head><body><h2 style="color:#0077B6;font-family:Arial">${escHtml(title)}</h2><p style="color:#555;font-size:12px;font-family:Arial">Dicetak: ${escHtml(fNow())} — ${escHtml(HOSPITAL)}</p><table style="border-collapse:collapse;width:100%;font-family:Arial"><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table></body></html>`;
+  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${escHtml(title)}</title></head><body><h2 style="color:#16685F;font-family:Arial">${escHtml(title)}</h2><p style="color:#555;font-size:12px;font-family:Arial">Dicetak: ${escHtml(fNow())} — ${escHtml(HOSPITAL)}</p><table style="border-collapse:collapse;width:100%;font-family:Arial"><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table></body></html>`;
   const blob = new Blob([html], {type:"application/msword"});
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement("a");
@@ -787,7 +787,7 @@ function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime}: any) {
   };
 
   if(setupMode) return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#ADE8F4,#48CAE4,#0077B6)",padding:16}}>
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#5FA39A,#3FA897,#16685F)",padding:16}}>
       <style>{`@keyframes lgFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}`}</style>
       <div style={{background:C.white,borderRadius:24,padding:"32px 28px",width:"100%",maxWidth:380,boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
         <div style={{textAlign:"center",marginBottom:20}}>
@@ -811,8 +811,8 @@ function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime}: any) {
   );
 
   return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#ADE8F4,#48CAE4,#0077B6)",padding:16}}>
-      <style>{`@keyframes shk{0%,100%{transform:translateX(0)}25%,75%{transform:translateX(-7px)}50%{transform:translateX(7px)}} @keyframes lgFloat{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-8px) scale(1.06)}} @keyframes lgGlow{0%,100%{box-shadow:0 4px 18px rgba(0,119,182,.3),0 0 0 3px #0077B655}50%{box-shadow:0 12px 38px rgba(0,119,182,.65),0 0 0 4px #00B4D8aa}}`}</style>
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#5FA39A,#3FA897,#16685F)",padding:16}}>
+      <style>{`@keyframes shk{0%,100%{transform:translateX(0)}25%,75%{transform:translateX(-7px)}50%{transform:translateX(7px)}} @keyframes lgFloat{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-8px) scale(1.06)}} @keyframes lgGlow{0%,100%{box-shadow:0 4px 18px rgba(22,104,95,.3),0 0 0 3px #16685F55}50%{box-shadow:0 12px 38px rgba(22,104,95,.65),0 0 0 4px #2D9A87aa}}`}</style>
       <div style={{background:C.white,borderRadius:24,padding:"32px 28px",width:"100%",maxWidth:360,boxShadow:"0 20px 60px rgba(0,0,0,.3)",animation:shake?"shk .4s":"none"}}>
         <div style={{textAlign:"center",marginBottom:24}}>
           <img src="/logo.jpeg" alt="Logo Kamar Bedah" style={{width:104,height:104,borderRadius:"50%",objectFit:"cover",display:"block",margin:"0 auto 14px",animation:"lgFloat 3s ease-in-out infinite, lgGlow 3s ease-in-out infinite"}}/>
@@ -901,7 +901,7 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
             if(!filtered.length){showToast("Tidak ada jadwal untuk dicetak",C.w);return;}
             const rows = filtered.map((op:any,i:number)=>`<tr><td>${i+1}</td><td>${op.date} ${op.time}</td><td><b>${op.patient}</b></td><td>${op.procedure}</td><td>${op.room}</td><td>${op.surgeon}</td><td>${op.anesthesiologist||"—"}</td><td style="text-align:center"><span style="background:${STS[op.status as keyof typeof STS]?.c||C.g};color:#fff;padding:2px 8px;border-radius:10px;font-size:10px">${STS[op.status as keyof typeof STS]?.l||op.status}</span></td></tr>`).join("");
             const w=window.open("","_blank","width=900,height=700")!;
-            w.document.write(`<!DOCTYPE html><html><head><title>Jadwal Operasi ${printDate||"Semua"} — ${HOSPITAL}</title><style>body{font-family:Arial,sans-serif;font-size:12px;margin:20px}h2{color:#0077B6;margin-bottom:4px}p{color:#555;margin-bottom:12px}table{width:100%;border-collapse:collapse}th{background:#0077B6;color:#fff;padding:7px 10px;text-align:left;font-size:11px}td{padding:6px 10px;border-bottom:1px solid #e0e0e0;vertical-align:top}tr:nth-child(even)td{background:#f5f5f5}@media print{button{display:none}}</style></head><body><h2>🏥 Jadwal Operasi — ${HOSPITAL}</h2><p>${printDate?`Tanggal: ${printDate}`:"Semua jadwal"} · Dicetak: ${fNow()}</p><button onclick="window.print()" style="margin-bottom:12px;background:#0077B6;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px">🖨 Cetak / Simpan PDF</button><table><thead><tr><th>#</th><th>Tanggal/Jam</th><th>Pasien</th><th>Tindakan</th><th>Kamar</th><th>Dr. Bedah</th><th>Dr. Anestesi</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
+            w.document.write(`<!DOCTYPE html><html><head><title>Jadwal Operasi ${printDate||"Semua"} — ${HOSPITAL}</title><style>body{font-family:Arial,sans-serif;font-size:12px;margin:20px}h2{color:#16685F;margin-bottom:4px}p{color:#555;margin-bottom:12px}table{width:100%;border-collapse:collapse}th{background:#16685F;color:#fff;padding:7px 10px;text-align:left;font-size:11px}td{padding:6px 10px;border-bottom:1px solid #e0e0e0;vertical-align:top}tr:nth-child(even)td{background:#f5f5f5}@media print{button{display:none}}</style></head><body><h2>🏥 Jadwal Operasi — ${HOSPITAL}</h2><p>${printDate?`Tanggal: ${printDate}`:"Semua jadwal"} · Dicetak: ${fNow()}</p><button onclick="window.print()" style="margin-bottom:12px;background:#16685F;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px">🖨 Cetak / Simpan PDF</button><table><thead><tr><th>#</th><th>Tanggal/Jam</th><th>Pasien</th><th>Tindakan</th><th>Kamar</th><th>Dr. Bedah</th><th>Dr. Anestesi</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
             w.document.close();
           }} style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${C.p}`,background:C.pBg,color:C.p,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
             🖨 Cetak
@@ -1490,7 +1490,7 @@ function ViewKirimWA({ops,staff,setNotifs,showToast}: ViewKirimWAProps) {
 function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
   const [range, setRange] = useState<"all"|"30"|"90">("all");
   const [exporting, setExporting] = useState(false);
-  const COLORS = ["#00695C","#1565C0","#E65100","#7B1FA2","#2E7D32","#C62828","#00838F","#E91E63"];
+  const COLORS = ["#1F5A52","#1565C0","#E65100","#7B1FA2","#2E7D32","#C62828","#00838F","#E91E63"];
 
   const allOps = [...ops, ...(archive.flatMap((a:any)=>a.ops||[]))];
   const now = new Date();
@@ -2672,16 +2672,16 @@ function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMo
           </Card>
 
           <Card style={{background:"#E0F2F1",border:"1px solid #80CBC4"}}>
-            <SH label="📋 Download File Tracking Lembur" color="#00695C"/>
-            <div style={{fontSize:12,color:"#00695C",marginBottom:12,lineHeight:1.6}}>
+            <SH label="📋 Download File Tracking Lembur" color="#1F5A52"/>
+            <div style={{fontSize:12,color:"#1F5A52",marginBottom:12,lineHeight:1.6}}>
               Unduh semua data lembur dari semua pegawai sebagai file tracking (Excel atau Word).
               Total pegawai: <b>{(lemburPegawai||[]).length}</b>.
             </div>
             {role==="admin" && <div style={{display:"flex",gap:8}}>
-              <Btn full onClick={()=>downloadTrackingLembur("excel")} style={{flex:1,background:"#00695C",color:"#fff",border:"none"}}>
+              <Btn full onClick={()=>downloadTrackingLembur("excel")} style={{flex:1,background:"#1F5A52",color:"#fff",border:"none"}}>
                 📊 Excel Tracking Lembur
               </Btn>
-              <Btn full onClick={()=>downloadTrackingLembur("word")} style={{flex:1,background:"#0077B6",color:"#fff",border:"none"}}>
+              <Btn full onClick={()=>downloadTrackingLembur("word")} style={{flex:1,background:"#16685F",color:"#fff",border:"none"}}>
                 📄 Word Tracking Lembur
               </Btn>
             </div>}
@@ -3104,7 +3104,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     setC(6,0,"",false,false);
     /* Table header */
     const TH=["No","Tgl Awal Lembur","Tgl Akhir Lembur","Jam Absen Masuk","Jam Absen Keluar","Keperluan Lembur","Keterangan","Tanda Tangan"];
-    TH.forEach((h,i)=>setC(7,i,h,true,true,true,"0077B6"));
+    TH.forEach((h,i)=>setC(7,i,h,true,true,true,"16685F"));
     /* Table rows */
     entries.forEach((e:any,i:number)=>{
       const r=8+i;
@@ -3160,7 +3160,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     const ws = XLSX.utils.aoa_to_sheet([]);
     const merge=(r1:number,c1:number,r2:number,c2:number)=>({s:{r:r1,c:c1},e:{r:r2,c:c2}});
     const cell=(v:any,bold?:boolean,center?:boolean,border?:boolean,bg?:string,fs?:number):XLSX.CellObject=>{
-      const s:any={font:{bold:!!bold,sz:fs||10,color:bg==="0077B6"||bg==="0077B6"?{rgb:"FFFFFF"}:undefined},alignment:{horizontal:center?"center":"left",vertical:"center",wrapText:true}};
+      const s:any={font:{bold:!!bold,sz:fs||10,color:bg==="16685F"||bg==="16685F"?{rgb:"FFFFFF"}:undefined},alignment:{horizontal:center?"center":"left",vertical:"center",wrapText:true}};
       if(border) s.border={top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
       if(bg) s.fill={fgColor:{rgb:bg},patternType:"solid"};
       return {v,t:"s",s} as XLSX.CellObject;
@@ -3175,7 +3175,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     setC(3,0,"",false,false);
     /* Header row */
     const TH=["No","Nama Pegawai","NIK / NIP","Jumlah Hari Lembur","Total Jam Lembur","Keterangan"];
-    TH.forEach((h,i)=>setC(4,i,h,true,true,true,"0077B6",11));
+    TH.forEach((h,i)=>setC(4,i,h,true,true,true,"16685F",11));
     /* Data rows */
     const merges=[
       merge(0,0,0,5),merge(1,0,1,5),merge(2,0,2,5),merge(3,0,3,5),
@@ -3218,7 +3218,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
         ws2[XLSX.utils.encode_cell({r:row,c:col})]={v,t:"s",s:st} as XLSX.CellObject;
       };
       s2(0,0,r.name,true,false); s2(0,2,r.nik,false,false);
-      ["No","Tgl Awal Lembur","Tgl Akhir Lembur","Jam Masuk","Jam Keluar","Keperluan","Keterangan"].forEach((h,i)=>s2(1,i,h,true,true,true,"0077B6"));
+      ["No","Tgl Awal Lembur","Tgl Akhir Lembur","Jam Masuk","Jam Keluar","Keperluan","Keterangan"].forEach((h,i)=>s2(1,i,h,true,true,true,"16685F"));
       r.entries.forEach((e:any,i:number)=>{
         const row=2+i; const bg=i%2===0?"F0FFF8":undefined;
         [String(e.no),e.tanggalAwal||e.jadwalDinas||"",e.tanggalAkhir||"",e.jamMasuk||"",e.jamKeluar||"",e.keperluanLembur||"",e.keterangan||""].forEach((v,c)=>s2(row,c,v,false,c===0||c===3||c===4,true,bg));
@@ -3346,7 +3346,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
           {peg && key && (
             <>
               {/* Header info */}
-              <div style={{background:"linear-gradient(135deg,#023047,#00695C)",borderRadius:14,padding:"16px 20px",marginBottom:14,color:"#fff"}}>
+              <div style={{background:"linear-gradient(135deg,#234B45,#1F5A52)",borderRadius:14,padding:"16px 20px",marginBottom:14,color:"#fff"}}>
                 <div style={{fontSize:14,fontWeight:800,letterSpacing:.3}}>📋 PENCATATAN LEMBUR</div>
                 <div style={{fontSize:11,color:"rgba(255,255,255,.65)",marginTop:2}}>{HOSPITAL}</div>
                 <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 16px",fontSize:12}}>
@@ -3401,7 +3401,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
 
               {/* Table */}
               <Card style={{padding:0,overflow:"hidden"}}>
-                <div style={{background:"#0077B6",padding:"12px 16px"}}>
+                <div style={{background:"#16685F",padding:"12px 16px"}}>
                   <div style={{fontSize:13,fontWeight:800,color:"#fff"}}>Tabel Lembur — {ymLabel(selYM)}</div>
                   <div style={{fontSize:11,color:"rgba(255,255,255,.6)",marginTop:2}}>{peg.name} · NIK: {peg.nik||"—"}</div>
                 </div>
@@ -3417,7 +3417,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                       <thead>
                         <tr style={{background:"#E0F2F1"}}>
                           {["No","Tgl Awal Lembur","Tgl Akhir Lembur","Masuk","Keluar","Durasi","Keperluan Lembur","Keterangan","TTD","Aksi"].map(h=>(
-                            <th key={h} style={{padding:"8px 10px",textAlign:"left",color:"#0077B6",fontWeight:700,borderBottom:"2px solid #0077B6",whiteSpace:"nowrap"}}>{h}</th>
+                            <th key={h} style={{padding:"8px 10px",textAlign:"left",color:"#16685F",fontWeight:700,borderBottom:"2px solid #16685F",whiteSpace:"nowrap"}}>{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -3457,7 +3457,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                           const [h2,m2]=e.jamKeluar.split(":").map(Number);
                           let m=(h2*60+m2)-(h1*60+m1); if(m<0) m+=24*60; return sum+(m>0?m:0);
                         },0);
-                        return <tfoot><tr style={{background:"#E0F2F1"}}><td colSpan={4} style={{padding:"8px 10px",fontWeight:700,color:"#0077B6",textAlign:"right"}}>Total Lembur:</td><td colSpan={5} style={{padding:"8px 10px",fontWeight:800,color:C.s}}>{Math.floor(totalMins/60)} jam {totalMins%60} menit</td></tr></tfoot>;
+                        return <tfoot><tr style={{background:"#E0F2F1"}}><td colSpan={4} style={{padding:"8px 10px",fontWeight:700,color:"#16685F",textAlign:"right"}}>Total Lembur:</td><td colSpan={5} style={{padding:"8px 10px",fontWeight:800,color:C.s}}>{Math.floor(totalMins/60)} jam {totalMins%60} menit</td></tr></tfoot>;
                       })()}
                     </table>
                   </div>
@@ -3573,7 +3573,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
 
               {/* Table */}
               <Card style={{padding:0,overflow:"hidden"}}>
-                <div style={{background:"#0077B6",padding:"12px 16px"}}>
+                <div style={{background:"#16685F",padding:"12px 16px"}}>
                   <div style={{fontSize:13,fontWeight:800,color:"#fff"}}>Rekap Lembur — {ymLabel(rekapYM)}</div>
                   <div style={{fontSize:11,color:"rgba(255,255,255,.6)",marginTop:2}}>{HOSPITAL}</div>
                 </div>
@@ -3582,7 +3582,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                     <thead>
                       <tr style={{background:"#E0F2F1"}}>
                         {["No","Nama Pegawai","NIK / NIP","Hari Lembur","Total Jam","Detail"].map(h=>(
-                          <th key={h} style={{padding:"9px 12px",textAlign:"left",color:"#0077B6",fontWeight:700,borderBottom:"2px solid #0077B6",whiteSpace:"nowrap"}}>{h}</th>
+                          <th key={h} style={{padding:"9px 12px",textAlign:"left",color:"#16685F",fontWeight:700,borderBottom:"2px solid #16685F",whiteSpace:"nowrap"}}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -3611,7 +3611,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                     </tbody>
                     <tfoot>
                       <tr style={{background:"#E0F2F1"}}>
-                        <td colSpan={3} style={{padding:"9px 12px",fontWeight:700,color:"#0077B6",textAlign:"right"}}>TOTAL</td>
+                        <td colSpan={3} style={{padding:"9px 12px",fontWeight:700,color:"#16685F",textAlign:"right"}}>TOTAL</td>
                         <td style={{padding:"9px 12px",textAlign:"center",fontWeight:800,color:C.s}}>
                           {rekapRows.reduce((s:number,r:any)=>s+r.jumlahHari,0)} hari
                         </td>
@@ -4942,6 +4942,7 @@ export default function App() {
     s.textContent=`
       *{box-sizing:border-box;}
       html,body{margin:0;padding:0;}
+      @keyframes kbPulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(201,169,97,.55);}50%{opacity:.85;box-shadow:0 0 0 4px rgba(201,169,97,0);}}
 
       /* ── Mobile default (<640px) ── */
       body{background:${C.bg};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
@@ -4970,7 +4971,7 @@ export default function App() {
       /* ── Desktop (≥1024px) ── */
       @media(min-width:1024px){
         body{
-          background:linear-gradient(135deg,#002B24 0%,#0077B6 50%,#00695C 100%)!important;
+          background:linear-gradient(135deg,#15473F 0%,#16685F 50%,#1F5A52 100%)!important;
           min-height:100vh;
           display:flex;align-items:flex-start;justify-content:center;
           padding:28px 20px;
@@ -4991,7 +4992,7 @@ export default function App() {
         .kb-sidebar{
           display:flex;flex-direction:column;
           width:200px;min-width:200px;
-          background:linear-gradient(180deg,#023047,#00695C);
+          background:linear-gradient(180deg,#234B45,#1F5A52);
           padding:16px 10px;gap:4px;position:relative;
           border-right:1px solid rgba(255,255,255,.10);
           min-height:calc(100vh - 56px - 60px);
@@ -5005,8 +5006,8 @@ export default function App() {
           text-align:left;width:100%;
           font-family:inherit;transition:all .15s;
         }
-        .kb-sidebar-btn:hover{background:rgba(255,255,255,.10);color:#fff;}
-        .kb-sidebar-btn.active{background:rgba(255,255,255,.18);color:#fff;font-weight:800;}
+        .kb-sidebar-btn:hover{background:rgba(255,255,255,.08);color:#fff;}
+        .kb-sidebar-btn.active{background:rgba(255,255,255,.07);color:#fff;font-weight:800;box-shadow:inset 3px 0 0 #C9A961;}
         .kb-main{display:flex;flex:1;}
         .kb-content{flex:1;padding:24px 32px 40px;overflow-y:auto;}
         .kb-title{font-size:18px;}
@@ -5714,7 +5715,7 @@ export default function App() {
   const TABS = useMemo(() => ALL_TABS.filter(t => t.roles.includes(role)), [role]);
 
   if(!pinLoaded) return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#ADE8F4,#48CAE4,#0077B6)"}}>
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#5FA39A,#3FA897,#16685F)"}}>
       <div style={{textAlign:"center",color:"#fff"}}>
         <img src="/logo.jpeg" style={{width:80,height:80,borderRadius:"50%",objectFit:"cover",marginBottom:16,display:"block",margin:"0 auto 16px"}}/>
         <div style={{fontSize:16,fontWeight:700,marginBottom:8}}>SISTEM KOORDINASI KAMAR BEDAH</div>
@@ -5754,7 +5755,12 @@ export default function App() {
             </div>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            {rtStatus==="online" && <span style={{background:"#1B5E20",color:"#A5D6A7",fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:20,border:"1px solid #2E7D32"}}>📡 Sync</span>}
+            {rtStatus==="online" && (
+              <span style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(255,255,255,.10)",color:"rgba(255,255,255,.85)",fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:20,border:"1px solid rgba(255,255,255,.18)"}}>
+                <span style={{width:7,height:7,borderRadius:"50%",background:"#C9A961",display:"inline-block",animation:"kbPulse 2s ease-in-out infinite"}}/>
+                Sync
+              </span>
+            )}
             {ops.filter((o:any)=>o.status==="ongoing").length>0 && (
               <span style={{background:"#F44336",color:"#fff",fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:20}}>
                 ● {ops.filter((o:any)=>o.status==="ongoing").length} berlangsung
