@@ -6,6 +6,8 @@
  */
 import { useState, useEffect, useRef, useCallback, useMemo, Component, Fragment } from "react";
 import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
+import html2canvas from "html2canvas";
 import { createClient, type RealtimeChannel } from "@supabase/supabase-js";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
 
@@ -3870,6 +3872,13 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
   /* grafik: filter ruangan; default "all" */
   const [grafikRuang,setGrafikRuang] = useState("all");
   const [cfgForm,setCfgForm]     = useState<MonitoringCfg>({...monitoringCfg});
+  /* ── State & ref khusus ekspor grafik (gambar + tabel per ruangan) ── */
+  const [grafikExporting, setGrafikExporting] = useState(false);
+  /* Ref off-screen chart per ruangan, satu pasang (suhu+RH) per ruangan di MON_ROOMS.
+     Dipakai HANYA untuk capture html2canvas — tidak memengaruhi chart visible. */
+  const exportChartRefs = useRef<Record<string, { suhu: HTMLDivElement | null; rh: HTMLDivElement | null }>>(
+    Object.fromEntries(MON_ROOMS.map(r => [r, { suhu: null, rh: null }]))
+  );
 
   /* ── Slot state: { [ruang]: { [jam]: {suhu,kelembaban,petugas} } } ── */
   type SL = {suhu:string;kelembaban:string;petugas:string};
@@ -3995,20 +4004,125 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
     return Object.values(map);
   };
 
-  const downloadGrafikExcel = ()=>{
-    if(!me.length){showToast("Tidak ada data untuk bulan ini","#E65100");return;}
-    const wb = XLSX.utils.book_new();
-    const rows = me.map(e=>[e.ruang??"-",e.tanggal,e.jam,e.suhu,e.kelembaban,monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas]);
-    const ws   = XLSX.utils.aoa_to_sheet([
-      ["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"],
-      ...rows,
-      [],
-      [`Rata-rata Suhu: ${avgS}°C`,`Rata-rata RH: ${avgR}%`,`Kepatuhan: ${cmpPct}%`,"","","",""]
-    ]);
-    ws["!cols"]=[{wch:18},{wch:14},{wch:8},{wch:12},{wch:14},{wch:16},{wch:22}];
-    XLSX.utils.book_append_sheet(wb,ws,"Data Grafik");
-    XLSX.writeFile(wb,`Grafik_Monitoring_${selMonth}.xlsx`);
-    showToast("✓ Data grafik "+mLabel+" diunduh",MC.ok);
+  const downloadGrafikExcel = async () => {
+    if (!meAll.length) { showToast("Tidak ada data untuk bulan ini", "#E65100"); return; }
+    setGrafikExporting(true);
+    try {
+      const wb = new ExcelJS.Workbook();
+      wb.creator = "Sistem Monitoring Kamar Bedah";
+      wb.created = new Date();
+
+      /* Beri sedikit delay agar chart off-screen sempat ter-render penuh sebelum capture */
+      await new Promise(res => setTimeout(res, 150));
+
+      for (const ruang of MON_ROOMS) {
+        const meRoom = meAll.filter(e => e.ruang === ruang);
+        const sheet  = wb.addWorksheet(ruang.length > 31 ? ruang.slice(0, 31) : ruang);
+
+        /* ── Judul sheet ── */
+        sheet.mergeCells("A1:G1");
+        const titleCell = sheet.getCell("A1");
+        titleCell.value = `Grafik Monitoring Suhu & Kelembaban — ${ruang} (${mLabel})`;
+        titleCell.font  = { bold: true, size: 13, color: { argb: "FF" + MC.pri.replace("#", "") } };
+        titleCell.alignment = { vertical: "middle" };
+        sheet.getRow(1).height = 22;
+
+        if (!meRoom.length) {
+          sheet.getCell("A3").value = "Belum ada data untuk ruangan ini pada bulan terpilih.";
+          sheet.getCell("A3").font  = { italic: true, color: { argb: "FF94A3B8" } };
+          sheet.columns = [{ width: 18 }, { width: 14 }, { width: 8 }, { width: 12 }, { width: 14 }, { width: 16 }, { width: 22 }];
+          continue;
+        }
+
+        /* ── Tabel data tabular ── */
+        const headerRow = sheet.addRow(["Tanggal", "Jam", "Suhu (°C)", "Kelembaban (%)", "Status", "Petugas"]);
+        headerRow.eachCell(cell => {
+          cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + MC.pri.replace("#", "") } };
+          cell.alignment = { horizontal: "center" };
+        });
+
+        meRoom.forEach(e => {
+          const ok  = monIsOK(e.suhu, e.kelembaban, monitoringCfg);
+          const row = sheet.addRow([e.tanggal, e.jam, e.suhu, e.kelembaban, ok ? "SESUAI" : "TIDAK SESUAI", e.petugas]);
+          const statusCell = row.getCell(5);
+          statusCell.font = { bold: true, color: { argb: ok ? "FF" + MC.ok.replace("#", "") : "FF" + MC.err.replace("#", "") } };
+        });
+
+        /* ── Ringkasan statistik per ruangan ── */
+        const suhuVR  = meRoom.map(e => e.suhu).filter(v => v > 0);
+        const rhVR    = meRoom.map(e => e.kelembaban).filter(v => v > 0);
+        const avgSR   = suhuVR.length ? +(suhuVR.reduce((a, b) => a + b, 0) / suhuVR.length).toFixed(1) : 0;
+        const avgRR   = rhVR.length   ? +(rhVR.reduce((a, b) => a + b, 0) / rhVR.length).toFixed(1)     : 0;
+        const tidakSR = meRoom.filter(e => !monIsOK(e.suhu, e.kelembaban, monitoringCfg)).length;
+        const cmpPctR = meRoom.length ? +((meRoom.length - tidakSR) / meRoom.length * 100).toFixed(1) : 0;
+
+        sheet.addRow([]);
+        const sumRow = sheet.addRow([`Rata-rata Suhu: ${avgSR}°C`, `Rata-rata RH: ${avgRR}%`, `Kepatuhan: ${cmpPctR}%`, `Tidak Sesuai: ${tidakSR}`]);
+        sumRow.font = { bold: true, color: { argb: "FF" + MC.pri.replace("#", "") } };
+
+        sheet.columns = [{ width: 14 }, { width: 8 }, { width: 12 }, { width: 14 }, { width: 16 }, { width: 22 }];
+
+        const dataEndRow = sheet.rowCount;
+
+        /* ── Capture & sisipkan gambar grafik suhu ── */
+        const suhuEl = exportChartRefs.current[ruang]?.suhu;
+        if (suhuEl) {
+          try {
+            const canvas   = await html2canvas(suhuEl, { backgroundColor: "#ffffff", scale: 2 });
+            const dataUrl  = canvas.toDataURL("image/png");
+            const imgId    = wb.addImage({ base64: dataUrl, extension: "png" });
+            const imgRowStart = dataEndRow + 2;
+            sheet.getCell(`A${imgRowStart - 1}`).value = "🌡 Grafik Suhu";
+            sheet.getCell(`A${imgRowStart - 1}`).font  = { bold: true, color: { argb: "FF" + MC.pri.replace("#", "") } };
+            sheet.addImage(imgId, {
+              tl: { col: 0, row: imgRowStart },
+              ext: { width: 560, height: 230 },
+            });
+          } catch (imgErr) {
+            console.error("Gagal capture grafik suhu:", imgErr);
+          }
+        }
+
+        /* ── Capture & sisipkan gambar grafik kelembaban ── */
+        const rhEl = exportChartRefs.current[ruang]?.rh;
+        if (rhEl) {
+          try {
+            const canvas2  = await html2canvas(rhEl, { backgroundColor: "#ffffff", scale: 2 });
+            const dataUrl2 = canvas2.toDataURL("image/png");
+            const imgId2   = wb.addImage({ base64: dataUrl2, extension: "png" });
+            const imgRowStart2 = dataEndRow + 14; // offset ke bawah agar tidak tumpang-tindih grafik suhu
+            sheet.getCell(`A${imgRowStart2 - 1}`).value = "💧 Grafik Kelembaban";
+            sheet.getCell(`A${imgRowStart2 - 1}`).font   = { bold: true, color: { argb: "FF" + MC.ok.replace("#", "") } };
+            sheet.addImage(imgId2, {
+              tl: { col: 0, row: imgRowStart2 },
+              ext: { width: 560, height: 230 },
+            });
+          } catch (imgErr) {
+            console.error("Gagal capture grafik kelembaban:", imgErr);
+          }
+        }
+      }
+
+      /* ── Tulis & unduh file ── */
+      const buffer = await wb.xlsx.writeBuffer();
+      const blob   = new Blob([buffer], { type: "application/octet-stream" });
+      const url    = URL.createObjectURL(blob);
+      const a      = document.createElement("a");
+      a.href = url;
+      a.download = `Grafik_Monitoring_${selMonth}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      showToast("✓ Grafik & data " + mLabel + " diunduh (per ruangan)", MC.ok);
+    } catch (err: any) {
+      console.error(err);
+      showToast("⚠ Gagal mengekspor grafik: " + (err?.message || "kesalahan tidak diketahui"), MC.err);
+    } finally {
+      setGrafikExporting(false);
+    }
   };
 
   /* Inner style override untuk input di dalam komponen ini */
@@ -4225,8 +4339,23 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
             <button onClick={()=>setSelMonth(todayDate().slice(0,7))} style={{padding:"7px 14px",background:selMonth===todayDate().slice(0,7)?"#0EA5E9":"#F0F9FF",color:selMonth===todayDate().slice(0,7)?"#fff":"#0369A1",border:"1px solid #BAE6FD",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
               📅 Bulan Ini
             </button>
-            <button onClick={downloadGrafikExcel} style={{padding:"7px 14px",background:"#ECFDF5",color:MC.ok,border:"1px solid #BBF7D0",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
-              ⬇ Download Excel
+            <button
+              onClick={downloadGrafikExcel}
+              disabled={grafikExporting}
+              style={{
+                padding: "7px 14px",
+                background: grafikExporting ? "#E5E7EB" : "#ECFDF5",
+                color: grafikExporting ? "#9CA3AF" : MC.ok,
+                border: "1px solid " + (grafikExporting ? "#D1D5DB" : "#BBF7D0"),
+                borderRadius: 8,
+                cursor: grafikExporting ? "not-allowed" : "pointer",
+                fontSize: 12,
+                fontWeight: 700,
+                fontFamily: "inherit",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {grafikExporting ? "⏳ Mengunduh Excel..." : "⬇ Download Excel"}
             </button>
           </div>
 
@@ -4342,6 +4471,60 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
                     ))}
                   </div>
                 )}
+              </div>
+
+              {/* ══════════════════════════════════════════════════════
+                  OFF-SCREEN CHARTS — khusus capture html2canvas saat ekspor.
+                  Tidak terlihat user, render selalu (agar siap di-capture),
+                  satu pasang grafik (suhu + RH) per ruangan di MON_ROOMS.
+                  Struktur Recharts visible di atas TIDAK disentuh.
+                 ══════════════════════════════════════════════════════ */}
+              <div style={{ position: "absolute", top: 0, left: -9999, width: 600, pointerEvents: "none" }} aria-hidden="true">
+                {MON_ROOMS.map((ruang, ri) => {
+                  const meRoomChart = meAll
+                    .filter(e => e.ruang === ruang)
+                    .map(e => ({
+                      name: e.tanggal.slice(8) + "/" + (e.jam === "07:00" ? "07" : e.jam === "14:00" ? "14" : "21"),
+                      suhu: e.suhu,
+                      kelembaban: e.kelembaban,
+                    }));
+                  return (
+                    <div key={"export_" + ruang}>
+                      <div
+                        ref={(el: HTMLDivElement | null) => { exportChartRefs.current[ruang].suhu = el; }}
+                        style={{ width: 560, height: 230, background: "#fff", padding: 12 }}
+                      >
+                        <div style={{ fontWeight: 700, color: MC.pri, marginBottom: 8, fontSize: 13 }}>
+                          🌡 Grafik Suhu — {ruang} — {mLabel}
+                        </div>
+                        <LineChart width={536} height={180} data={meRoomChart} margin={{ top: 4, right: 20, left: 0, bottom: 4 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
+                          <XAxis dataKey="name" tick={{ fontSize: 9 }} interval={Math.max(0, Math.floor(meRoomChart.length / 10) - 1)} />
+                          <YAxis domain={[15, 30]} tick={{ fontSize: 11 }} unit="°C" width={44} />
+                          <ReferenceLine y={monitoringCfg.suhuMin} stroke="#EF4444" strokeDasharray="4 3" />
+                          <ReferenceLine y={monitoringCfg.suhuMax} stroke="#EF4444" strokeDasharray="4 3" />
+                          <Line type="monotone" dataKey="suhu" stroke={MON_ROOM_COLORS[ri]} strokeWidth={2.5} dot={{ r: 2, fill: MON_ROOM_COLORS[ri] }} isAnimationActive={false} />
+                        </LineChart>
+                      </div>
+                      <div
+                        ref={(el: HTMLDivElement | null) => { exportChartRefs.current[ruang].rh = el; }}
+                        style={{ width: 560, height: 230, background: "#fff", padding: 12, marginTop: 8 }}
+                      >
+                        <div style={{ fontWeight: 700, color: MC.ok, marginBottom: 8, fontSize: 13 }}>
+                          💧 Grafik Kelembaban — {ruang} — {mLabel}
+                        </div>
+                        <LineChart width={536} height={180} data={meRoomChart} margin={{ top: 4, right: 20, left: 0, bottom: 4 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" />
+                          <XAxis dataKey="name" tick={{ fontSize: 9 }} interval={Math.max(0, Math.floor(meRoomChart.length / 10) - 1)} />
+                          <YAxis domain={[30, 90]} tick={{ fontSize: 11 }} unit="%" width={44} />
+                          <ReferenceLine y={monitoringCfg.rhMin} stroke="#EF4444" strokeDasharray="4 3" />
+                          <ReferenceLine y={monitoringCfg.rhMax} stroke="#EF4444" strokeDasharray="4 3" />
+                          <Line type="monotone" dataKey="kelembaban" stroke={MC.ok} strokeWidth={2.5} dot={{ r: 2, fill: MC.ok }} isAnimationActive={false} />
+                        </LineChart>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}
