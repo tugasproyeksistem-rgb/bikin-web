@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
     <title>Sistem Kamar Bedah - RS Panti Rini</title>
     <meta name="description" content="Sistem Kamar Bedah - RS Panti Rini — built on Replit. Update this description to reflect the app." />
-    <meta name="robots" content="index, follow" />
+    <meta name="robots" content="noindex, nofollow" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#16685F" />
     <meta property="og:title" content="Sistem Kamar Bedah - RS Panti Rini" />
     <meta property="og:description" content="Sistem Kamar Bedah - RS Panti Rini — built on Replit. Update this description to reflect the app." />
     <meta property="og:type" content="website" />
@@ -20,5 +22,14 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/service-worker.js").catch((err) => {
+            console.warn("Service worker gagal didaftarkan:", err);
+          });
+        });
+      }
+    </script>
   </body>
 </html>
