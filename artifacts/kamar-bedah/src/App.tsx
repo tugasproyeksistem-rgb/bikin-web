@@ -44,7 +44,7 @@ const ST    = { surgeon:"Dokter Bedah", anesthesiologist:"Dokter Anestesi", circ
 const OT    = { elektif:{label:"Elektif",c:"#1565C0",bg:"#E3F2FD"}, semi:{label:"Semi-Elektif",c:"#E65100",bg:"#FFF3E0"}, cyto:{label:"⚠ CYTO",c:"#B71C1C",bg:"#FFCDD2"} };
 const STS   = { scheduled:{l:"Terjadwal",c:"#1565C0",bg:"#E3F2FD"}, ongoing:{l:"Berlangsung",c:"#00897B",bg:"#E0F2F1"}, done:{l:"Selesai",c:"#2E7D32",bg:"#E8F5E9"}, batal:{l:"Batal/Tunda",c:"#C62828",bg:"#FFEBEE"} };
 const C     = { p:"#16685F",pL:"#2D9A87",pBg:"#E4F3F0", d:"#D62828",dBg:"#FFEBEE",dL:"#FF8FA3", w:"#E07800",wBg:"#FFF8E1", i:"#1565C0",iBg:"#E3F2FD", s:"#2E7D32",sBg:"#F0FFF4", wa:"#25D366",waBg:"#DCFCE7", g:"#5C677D",gBg:"#F0F4F8", t:"#234B45",tL:"#577590", b:"#D0E8F2",white:"#FFFFFF",bg:"#F4F7F6", gold:"#C9A961" };
-const EOP: Partial<Operation> = {patient:"",age:"",rm:"",opType:"elektif",diagnosis:"",procedure:"",ruangAsal:"",room:ROOMS[0],date:"",time:"",surgeon:"",anesthesiologist:"",assistantNurse:"",circulatingNurse:"",anesthesiaNurse:"",onloopNurse:"",rrKatim:"",allergy:"Tidak Ada",specialNeeds:"",bloodType:"O+"};
+const EOP: Partial<Operation> = {patient:"",age:"",ageMonths:"",rm:"",opType:"elektif",diagnosis:"",procedure:"",ruangAsal:"",room:ROOMS[0],date:"",time:"",surgeon:"",anesthesiologist:"",assistantNurse:"",circulatingNurse:"",anesthesiaNurse:"",onloopNurse:"",rrKatim:"",allergy:"Tidak Ada",specialNeeds:"",bloodType:"O+"};
 const PAGE_SIZE = 10;
 const DEFAULT_RECIPIENT = "Suster Thresmiati CB, bu Niken, pak Jaka dan teman sejawat, mohon ijin laporan kamar bedah:";
 
@@ -57,6 +57,7 @@ export interface Operation {
   id: string;
   patient: string;
   age?: string;
+  ageMonths?: string;
   rm?: string;
   opType: "elektif" | "semi" | "cyto";
   status: "scheduled" | "ongoing" | "done" | "batal";
@@ -162,7 +163,17 @@ export interface SaveOpFnArgs {
 }
 
 export interface ViewDaftarProps {
-  editOpRef: React.MutableRefObject<((op: Operation) => void) | null>;
+  /* FIX AUDIT #24 (CRITICAL — Race condition saat Edit Jadwal):
+     SEBELUMNYA memakai `editOpRef` (ref-callback) yang di-assign oleh
+     ViewDaftar lewat useEffect SETELAH component mount. Karena ViewDaftar
+     hanya di-mount saat tab==="daftar", saat user klik Edit dari tab lain,
+     editOpRef.current MASIH NULL (atau menyimpan fungsi dari instance
+     LAMA yang sudah unmount) — pemanggilannya GAGAL SENYAP tanpa error,
+     dan form yang baru di-mount memakai state default KOSONG. Sekarang
+     diganti `pendingEditOp` (prop biasa) + `clearPendingEditOp` — pola
+     "state lifting" standar React, tidak bergantung timing mount/ref. */
+  pendingEditOp: Operation | null;
+  clearPendingEditOp: () => void;
   saveOpFn: (args: SaveOpFnArgs) => void;
   staff: StaffMember[];
   setTab: React.Dispatch<React.SetStateAction<string>>;
@@ -177,6 +188,7 @@ export interface ViewLaporanProps {
   roster: RosterEntry[];
   showToast: ShowToastFn;
   role: "admin" | "perawat";
+  privacyMode: boolean;
 }
 
 export interface ViewKirimWAProps {
@@ -195,6 +207,54 @@ export interface ViewStafProps {
   upsertOneToSupa: UpsertOneFn;
   deleteFromSupa: DeleteFromSupaFn;
   upsertBulkToSupa: UpsertBulkFn;
+}
+
+/* FIX AUDIT #23 (CRITICAL — Prop Drilling: 36 props flat bertipe `any`):
+   Sebelumnya ViewArsip menerima 36 parameter independen tanpa tipe sama
+   sekali — risiko nyata: mudah lupa meneruskan 1 prop baru di pemanggil
+   (PERNAH BENAR-BENAR TERJADI pada bug `privacyMode` yang ditemukan &
+   diperbaiki di audit sebelumnya). Sekarang dikelompokkan berdasarkan
+   DOMAIN (data, privacy, supabase, dropbox, realtime) — compiler akan
+   MENOLAK compile kalau satu sub-objek lupa diisi di titik pemanggilan,
+   alih-alih baru ketahuan setelah user melaporkan bug. */
+export interface ViewArsipProps {
+  data: {
+    ops: Operation[];
+    archive: any[];
+    notifs: Notif[];
+    lemburData: Record<string, any>;
+    lemburPegawai: any[];
+    monitoringEntries: MonitoringEntry[];
+    monitoringCfg: MonitoringCfg;
+  };
+  setOps: React.Dispatch<React.SetStateAction<Operation[]>>;
+  showToast: ShowToastFn;
+  role: "admin" | "perawat";
+  upsertBulkToSupa: UpsertBulkFn;
+  auditLog: any[];
+  privacy: { mode: boolean; setMode: (v: boolean) => void; };
+  supabase: {
+    cfg: any; setCfg: (fn: any) => void;
+    status: {ok:boolean; msg:string} | null;
+    backingUp: boolean;
+    onBackup: () => Promise<void>;
+    onRestoreOps: () => Promise<void>;
+    onRestoreLembur: () => Promise<void>;
+    onRestoreMonitoring: () => Promise<void>;
+    onRestoreAll: () => Promise<void>;
+  };
+  dropbox: {
+    cfg: DropboxConfig; setCfg: React.Dispatch<React.SetStateAction<DropboxConfig>>;
+    status: {ok:boolean; msg:string} | null;
+    backingUp: boolean;
+    onBackup: () => Promise<void>;
+    onRestoreOps: () => Promise<void>;
+    onRestoreLembur: () => Promise<void>;
+    onBackupOpsXls: () => Promise<void>;
+    onBackupLemburXls: () => Promise<void>;
+    onBackupMonitoringXls: () => Promise<void>;
+  };
+  realtime: { status: string; enabled: boolean; setEnabled: (v:boolean) => void; };
 }
 
 
@@ -229,12 +289,24 @@ async function hashPin(pin: string, saltHex?: string): Promise<string> {
 /* verifyPin: bandingkan PIN polos yang diketik user terhadap string
    "<salt>:<hash>" yang tersimpan. Mendukung mode legacy (plaintext lama,
    tanpa format salt:hash) untuk migrasi mulus dari data existing. */
+/* FIX AUDIT #16 (CRITICAL — Timing Attack pada verifikasi PIN):
+   Sebelumnya `rehashed === stored` memakai perbandingan string biasa, yang
+   TIDAK constant-time — waktu eksekusi bisa berbeda marginal tergantung
+   berapa karakter awal yang cocok, membuka celah timing-attack teoretis.
+   Sekarang memakai constantTimeEqual() yang selalu membandingkan SEMUA
+   karakter tanpa early-exit, terlepas dari hasil sebagian. */
+function constantTimeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return result === 0;
+}
 async function verifyPin(pin: string, stored: string | undefined | null): Promise<boolean> {
   if (!stored) return false;
-  if (!stored.includes(":")) return pin === stored; // legacy plaintext fallback (auto-migrasi di pemanggil)
+  if (!stored.includes(":")) return constantTimeEqual(pin, stored); // legacy plaintext fallback (auto-migrasi di pemanggil)
   const [salt] = stored.split(":");
   const rehashed = await hashPin(pin, salt);
-  return rehashed === stored;
+  return constantTimeEqual(rehashed, stored);
 }
 /** Migrasi otomatis terjadi saat login: jika PIN di Supabase masih plaintext
  * (sebelum update ini diterapkan), verifyPin akan mendeteksinya via !includes(":")
@@ -290,6 +362,43 @@ const fTR       = (t: string) => t?t.replace(":",".") : "";
    getHours() dan getMinutes() bisa berasal dari momen berbeda dan memberikan
    hasil yang salah. Sekarang menggunakan satu instance Date yang sama. */
 const gWord     = (): string => { const now = new Date(); const t = now.getHours() * 60 + now.getMinutes(); return t < 660 ? "pagi" : t < 900 ? "siang" : t < 1110 ? "sore" : "malam"; };
+/* timeOfDayLabel: sama seperti gWord(), tapi berdasarkan jam OPERASI (bukan
+   waktu saat ini) — dipakai utk frasa "rencana operasi besok [pagi/siang/sore]"
+   di msgSurgeon, yang merujuk ke jam operasinya, bukan jam pengiriman pesan. */
+const timeOfDayLabel = (time: string): string => {
+  if(!time) return "";
+  const [h,m] = time.split(":").map(Number);
+  const t = (h||0)*60 + (m||0);
+  return t < 660 ? "pagi" : t < 900 ? "siang" : t < 1110 ? "sore" : "malam";
+};
+/* fDLower: varian fD() khusus utk template pesan WA Laporan/msgSurgeon/msgAnest
+   sesuai spesifikasi format ("sabtu 20 juni 2026" — lowercase, tanpa koma).
+   fD() ASLI TIDAK diubah supaya tempat lain yang sudah memakainya (cetak,
+   export, dsb) tidak terdampak/regresi. */
+const fDLower   = (d: string): string => fD(d).replace(",", "").toLowerCase();
+/* formatUsia: helper wajib sesuai spesifikasi — dipakai di seluruh modul
+   rendering teks Laporan & WA (buildLaporan, msgSurgeon, msgAnest). */
+function formatUsia(tahun: any, bulan: any): string {
+  const t = parseInt(tahun) || 0;
+  const b = parseInt(bulan) || 0;
+  if (t === 0 && b > 0) return `${b} bln`;
+  if (t > 0 && b > 0) return `${t} thn ${b} bln`;
+  return `${t} thn`;
+}
+/* usiaOp: wrapper formatUsia yang mengembalikan "" jika usia benar-benar
+   tidak diisi sama sekali (age maupun ageMonths kosong) — menjaga pola lama
+   `op.age?...:""` agar usia tidak muncul sebagai "0 thn" pada data lama yang
+   belum diisi sama sekali. */
+const usiaOp    = (o: any): string => (o.age || o.ageMonths) ? formatUsia(o.age, o.ageMonths) : "";
+/* titleCaseDokter: khusus utk SAPAAN/header pesan WA (contoh: "dokter Timor")
+   — menghapus prefix "dr"/"Dr" jika ada lalu Title Case huruf pertama.
+   Nama di BADAN pesan (mis. "dr timor" dalam daftar pasien) TETAP memakai
+   nilai asli dari database (hanya di-sanitize, tidak diubah case-nya) —
+   sesuai contoh output literal yang diberikan di spesifikasi. */
+const titleCaseDokter = (n: string): string => {
+  const c = sanitize(n).replace(/^dr\.?\s*/i, "").trim();
+  return c ? c.charAt(0).toUpperCase()+c.slice(1) : c;
+};
 const sanitize  = (s: any) => String(s||"").replace(/<[^>]*>/g,"").replace(/['"`;]/g,"").trim();
 const maskName  = (n: string,a: boolean) => !a||!n ? n??"" : String(n).replace(/\S+/g,(w:string)=>w[0]+"*".repeat(Math.max(1,w.length-1)));
 const maskRM    = (r: string,a: boolean) => !a||!r ? r??"" : String(r).slice(0,2)+"****"+String(r).slice(-2);
@@ -328,14 +437,64 @@ const toISODateStrict = (value: any): string | null => {
   }
   const str = String(value).trim();
   if (!str) return null;
+  /* FIX AUDIT #17 (HIGH — overflow tanggal senyap): SEBELUMNYA regex hanya
+     memvalidasi BENTUK (1-2 digit/1-2 digit/4 digit), bukan NILAI. Input
+     seperti "45/13/2024" lolos regex, lalu `new Date("2024-13-45...")`
+     overflow secara DIAM-DIAM (bulan 13→Januari tahun depan, hari
+     meluber ke bulan berikutnya) — isNaN(d.getTime()) tetap false karena
+     hasilnya Date object yang valid secara teknis, hanya bukan tanggal
+     yang dimaksud. Sekarang divalidasi range SEBELUM membentuk Date, dan
+     divalidasi BALIK (cek d.getDate()/getMonth() cocok dgn input) untuk
+     menangkap kasus seperti 31/02 yang lolos range tapi tak ada di
+     kalender (Date akan otomatis "menggelinding" ke awal Maret). */
   let m = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (m) { const [_, y, mo, da] = m; const d = new Date(`${y}-${mo.padStart(2,"0")}-${da.padStart(2,"0")}T00:00:00`); return isNaN(d.getTime()) ? null : `${y}-${mo.padStart(2,"0")}-${da.padStart(2,"0")}`; }
+  if (m) {
+    const [_, y, mo, da] = m;
+    const dayNum = Number(da), monNum = Number(mo);
+    if (monNum < 1 || monNum > 12 || dayNum < 1 || dayNum > 31) return null;
+    const d = new Date(`${y}-${mo.padStart(2,"0")}-${da.padStart(2,"0")}T00:00:00`);
+    if (isNaN(d.getTime())) return null;
+    if (d.getDate() !== dayNum || d.getMonth()+1 !== monNum) return null;
+    return `${y}-${mo.padStart(2,"0")}-${da.padStart(2,"0")}`;
+  }
   m = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-  if (m) { const [_, da, mo, y] = m; const d = new Date(`${y}-${mo.padStart(2,"0")}-${da.padStart(2,"0")}T00:00:00`); return isNaN(d.getTime()) ? null : `${y}-${mo.padStart(2,"0")}-${da.padStart(2,"0")}`; }
+  if (m) {
+    const [_, da, mo, y] = m;
+    const dayNum = Number(da), monNum = Number(mo);
+    if (monNum < 1 || monNum > 12 || dayNum < 1 || dayNum > 31) return null;
+    const d = new Date(`${y}-${mo.padStart(2,"0")}-${da.padStart(2,"0")}T00:00:00`);
+    if (isNaN(d.getTime())) return null;
+    if (d.getDate() !== dayNum || d.getMonth()+1 !== monNum) return null;
+    return `${y}-${mo.padStart(2,"0")}-${da.padStart(2,"0")}`;
+  }
   const asNum = Number(str);
   if (!isNaN(asNum) && asNum > 1000) return toISODateStrict(asNum); // serial number terbaca sbg string
   return null;
 };
+/* FIX AUDIT #21 (HIGH — Code Duplication): sebelumnya fungsi `cell()` &
+   `setC()` untuk styling cell Excel (bold/center/border/background/font
+   size) didefinisikan ULANG dengan logic SEDIKIT BERBEDA di 2 tempat
+   terpisah (downloadExcel individual & downloadRekapExcel) — salah satu
+   versi punya logic tambahan (teks putih otomatis di atas background
+   teal "16685F") yang tidak ada di versi lainnya. Sekarang diekstrak
+   jadi SATU fungsi global yang menggabungkan SEMUA behavior dari kedua
+   versi (superset, tidak ada behavior yang dihilangkan) — dipakai oleh
+   SEMUA fungsi export Excel di file ini, bukan hanya 2 yang ditemukan
+   saat audit. Murni stateless, tidak bergantung closure apa pun. */
+function xlsxCell(v:any, bold?:boolean, center?:boolean, border?:boolean, bg?:string, fontSize?:number): XLSX.CellObject {
+  const s:any = {
+    font: { bold: !!bold, sz: fontSize||10, color: bg==="16685F" ? {rgb:"FFFFFF"} : undefined },
+    alignment: { horizontal: center?"center":"left", vertical:"center", wrapText:true },
+  };
+  if (border) s.border = { top:{style:"thin"}, bottom:{style:"thin"}, left:{style:"thin"}, right:{style:"thin"} };
+  if (bg) s.fill = { fgColor:{rgb:bg}, patternType:"solid" };
+  return { v, t:"s", s } as XLSX.CellObject;
+}
+/* xlsxSetCell: helper untuk menulis cell langsung ke worksheet pada
+   alamat (r,c), memakai xlsxCell() di atas untuk styling. */
+function xlsxSetCell(ws: XLSX.WorkSheet, r:number, c:number, v:any, bold?:boolean, center?:boolean, border?:boolean, bg?:string, fs?:number) {
+  ws[XLSX.utils.encode_cell({r,c})] = xlsxCell(v,bold,center,border,bg,fs);
+}
 /* normalizeStaffType: pemetaan label bebas (hasil ketik manual di Excel)
    ke key baku yang dipakai aplikasi (ST). Mencegah staf "hilang" dari
    pengelompokan UI karena typo/label berbeda, walau tersimpan di DB. */
@@ -561,62 +720,180 @@ async function supabaseRestore(_cfg: SupabaseConfig, client: any): Promise<{ok: 
 }
 
 /* ─── MESSAGE BUILDERS ──────────────────────────────────────────────── */
+/* msgSurgeon — direfactor sesuai Spesifikasi Teknis (lihat catatan di bawah).
+   Nama fungsi & signature (name, ops) TIDAK diubah agar binding onClick UI
+   tetap valid (sesuai PERINGATAN SISTEM di spesifikasi).
+   Catatan keputusan implementasi:
+   - "[pagi/siang/sore]" pertama (greeting) = gWord() → waktu SAAT pesan disusun.
+   - "[pagi/siang/sore]" kedua (shift operasi besok) = timeOfDayLabel(jam operasi
+     pertama) → karena merujuk ke JAM OPERASI, bukan jam pengiriman pesan.
+   - Tanggal pakai fDLower() (lowercase, tanpa koma) agar konsisten dgn contoh
+     output literal yang diberikan untuk msgAnest.
+   - Jika dalam grup operasi dokter bedah ini ada >1 nama anestesi berbeda
+     (kasus campuran, tidak disebutkan di spesifikasi), nama-nama itu
+     digabung dengan "dan" agar informasi tidak hilang — bukan diasumsikan
+     seragam begitu saja. */
 function msgSurgeon(name: string, ops: any[]) {
   const s = [...ops].sort((a,b)=>a.time.localeCompare(b.time));
-  const ua = [...new Set(s.map(o=>o.anesthesiologist).filter(Boolean))];
-  const N = sanitize(name).toUpperCase();
-  if(ua.length===1){
-    const A = sanitize(ua[0]).toUpperCase();
-    return `Selamat ${gWord()} *${N}*,\nuntuk operasi besok bius dengan *${A}* ada ${s.length} mulai jam ${fTR(s[0]?.time)}:\n\n${s.map((o,i)=>`${i+1}. rencana ${sanitize(o.procedure)} atas nama ${sanitize(o.patient)}${o.age?` ${o.age} thn`:""}`).join("\n")}\n\nTerima kasih\n\nKamar Bedah ${HOSPITAL}`;
+  if(!s.length) return "";
+  const N = titleCaseDokter(name); // nama TARGET sapaan → Title Case, tanpa prefix "dr"
+  const uniqAnest = [...new Set(s.map(o=>o.anesthesiologist).filter(Boolean))];
+  const anestLabel = uniqAnest.length ? uniqAnest.map(a=>sanitize(a)).join(" dan ") : "-"; // nama pendukung → raw, sesuai database
+  const greet = gWord();
+  const shift = timeOfDayLabel(s[0]?.time);
+  const tanggal = fDLower(tmrwDate());
+  const jam = fTR(s[0]?.time);
+  const baris = (o:any) => {
+    const usia = usiaOp(o);
+    const diag = sanitize(o.diagnosis||"").trim();
+    return `${sanitize(o.patient)}${usia?` ${usia}`:""} rencana ${sanitize(o.procedure)}${diag?` ${diag}`:""}`;
+  };
+  if(s.length>1){
+    const lines = s.map((o,i)=>`${i+1}. ${baris(o)}`).join("\n");
+    return `selamat ${greet} dokter ${N} rencana operasi besok ${shift} , ${tanggal} mulai jam ${jam} dr bius dengan ${anestLabel} ada ${s.length} pasien :\n${lines}\nterima kasih banyak dokter`;
   }
-  return `Selamat ${gWord()} *${N}*,\nuntuk operasi besok ada ${s.length} mulai jam ${fTR(s[0]?.time)}:\n\n${s.map((o,i)=>`${i+1}. rencana ${sanitize(o.procedure)} atas nama ${sanitize(o.patient)}${o.age?` ${o.age} thn`:""}${o.anesthesiologist?` (bius: *${sanitize(o.anesthesiologist).toUpperCase()}*)`:""}`).join("\n")}\n\nTerima kasih\n\nKamar Bedah ${HOSPITAL}`;
+  return `selamat ${greet} dokter ${N} rencana operasi besok ${shift} ${tanggal} mulai jam ${jam} bius dengan ${anestLabel} atas nama ${baris(s[0])}\nterima kasih banyak dokter`;
 }
+/* msgAnest — direfactor sesuai Spesifikasi Teknis & CONTOH OUTPUT LITERAL
+   yang diberikan. Signature (name, ops) TIDAK diubah.
+   Catatan keputusan implementasi:
+   - Spacing mengikuti CONTOH AKHIR secara harfiah (baris-baris rapat,
+     newline tunggal antar section — BUKAN double newline seperti disebut
+     di teks algoritma pipeline, yang ternyata tidak konsisten dgn contoh).
+   - Header "dokter [Nama]" pakai titleCaseDokter (Title Case, tanpa prefix
+     "dr"), sesuai contoh "dokter Timor". Nama dokter bedah & anestesi di
+     BADAN pesan tetap nilai asli dari database (mis. "dr dedi", "dr timor"),
+     sesuai contoh — tidak diubah case-nya. */
 function msgAnest(name: string, ops: any[]) {
-  const s = [...ops].sort((a,b)=>a.time.localeCompare(b.time));
-  const byTime: Record<string,any[]> = {};
-  s.forEach(o=>{ if(!byTime[o.time])byTime[o.time]=[]; byTime[o.time].push(o); });
-  const secs = Object.entries(byTime).sort(([a],[b])=>a.localeCompare(b)).map(([time,oa])=>{
-    const bySurg: Record<string,any[]> ={};
-    oa.forEach(o=>{ if(!bySurg[o.surgeon])bySurg[o.surgeon]=[]; bySurg[o.surgeon].push(o); });
-    return `*Jam ${fTR(time)}*\n`+Object.entries(bySurg).map(([sg,so])=>
-      `pasien *${sanitize(sg).toUpperCase()}* ada ${so.length}:\n${so.map((op,i)=>`${i+1}. ${sanitize(op.patient)}${op.age?` ${op.age} thn`:""} rencana ${sanitize(op.procedure)}`).join("\n")}`
-    ).join("\n\n");
-  }).join("\n\n");
-  return `Selamat ${gWord()} ${sanitize(name)},\nuntuk acara besok ${fD(tmrwDate())} ada ${s.length} pasien:\n\n${secs}\n\nTerima kasih dokter\n\nKamar Bedah ${HOSPITAL}`;
+  const tanggal = fDLower(tmrwDate());
+  const greet = gWord();
+  const anestRaw = sanitize(name); // dipakai di badan pesan, format asli (mis. "dr timor")
+
+  const renderShift = (shiftOps: any[]): string => {
+    if(!shiftOps.length) return "";
+    const byTime: Record<string, any[]> = {};
+    shiftOps.forEach(o=>{ if(!byTime[o.time]) byTime[o.time]=[]; byTime[o.time].push(o); });
+    return Object.keys(byTime).sort((a,b)=>a.localeCompare(b)).map(time=>{
+      const opsAtTime = byTime[time];
+      const bySurgeon: Record<string, any[]> = {};
+      opsAtTime.forEach(o=>{ const k=(o.surgeon||"").trim().toLowerCase(); if(!bySurgeon[k]) bySurgeon[k]=[]; bySurgeon[k].push(o); });
+      return Object.values(bySurgeon).map((group:any[])=>{
+        const surgeonRaw = sanitize(group[0].surgeon);
+        const jam = fTR(time);
+        const baris = (o:any) => {
+          const usia = usiaOp(o);
+          const diag = sanitize(o.diagnosis||"").trim();
+          return `${sanitize(o.patient)}${usia?` ${usia}`:""} rencana ${sanitize(o.procedure)}${diag?` ${diag}`:""}`;
+        };
+        if(group.length>1){
+          const lines = group.map((o,i)=>`${i+1}. ${baris(o)}`).join("\n");
+          return `*jam ${jam}* ${surgeonRaw} dan ${anestRaw} ada ${group.length} pasien :\n${lines}`;
+        }
+        return `*jam ${jam}* ${surgeonRaw} dan ${anestRaw} atas nama ${baris(group[0])}`;
+      }).join("\n");
+    }).join("\n");
+  };
+
+  const pagi = ops.filter((o:any)=>o.time<"14:00");
+  const sore = ops.filter((o:any)=>o.time>="14:00");
+
+  let out = `Selamat ${greet} dokter ${titleCaseDokter(name)} ,Rencana operasi besok hari ${tanggal}`;
+  if(pagi.length) out += `\n*Pagi*\n${renderShift(pagi)}`;
+  if(sore.length) out += `\n*Sore*\n${renderShift(sore)}`;
+  if(!pagi.length && !sore.length) out += "\nBelum ada rencana operasi";
+  out += "\nterima kasih banyak dokter";
+  return out;
 }
 function msgCyto(op: any) {
   const alg = op.allergy&&op.allergy!=="Tidak Ada" ? `⚠ ALERGI: ${sanitize(op.allergy)}\n` : "";
   const ra  = op.ruangAsal ? `Ruang Asal : ${sanitize(op.ruangAsal)}\n` : "";
   return `⚠️ LAPORAN ACARA OPERASI CYTO / EMERGENCY ⚠️\n━━━━━━━━━━━━━━━━━━━\nKamar Bedah ${HOSPITAL}\n━━━━━━━━━━━━━━━━━━━\n${fNow()}\n\nMOHON SEGERA KE KAMAR OPERASI\n\n${alg}${ra}Pasien   : ${sanitize(op.patient)}${op.age?` (${op.age} th)`:""}\nRM/Gol   : ${op.rm||"-"} / ${op.bloodType}\nDiagnosa : ${sanitize(op.diagnosis)}\nTindakan : ${sanitize(op.procedure)}\nJam      : ${op.time} WIB — ${op.room}\n\nOperator : ${op.surgeon||"-"}\nAnestesi : ${op.anesthesiologist||"-"}\nAsisten  : ${op.assistantNurse||"-"}\nInstrumen: ${op.circulatingNurse||"-"}\nP.Anest  : ${op.anesthesiaNurse||"-"}\nOnloop   : ${op.onloopNurse||"-"}\nRR/Katim : ${op.rrKatim||"-"}\n━━━━━━━━━━━━━━━━━━━\n⚡ HARAP RESPON SEGERA ⚡\nKamar Bedah ${HOSPITAL}`;
 }
+/* buildLaporan — direfactor sesuai Spesifikasi Teknis. Signature TIDAK diubah.
+   Poin ③ (acara hari ini) & ④ (rencana besok) direstrukturisasi sesuai
+   algoritma & format wajib di spesifikasi. Bagian Siaga Anestesi/Cyto/
+   Perawat/Pembawa HP/Footer TIDAK disentuh — di luar scope spesifikasi ini.
+   Catatan keputusan:
+   - Poin ③ "Format Baris Pasien (Wajib)" di spesifikasi TIDAK menyertakan
+     usia pasien — sehingga usia SENGAJA tidak ditambahkan di bagian ini,
+     murni mengikuti spesifikasi literal (berbeda dengan poin ④ yang
+     eksplisit meminta formatUsia).
+   - Marker "⚠️[CYTO]⚠️" (dari implementasi sebelumnya) dipertahankan sebagai
+     penanda visual penting yang tidak disebutkan utk dihapus di spesifikasi. */
 function buildLaporan({greeting,recipients,keterangan,todayOps,tomorrowOps,anestStandby,anestCyto,nurseStandby,pembawaHP}: any) {
-  const active = [...todayOps].filter((o:any)=>o.status!=="batal").sort((a:any,b:any)=>a.time.localeCompare(b.time));
+  const active = [...todayOps].filter((o:any)=>o.status!=="batal");
   const batal  = todayOps.filter((o:any)=>o.status==="batal");
-  const fT = (op: any) => { const t=[]; if(op.assistantNurse)t.push(`asisten: ${op.assistantNurse}`); if(op.onloopNurse)t.push(`Onloop: ${op.onloopNurse}`); if(op.rrKatim)t.push(`RR/Katim: ${op.rrKatim}`); return t.length?` (${t.join(", ")})`:""};
-  const done=new Set<string>(), grps: any[][] =[];
-  active.forEach((op:any)=>{ if(!done.has(op.id)){ const g=active.filter((o:any)=>!done.has(o.id)&&o.time===op.time&&o.surgeon===op.surgeon); g.forEach((x:any)=>done.add(x.id)); grps.push(g); }});
-  const tLines = grps.map(g=>{ const f=g[0],cm=f.opType==="cyto"?"⚠️ [CYTO] ⚠️ ":"",base=`${cm}Jam ${fTR(f.time)} ${f.surgeon} dengan ${f.anesthesiologist}`;
-    return g.length===1?`_${base} operasi ${g[0].procedure} a/n ${g[0].patient}${g[0].age?`, ${g[0].age}th`:""}${fT(g[0])}_`:`_${base} operasi ${g.length}:_\n${g.map((o:any,i:number)=>`_${i+1}. ${o.procedure} a/n ${o.patient}${o.age?`, ${o.age}th`:""}${fT(o)}_`).join("\n")}`;
-  });
-  const batalLine = batal.length?`\n_Batal/Tunda: ${batal.map((o:any)=>o.patient+(o.cancelReason?` (${o.cancelReason})`:""  )).join("; ")}_`:"";
-  const todaySec = active.length?`*Hari ini acara operasi ada ${active.length} berjalan lancar\n\n${tLines.join("\n\n")}${batalLine}*`:`*Hari ini tidak ada operasi berjalan${batalLine}*`;
-  const pagi = tomorrowOps.filter((o:any)=>o.time<"14:00").sort((a:any,b:any)=>a.time.localeCompare(b.time));
-  const sore = tomorrowOps.filter((o:any)=>o.time>="14:00").sort((a:any,b:any)=>a.time.localeCompare(b.time));
-  const blk = (ops: any[]) => {
-    if(!ops.length)return"";
-    const bT: Record<string,any[]> ={};
-    ops.forEach(o=>{ if(!bT[o.time])bT[o.time]=[]; bT[o.time].push(o); });
-    return Object.entries(bT).sort(([a],[b])=>a.localeCompare(b)).map(([time,oa])=>{
-      const uA=[...new Set(oa.map(o=>o.anesthesiologist).filter(Boolean))];
-      const uS=[...new Set(oa.map(o=>o.surgeon))];
-      if(uA.length===1&&uS.length>1) return `Jam ${fTR(time)}, Bersama *${(uA[0] as string).toUpperCase()}*:\n`+uS.map(sg=>{ const so=oa.filter(o=>o.surgeon===sg); return so.length===1?`- ${sg} rencana ${so[0].procedure} a/n ${so[0].patient}${so[0].age?`, ${so[0].age}th`:""}`:`- ${sg} rencana ${so.length} operasi:\n${so.map((op:any,i:number)=>`  ${i+1}. ${op.procedure} a/n ${op.patient}${op.age?`, ${op.age}th`:""}`).join("\n")}`; }).join("\n");
-      return oa.map(op=>`Jam ${fTR(op.time)} ${op.surgeon} dengan *${op.anesthesiologist}* rencana ${op.procedure} a/n ${op.patient}${op.age?`, ${op.age}th`:""}`).join("\n\n");
+
+  /* ── Poin ③: group by dokter anestesi (case-insensitive, trimmed) → di
+     dalam tiap anestesi, sub-group by dokter bedah → di dalam tiap dokter
+     bedah, urutkan jamOperasi ascending. ── */
+  const anestGroups: Record<string, any[]> = {}; const anestOrder: string[] = [];
+  active.forEach((o:any)=>{ const k=(o.anesthesiologist||"").trim().toLowerCase(); if(!anestGroups[k]){anestGroups[k]=[];anestOrder.push(k);} anestGroups[k].push(o); });
+
+  const anestSections = anestOrder.map(k=>{
+    const opsForAnest = [...anestGroups[k]].sort((a,b)=>a.time.localeCompare(b.time));
+    const anestDisplay = sanitize(opsForAnest[0].anesthesiologist) || "-";
+    const surgGroups: Record<string, any[]> = {}; const surgOrder: string[] = [];
+    opsForAnest.forEach((o:any)=>{ const sk=(o.surgeon||"").trim().toLowerCase(); if(!surgGroups[sk]){surgGroups[sk]=[];surgOrder.push(sk);} surgGroups[sk].push(o); });
+    const surgeonBlocks = surgOrder.map(sk=>{
+      const group = [...surgGroups[sk]].sort((a,b)=>a.time.localeCompare(b.time));
+      const surgeonDisplay = sanitize(group[0].surgeon) || "-";
+      const jam = fTR(group[0].time);
+      const lines = group.map((o:any,i:number)=>{
+        const cytoMark = o.opType==="cyto" ? "⚠️[CYTO]⚠️ " : "";
+        const team: string[] = [];
+        if(o.assistantNurse) team.push(`assistant ${o.assistantNurse}`);
+        if(o.onloopNurse) team.push(`onloop ${o.onloopNurse}`);
+        if(o.rrKatim) team.push(`rr/katim ${o.rrKatim}`);
+        const teamStr = team.length ? ` (${team.join(", ")})` : "";
+        const diag = sanitize(o.diagnosis||"").trim();
+        return `${i+1}. ${cytoMark}${sanitize(o.patient)} ${sanitize(o.procedure)}${diag?` ${diag}`:""}${teamStr}`;
+      }).join("\n");
+      return `* ${surgeonDisplay} ada ${group.length} jam ${jam}\n${lines}`;
+    }).join("\n\n");
+    return `Anestesi ${anestDisplay}\n${surgeonBlocks}`;
+  }).join("\n\n");
+
+  const batalLine = batal.length?`\n_Batal/Tunda: ${batal.map((o:any)=>sanitize(o.patient)+(o.cancelReason?` (${sanitize(o.cancelReason)})`:""  )).join("; ")}_`:"";
+  const todaySec = active.length
+    ? `*Hari ini acara operasi ada ${active.length} berjalan lancar*\n${anestSections}${batalLine}`
+    : `*Hari ini tidak ada operasi berjalan${batalLine}*`;
+
+  /* ── Poin ④: split shift Pagi (00:00-13:59) / Sore (14:00-23:59) → group
+     by jamOperasi → group by dokter bedah → IF jumlah>1 list bernumor,
+     ELSE kalimat inline. formatUsia WAJIB dipakai di bagian ini. ── */
+  const pagi = tomorrowOps.filter((o:any)=>o.time<"14:00");
+  const sore = tomorrowOps.filter((o:any)=>o.time>="14:00");
+  const renderShift = (shiftOps: any[]): string => {
+    if(!shiftOps.length) return "";
+    const byTime: Record<string, any[]> = {};
+    shiftOps.forEach((o:any)=>{ if(!byTime[o.time]) byTime[o.time]=[]; byTime[o.time].push(o); });
+    return Object.keys(byTime).sort((a,b)=>a.localeCompare(b)).map(time=>{
+      const bySurgeon: Record<string, any[]> = {};
+      byTime[time].forEach((o:any)=>{ const k=(o.surgeon||"").trim().toLowerCase(); if(!bySurgeon[k]) bySurgeon[k]=[]; bySurgeon[k].push(o); });
+      return Object.values(bySurgeon).map((group:any[])=>{
+        const surgeonDisplay = sanitize(group[0].surgeon)||"-";
+        const anestDisplay = sanitize(group[0].anesthesiologist)||"-";
+        const jam = fTR(time);
+        const baris = (o:any) => {
+          const usia = usiaOp(o);
+          const diag = sanitize(o.diagnosis||"").trim();
+          return `${sanitize(o.patient)}${usia?` ${usia}`:""} rencana ${sanitize(o.procedure)}${diag?` ${diag}`:""}`;
+        };
+        if(group.length>1){
+          const lines = group.map((o,i)=>`${i+1}. ${baris(o)}`).join("\n");
+          return `*jam ${jam}* ${surgeonDisplay} dan ${anestDisplay} ada ${group.length} pasien :\n${lines}`;
+        }
+        return `*jam ${jam}* ${surgeonDisplay} dan ${anestDisplay} atas nama ${baris(group[0])}`;
+      }).join("\n\n");
     }).join("\n\n");
   };
-  let tmrwSec = `Rencana operasi besok hari ${fD(tmrwDate())}:\n`;
-  if(pagi.length) tmrwSec += `\n*PAGI*\nRencana operasi ${pagi.length}:\n\n${blk(pagi)}`;
-  if(sore.length) tmrwSec += `\n\n*SORE*\n${blk(sore)}`;
+  let tmrwSec = `Rencana operasi besok hari ${fDLower(tmrwDate())}:\n`;
+  if(pagi.length) tmrwSec += `\n*PAGI*\n${renderShift(pagi)}`;
+  if(sore.length) tmrwSec += `\n\n*SORE*\n${renderShift(sore)}`;
   if(!pagi.length&&!sore.length) tmrwSec += "\nBelum ada rencana operasi";
+
+  /* ── Bagian berikut TIDAK diubah dari implementasi sebelumnya ── */
   const aSec  = anestStandby.filter(Boolean).length ? `\n*Siaga Anaesthesi*\n${anestStandby.filter(Boolean).map((n:string,i:number)=>`${i+1}. ${n}`).join("\n")}` : "";
   const cSec  = anestCyto.filter(Boolean).length    ? `\n\n*Siaga Anaesthesi Cyto*\n${anestCyto.filter(Boolean).map((n:string,i:number)=>`${i+1}. ${n}`).join("\n")}` : "";
   const nSec  = nurseStandby.filter(Boolean).length ? `\n\n*Perawat siaga*\n${nurseStandby.filter(Boolean).map((n:string,i:number)=>`${i+1}. ${n}`).join("\n")}` : "";
@@ -746,11 +1023,27 @@ class ErrorBoundary extends Component<{children: React.ReactNode},{err:boolean;m
 
 /* ─── PIN SCREEN ────────────────────────────────────────────────────── */
 /* ── PIN Screen dengan 2-role (Admin & Perawat) ── */
+/* FIX AUDIT #18 (CRITICAL — Brute-force PIN tanpa rate-limit):
+   PIN 4 digit numerik = maksimal 10.000 kombinasi. Sebelumnya tidak ada
+   batasan percobaan gagal di UI — siapa pun bisa mencoba ribuan kombinasi
+   berurutan tanpa hambatan apa pun di sisi client. Sekarang ditambahkan
+   lockout sederhana: setelah MAX_ATTEMPTS kali gagal berurutan, input
+   dikunci selama LOCKOUT_MS.
+   PENTING — CATATAN JUJUR: lockout ini HANYA lapisan UX, bukan pengganti
+   keamanan sesungguhnya. State ini hilang begitu halaman di-refresh atau
+   localStorage dihapus, sehingga TIDAK mencegah serangan otomatis lewat
+   script langsung ke endpoint Supabase. Mitigasi sesungguhnya WAJIB ada
+   di Row Level Security & rate-limiting sisi server Supabase — di luar
+   kendali kode App.tsx ini. */
+const PIN_MAX_ATTEMPTS = 5;
+const PIN_LOCKOUT_MS   = 60_000;
 function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime}: any) {
   const [pin,setPin]   = useState("");
   const [err,setErr]   = useState("");
   const [shake,setShk] = useState(false);
   const [checking,setChecking] = useState(false);
+  const [attempts,setAttempts]     = useState(0);
+  const [lockedUntil,setLockedUntil] = useState<number|null>(null);
   // Force setup state (first time: PIN 0000)
   const [setupMode,setSetupMode] = useState(false);
   const [newAdmin,setNewAdmin]   = useState("");
@@ -764,14 +1057,28 @@ function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime}: any) {
      keduanya secara transparan. */
   const check = async () => {
     if(checking) return;
+    if(lockedUntil && Date.now() < lockedUntil){
+      const sisaDetik = Math.ceil((lockedUntil - Date.now())/1000);
+      setErr(`Terlalu banyak percobaan gagal. Coba lagi dalam ${sisaDetik} detik.`); setShk(true);
+      setTimeout(()=>{setShk(false);},400);
+      return;
+    }
     if(isFirstTime && pin==="0000"){
       setSetupMode(true); setPin(""); setErr(""); return;
     }
     setChecking(true);
     try{
-      if(await verifyPin(pin, pinAdmin)){ onVerify("admin"); return; }
-      if(await verifyPin(pin, pinPerawat)){ onVerify("perawat"); return; }
-      setErr("PIN salah. Coba lagi."); setShk(true);
+      if(await verifyPin(pin, pinAdmin)){ setAttempts(0); setLockedUntil(null); onVerify("admin"); return; }
+      if(await verifyPin(pin, pinPerawat)){ setAttempts(0); setLockedUntil(null); onVerify("perawat"); return; }
+      const nextAttempts = attempts + 1;
+      setAttempts(nextAttempts);
+      if(nextAttempts >= PIN_MAX_ATTEMPTS){
+        setLockedUntil(Date.now() + PIN_LOCKOUT_MS);
+        setErr(`Terlalu banyak percobaan gagal. Coba lagi dalam ${Math.ceil(PIN_LOCKOUT_MS/1000)} detik.`);
+      } else {
+        setErr(`PIN salah. Coba lagi. (${nextAttempts}/${PIN_MAX_ATTEMPTS})`);
+      }
+      setShk(true);
       setTimeout(()=>{setShk(false);setErr("");setPin("");},1500);
     } finally {
       setChecking(false);
@@ -822,9 +1129,9 @@ function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime}: any) {
         </div>
         <div style={{fontSize:13,fontWeight:600,color:C.t,textAlign:"center",marginBottom:10}}>Masukkan PIN Akses</div>
         <div style={{fontSize:11,color:C.tL,textAlign:"center",marginBottom:10}}>Gunakan PIN Admin atau PIN Perawat</div>
-        <input style={{...iS,textAlign:"center",fontSize:28,letterSpacing:12,height:56,marginBottom:12,borderRadius:12}} type="password" inputMode="numeric" maxLength={6} placeholder="••••" value={pin} disabled={checking} onChange={e=>setPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&check()}/>
+        <input style={{...iS,textAlign:"center",fontSize:28,letterSpacing:12,height:56,marginBottom:12,borderRadius:12}} type="password" inputMode="numeric" maxLength={6} placeholder="••••" value={pin} disabled={checking||!!(lockedUntil&&Date.now()<lockedUntil)} onChange={e=>setPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&check()}/>
         {err && <div style={{fontSize:12,color:C.d,textAlign:"center",marginBottom:10}}>⚠ {err}</div>}
-        <Btn full onClick={check} disabled={checking} style={{marginBottom:12,padding:"13px",fontSize:15}}>{checking?"Memeriksa...":"Masuk"}</Btn>
+        <Btn full onClick={check} disabled={checking||!!(lockedUntil&&Date.now()<lockedUntil)} style={{marginBottom:12,padding:"13px",fontSize:15}}>{checking?"Memeriksa...":(lockedUntil&&Date.now()<lockedUntil)?"🔒 Terkunci":"Masuk"}</Btn>
         <div style={{display:"flex",justifyContent:"center"}}>
           <button onClick={()=>{}} style={{background:"none",border:"none",color:C.tL,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Hubungi Admin jika lupa PIN</button>
         </div>
@@ -846,8 +1153,24 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
   const [page,setPage]   = useState(0);
   const [fSt,setFSt]     = useState("all");
   const [q,setQ]         = useState("");
+  const [showRiwayat,setShowRiwayat] = useState(false);
 
-  const sorted = [...ops]
+  /* ── FITUR BARU: Auto-filter jadwal yang sudah berlalu ke "Riwayat" ──
+     Tanggal pembanding di-reset ke 00:00:00 ("start of day") — jadwal HARI
+     INI tetap tampil PENUH dari pagi sampai malam (apa pun statusnya,
+     termasuk yang sudah "done"), baru pindah ke Riwayat TEPAT SAAT
+     berganti hari ke esok. Ini murni FILTER TAMPILAN di komponen ini —
+     TIDAK mengubah/memindahkan struktur data `ops` maupun `archive`
+     (snapshot backup yang sudah ada, dipakai fitur lain yang terpisah),
+     sehingga nol risiko terhadap fitur backup/restore/audit yang sudah
+     established. `cytoActive` di bawah SENGAJA tetap membaca dari `ops`
+     penuh (bukan activeOpsBase) — alert Cyto/Emergency harus tetap
+     terdeteksi terlepas dari tanggalnya. */
+  const todayStr = todayDate(); // sudah format YYYY-MM-DD, aman dibandingkan sebagai string
+  const activeOpsBase = ops.filter((o:any)=>o.date>=todayStr);
+  const pastOps = ops.filter((o:any)=>o.date<todayStr).sort((a:any,b:any)=>b.date.localeCompare(a.date)||b.time.localeCompare(a.time));
+
+  const sorted = [...activeOpsBase]
     .filter((op:any) => {
       if(fSt!=="all"&&op.status!==fSt) return false;
       if(q.trim()){ const lq=q.toLowerCase(); return (op.patient||"").toLowerCase().includes(lq)||(op.procedure||"").toLowerCase().includes(lq)||(op.surgeon||"").toLowerCase().includes(lq); }
@@ -911,8 +1234,8 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
       {sorted.length===0 && (
         <Card><div style={{textAlign:"center",padding:28,color:C.tL}}>
           <div style={{fontSize:36,marginBottom:8}}>📋</div>
-          <div style={{fontSize:14,fontWeight:600}}>{ops.length===0?"Belum ada jadwal terdaftar":"Tidak ada hasil pencarian"}</div>
-          {ops.length===0&&<div style={{fontSize:12,marginTop:4}}>Klik tab 📝 Daftar untuk mendaftarkan</div>}
+          <div style={{fontSize:14,fontWeight:600}}>{activeOpsBase.length===0?"Tidak ada jadwal operasi yang akan datang.":"Tidak ada hasil pencarian"}</div>
+          {activeOpsBase.length===0&&<div style={{fontSize:12,marginTop:4}}>Klik tab 📝 Daftar untuk mendaftarkan</div>}
         </div></Card>
       )}
       {paged.map((op:any)=>{
@@ -1018,6 +1341,37 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
           <button onClick={()=>setPage((p:number)=>Math.min(total-1,p+1))} disabled={page===total-1} style={{padding:"8px 16px",borderRadius:10,border:`1.5px solid ${page===total-1?C.b:C.p}`,background:"#FAFBFD",cursor:page===total-1?"not-allowed":"pointer",color:page===total-1?C.b:C.p,fontSize:13,fontWeight:700,fontFamily:"inherit",opacity:page===total-1?.4:1}}>Next →</button>
         </div>
       )}
+      {/* ── FITUR BARU: Riwayat (jadwal yang tanggalnya sudah berlalu) ──
+         Read-only — sengaja TIDAK ada tombol Edit/Hapus/Mulai/Selesai,
+         sesuai instruksi: data lewat hanya untuk dilihat, bukan diubah.
+         Collapsible & default tertutup supaya tidak membuat tab Jadwal
+         tetap ringan secara visual; data hanya di-render saat dibuka. */}
+      {pastOps.length>0 && (
+        <details style={{marginTop:16}} onToggle={(e:any)=>setShowRiwayat(e.target.open)}>
+          <summary style={{background:"#F0F4F8",borderRadius:12,padding:"12px 16px",cursor:"pointer",border:`1px solid ${C.b}`,listStyle:"none",fontWeight:700,fontSize:13,color:C.g}}>
+            📜 Riwayat — {pastOps.length} jadwal sudah berlalu
+          </summary>
+          {showRiwayat && (
+            <div style={{paddingTop:10}}>
+              {pastOps.map((op:any)=>{
+                const sc=STS[op.status as keyof typeof STS]||STS.scheduled;
+                return (
+                  <Card key={op.id} style={{padding:"10px 14px",marginBottom:6,opacity:.85}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                      <div>
+                        <div style={{fontSize:13,fontWeight:700,color:C.t}}>{maskName(op.patient,privacyMode)}</div>
+                        <div style={{fontSize:12,color:C.tL,marginTop:2}}>{op.procedure} · {op.room}</div>
+                        <div style={{fontSize:11,color:C.tL,marginTop:2}}>{op.date} · {op.time} WIB · {op.surgeon}</div>
+                      </div>
+                      <span style={{background:sc.c,color:"#fff",fontSize:10,padding:"3px 9px",borderRadius:10,fontWeight:700,whiteSpace:"nowrap"}}>{sc.l}</span>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </details>
+      )}
       {delC && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div style={{background:C.white,borderRadius:18,padding:"24px 20px",maxWidth:320,width:"100%",boxShadow:"0 12px 40px rgba(0,0,0,.25)"}}>
@@ -1049,23 +1403,34 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
    Sebelumnya state ini ada di root App, sehingga setiap ketukan huruf di
    kolom "Nama Pasien" memicu re-render seluruh aplikasi — sangat berat di
    tablet/HP. Sekarang hanya ViewDaftar yang re-render saat mengetik.
-   editOpRef memungkinkan root App (via startEditOp) mengisi form lokal ini. */
-function ViewDaftar({editOpRef,saveOpFn,staff,setTab,templates,setTemplates,showToast}: ViewDaftarProps) {
+   pendingEditOp (prop, lihat FIX AUDIT #24) memungkinkan root App (via
+   startEditOp) mengisi form lokal ini — menggantikan mekanisme editOpRef
+   lama yang rentan race condition saat ViewDaftar belum/baru mount. */
+function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,staff,setTab,templates,setTemplates,showToast}: ViewDaftarProps) {
   // ── Form state: lokal di sini, tidak lagi di root App ──
-  const [opForm,   setOpForm]   = useState<Partial<Operation>>({...EOP, date:todayDate()});
-  const [editingOp,setEditingOp]= useState<any>(null);
+  // FIX AUDIT #24: initial state langsung diisi dari pendingEditOp kalau ada
+  // (penting untuk RENDER PERTAMA — tidak perlu menunggu useEffect sama sekali
+  // untuk kasus edit yang dibuka dari tab lain, karena component baru mount).
+  const [opForm,   setOpForm]   = useState<Partial<Operation>>(()=> pendingEditOp ? {...pendingEditOp} : {...EOP, date:todayDate()});
+  const [editingOp,setEditingOp]= useState<any>(pendingEditOp || null);
   const [opErrors, setOpErrors] = useState<any>({});
   const [dupWarn,  setDupWarn]  = useState(false);
 
-  // Expose metode populasi form ke parent via ref (dipakai oleh startEditOp)
+  /* FIX AUDIT #24: safety net untuk kasus ViewDaftar SUDAH mount (user
+     sedang di tab Daftar) lalu startEditOp dipanggil lagi (mis. dari
+     komponen lain yang juga bisa trigger edit tanpa ganti tab). Initial
+     state di atas menangani kasus "baru mount", useEffect ini menangani
+     kasus "sudah mount, pendingEditOp berubah". clearPendingEditOp()
+     dipanggil setelah konsumsi agar tidak ter-trigger ulang tanpa sebab. */
   useEffect(()=>{
-    if(editOpRef) editOpRef.current = (op: any) => {
-      setOpForm({...op});
-      setEditingOp(op);
+    if(pendingEditOp){
+      setOpForm({...pendingEditOp});
+      setEditingOp(pendingEditOp);
       setOpErrors({});
       setDupWarn(false);
-    };
-  },[editOpRef]);
+      clearPendingEditOp();
+    }
+  },[pendingEditOp]);
 
   const resetOp = () => { setOpForm({...EOP,date:todayDate()}); setEditingOp(null); setOpErrors({}); setDupWarn(false); };
   const saveOp  = () => saveOpFn({opForm, editingOp, setOpErrors, setDupWarn, resetOp});
@@ -1145,6 +1510,7 @@ function ViewDaftar({editOpRef,saveOpFn,staff,setTab,templates,setTemplates,show
         <LF label="Nama Lengkap Pasien" req err={e.patient}><input style={iStyle("patient")} placeholder="Nama sesuai rekam medis (Tn./Ny./An.)" value={opForm.patient} onChange={(ev:any)=>set("patient",ev.target.value)} onFocus={onFoc("patient")} onBlur={onBlr} autoComplete="off" spellCheck={false}/></LF>
         <div style={{display:"flex",gap:12}}>
           <div style={{flex:1}}><LF label="Usia (tahun)"><input style={iStyle("age")} type="number" min="0" max="150" placeholder="45" value={opForm.age} onChange={(ev:any)=>setR("age",ev.target.value)}/></LF></div>
+          <div style={{flex:1}}><LF label="Usia (bulan)"><input style={iStyle("ageMonths")} type="number" min="0" max="11" placeholder="0" value={opForm.ageMonths||""} onChange={(ev:any)=>setR("ageMonths",ev.target.value)}/></LF></div>
           <div style={{flex:1}}><LF label="No. Rekam Medis"><input style={iStyle("rm")} placeholder="PRT-004891" value={opForm.rm} onChange={(ev:any)=>setR("rm",ev.target.value)} autoComplete="off"/></LF></div>
         </div>
         <SF label="Golongan Darah" options={BT} value={opForm.bloodType} onChange={(ev:any)=>setR("bloodType",ev.target.value)}/>
@@ -1242,7 +1608,7 @@ function ViewDaftar({editOpRef,saveOpFn,staff,setTab,templates,setTemplates,show
 /* FIX #1: lSet dan lSby dipindah ke dalam ViewLaporan sebagai local state.
    Sebelumnya keduanya ada di root App sehingga setiap ketukan di field
    "Keterangan Laporan" memicu re-render seluruh pohon komponen. */
-function ViewLaporan({ops,staff,roster,showToast,role}: ViewLaporanProps) {
+function ViewLaporan({ops,staff,roster,showToast,role,privacyMode}: ViewLaporanProps) {
   const [lSet, setLSet] = useState({greeting:gWord(),recipients:"",keterangan:"",pembawaHP:"",katimPhone:"",grupPhone:""});
   const [lSby, setLSby] = useState({anest:["",""],cyto:["","",""],nurses:["","","",""],pembawaHP:""});
   const [preview,setPreview] = useState("");
@@ -1332,15 +1698,14 @@ function ViewLaporan({ops,staff,roster,showToast,role}: ViewLaporanProps) {
             <div key={op.id} style={{display:"flex",gap:10,marginBottom:8,paddingBottom:8,borderBottom:i<tActive.length-1?`1px solid ${C.b}`:"none"}}>
               <div style={{background:op.opType==="cyto"?"#FFCDD2":C.sBg,borderRadius:8,padding:"5px 9px",fontSize:12,fontWeight:700,color:op.opType==="cyto"?"#B71C1C":C.s,flexShrink:0,minWidth:52,textAlign:"center"}}>{op.time}</div>
               <div style={{flex:1}}>
-                <div style={{fontSize:13,fontWeight:700,color:C.t}}>{op.patient}{op.age?`, ${op.age}th`:""}</div>
-                <div style={{fontSize:12,color:C.tL}}>{op.procedure} · {op.room}</div>
+                <div style={{fontSize:13,fontWeight:700,color:C.t}}>{maskName(op.patient,privacyMode)}{op.age?`, ${op.age}th`:""}</div>
                 <div style={{fontSize:11,color:C.tL}}>{op.surgeon}</div>
               </div>
               <Bdg label={STS[op.status as keyof typeof STS]?.l||"Terjadwal"} color={STS[op.status as keyof typeof STS]?.c||C.i} bg={STS[op.status as keyof typeof STS]?.bg||C.iBg}/>
             </div>
           ))
         }
-        {tBatal.length>0 && <div style={{fontSize:12,color:C.d,marginTop:6,borderTop:`1px dashed ${C.dL}`,paddingTop:6}}><b>Batal/Tunda:</b> {tBatal.map((o:any)=>o.patient+(o.cancelReason?` (${o.cancelReason})`:""  )).join("; ")}</div>}
+        {tBatal.length>0 && <div style={{fontSize:12,color:C.d,marginTop:6,borderTop:`1px dashed ${C.dL}`,paddingTop:6}}><b>Batal/Tunda:</b> {tBatal.map((o:any)=>maskName(o.patient,privacyMode)+(o.cancelReason?` (${o.cancelReason})`:""  )).join("; ")}</div>}
       </Card>
       <Card style={{background:"#EDE7F6",border:"1px solid #D1C4E9"}}>
         <SH label="④ Rencana Operasi Besok (H-1)" color="#512DA8"/>
@@ -1351,7 +1716,7 @@ function ViewLaporan({ops,staff,roster,showToast,role}: ViewLaporanProps) {
               <div key={op.id} style={{display:"flex",gap:10,marginBottom:8,paddingBottom:8,borderBottom:i<tmrwOps.length-1?"1px solid #D1C4E9":"none"}}>
                 <div style={{background:"#D1C4E9",borderRadius:8,padding:"5px 9px",fontSize:12,fontWeight:700,color:"#512DA8",flexShrink:0,minWidth:52,textAlign:"center"}}>{op.time}</div>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:13,fontWeight:700,color:C.t}}>{op.patient}{op.age?`, ${op.age}th`:""}</div>
+                  <div style={{fontSize:13,fontWeight:700,color:C.t}}>{maskName(op.patient,privacyMode)}{op.age?`, ${op.age}th`:""}</div>
                   <div style={{fontSize:12,color:C.tL}}>{op.procedure}</div>
                   <div style={{fontSize:11,color:C.tL}}>{op.surgeon} / {op.anesthesiologist||"—"}</div>
                 </div>
@@ -2180,7 +2545,22 @@ function ImportExcel({ops, setOps, showToast, upsertBulkToSupa}: any) {
 }
 
 /* ─── VIEW ARSIP ─────────────────────────────────────────────────────── */
-function ViewArsip({ops,setOps,notifs,archive,showToast,privacyMode,setPrivacyMode,supaCfg,setSupaCfg,onSupaBackup,onSupaRestoreOps,onSupaRestoreLembur,onSupaRestoreMonitoring,onSupaRestoreAll,supaStatus,supaBackingUp,auditLog,rtStatus,rtEnabled,setRtEnabled,dbxCfg,setDbxCfg,onDbxBackup,onDbxRestoreOps,onDbxRestoreLembur,dbxStatus,dbxBacking,onDbxBackupOpsXls,onDbxBackupLemburXls,onDbxBackupMonitoringXls,lemburData,lemburPegawai,monitoringEntries,monitoringCfg,role,upsertBulkToSupa}: any) {
+function ViewArsip(props: ViewArsipProps) {
+  /* FIX AUDIT #23: destructure ulang dari struktur grouped menjadi nama
+     variabel IDENTIK dengan sebelumnya — sengaja, supaya seluruh body
+     function di bawah ini (ratusan baris) TIDAK PERLU diubah sama sekali,
+     menghilangkan risiko regresi dari menyentuh kode yang sudah teruji. */
+  const { ops, archive, notifs, lemburData, lemburPegawai, monitoringEntries, monitoringCfg } = props.data;
+  const { setOps, showToast, role, upsertBulkToSupa, auditLog } = props;
+  const { mode: privacyMode, setMode: setPrivacyMode } = props.privacy;
+  const { cfg: supaCfg, setCfg: setSupaCfg, status: supaStatus, backingUp: supaBackingUp,
+          onBackup: onSupaBackup, onRestoreOps: onSupaRestoreOps, onRestoreLembur: onSupaRestoreLembur,
+          onRestoreMonitoring: onSupaRestoreMonitoring, onRestoreAll: onSupaRestoreAll } = props.supabase;
+  const { cfg: dbxCfg, setCfg: setDbxCfg, status: dbxStatus, backingUp: dbxBacking,
+          onBackup: onDbxBackup, onRestoreOps: onDbxRestoreOps, onRestoreLembur: onDbxRestoreLembur,
+          onBackupOpsXls: onDbxBackupOpsXls, onBackupLemburXls: onDbxBackupLemburXls,
+          onBackupMonitoringXls: onDbxBackupMonitoringXls } = props.dropbox;
+  const { status: rtStatus, enabled: rtEnabled, setEnabled: setRtEnabled } = props.realtime;
   const [sub,setSub] = useState("notif");
   const [arsipTahun,setArsipTahun]  = useState("");
   const [arsipBulan,setArsipBulan]  = useState("");
@@ -3095,12 +3475,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     if(!entries.length){showToast("Belum ada data lembur",C.w);return;}
     const ws = XLSX.utils.aoa_to_sheet([]);
     const merge = (r1:number,c1:number,r2:number,c2:number)=>({s:{r:r1,c:c1},e:{r:r2,c:c2}});
-    const cell = (v:any,bold?:boolean,center?:boolean,border?:boolean,bg?:string,fontSize?:number):XLSX.CellObject=>{
-      const s:any={font:{bold:!!bold,sz:fontSize||10},alignment:{horizontal:center?"center":"left",vertical:"center",wrapText:true}};
-      if(border) s.border={top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
-      if(bg) s.fill={fgColor:{rgb:bg},patternType:"solid"};
-      return {v,t:"s",s} as XLSX.CellObject;
-    };
+    const cell = xlsxCell; // FIX AUDIT #21: pakai helper global, bukan definisi lokal duplikat
     const setC=(r:number,c:number,v:any,bold?:boolean,center?:boolean,border?:boolean,bg?:string,fs?:number)=>{
       const addr=XLSX.utils.encode_cell({r,c});
       ws[addr]=cell(v,bold,center,border,bg,fs);
@@ -3200,12 +3575,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     if(!rekapRows.length){showToast("Belum ada data pegawai",C.w);return;}
     const ws = XLSX.utils.aoa_to_sheet([]);
     const merge=(r1:number,c1:number,r2:number,c2:number)=>({s:{r:r1,c:c1},e:{r:r2,c:c2}});
-    const cell=(v:any,bold?:boolean,center?:boolean,border?:boolean,bg?:string,fs?:number):XLSX.CellObject=>{
-      const s:any={font:{bold:!!bold,sz:fs||10,color:bg==="16685F"||bg==="16685F"?{rgb:"FFFFFF"}:undefined},alignment:{horizontal:center?"center":"left",vertical:"center",wrapText:true}};
-      if(border) s.border={top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
-      if(bg) s.fill={fgColor:{rgb:bg},patternType:"solid"};
-      return {v,t:"s",s} as XLSX.CellObject;
-    };
+    const cell = xlsxCell; // FIX AUDIT #21: pakai helper global, bukan definisi lokal duplikat
     const setC=(r:number,c:number,v:any,bold?:boolean,center?:boolean,border?:boolean,bg?:string,fs?:number)=>{
       ws[XLSX.utils.encode_cell({r,c})]=cell(v,bold,center,border,bg,fs);
     };
@@ -3864,7 +4234,7 @@ const MON_ROOMS = ["Kamar Bedah 1","Kamar Bedah 2","Ruang Instrumen"];
 const monId = (ruang: string, tanggal: string, jam: string) =>
   `mon_${ruang.replace(/\s+/g,"_")}_${tanggal}_${jam}`;
 const MON_MONTHS_ID = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
-const MC = { pri:"#0369A1", priL:"#0284C7", priBg:"#EFF6FF", ok:"#16A34A", okBg:"#DCFCE7", err:"#DC2626", errBg:"#FEE2E2" };
+const MC = { pri:"#0369A1", priL:"#0284C7", priBg:"#EFF6FF", ok:"#16A34A", okBg:"#DCFCE7", err:"#DC2626", errBg:"#FEE2E2", warn:"#D97706" };
 /* Warna per ruangan untuk chart multi-line */
 const MON_ROOM_COLORS = ["#0369A1","#7C3AED","#B45309"];
 
@@ -4149,6 +4519,14 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
       /* Beri sedikit delay agar chart off-screen sempat ter-render penuh sebelum capture */
       await new Promise(res => setTimeout(res, 150));
 
+      /* FIX AUDIT #20 (MEDIUM — capture grafik gagal senyap): sebelumnya
+         kegagalan html2canvas hanya di-console.error, user tidak diberi
+         tahu sama sekali bahwa gambar grafik gagal disisipkan ke Excel
+         (file tetap terdownload, tabel data tetap lengkap, tapi grafik
+         kosong tanpa penjelasan). Sekarang kegagalan dikumpulkan dan
+         ditampilkan sebagai 1 toast ringkasan di akhir proses. */
+      const chartFailures: string[] = [];
+
       for (const ruang of MON_ROOMS) {
         const meRoom = meAll.filter(e => e.ruang === ruang);
         const sheet  = wb.addWorksheet(ruang.length > 31 ? ruang.slice(0, 31) : ruang);
@@ -4215,6 +4593,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
             });
           } catch (imgErr) {
             console.error("Gagal capture grafik suhu:", imgErr);
+            chartFailures.push(`${ruang} (suhu)`);
           }
         }
 
@@ -4234,6 +4613,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
             });
           } catch (imgErr) {
             console.error("Gagal capture grafik kelembaban:", imgErr);
+            chartFailures.push(`${ruang} (kelembaban)`);
           }
         }
       }
@@ -4250,7 +4630,11 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      showToast("✓ Grafik & data " + mLabel + " diunduh (per ruangan)", MC.ok);
+      if (chartFailures.length) {
+        showToast(`⚠ Data tersimpan, tapi grafik gagal disisipkan untuk: ${chartFailures.join(", ")}`, MC.warn);
+      } else {
+        showToast("✓ Grafik & data " + mLabel + " diunduh (per ruangan)", MC.ok);
+      }
     } catch (err: any) {
       console.error(err);
       showToast("⚠ Gagal mengekspor grafik: " + (err?.message || "kesalahan tidak diketahui"), MC.err);
@@ -4885,7 +5269,9 @@ export default function App() {
      sebagai local state. State ini sebelumnya ada di sini (root App) sehingga
      setiap ketukan huruf di form pendaftaran memicu re-render seluruh pohon
      komponen. Komunikasi antara ViewJadwal (tombol Edit) dan ViewDaftar (form)
-     sekarang melalui editOpRef — tanpa harus angkat state ke root. */
+     sekarang melalui pendingEditOp (lihat FIX AUDIT #24) — state kecil di
+     root App yang diteruskan sebagai prop biasa, tanpa perlu angkat seluruh
+     opForm ke root. */
   /* FIX #1: lSet dan lSby DIPINDAH ke ViewLaporan sebagai local state —
      tidak perlu ada di root App lagi. */
   const [reqOpId,  setReqOpId]  = useState<string|null>(null);
@@ -5552,22 +5938,31 @@ export default function App() {
     lastAct.current=Date.now(); setPinOK(true);
   };
 
-  const handleSupaBackup = async () => {
+  /* FIX AUDIT #22 (HIGH — Handler tanpa useCallback, mengunci re-render):
+     Sebelumnya 5 handler ini didefinisikan ulang setiap kali App() render,
+     DAN membaca data besar (ops, archive, dst) LANGSUNG dari closure —
+     beda dgn pola latestDataRef yang sudah dipakai di useEffect auto-backup
+     untuk mencegah stale closure. Sekarang DIPERBAIKI DUA ASPEK SEKALIGUS:
+     (1) baca data lewat latestDataRef.current (konsisten, selalu fresh,
+     TIDAK perlu masuk dependency array karena ref selalu stabil),
+     (2) dibungkus useCallback dengan dependency minimal (hanya supaCfg)
+     supaya reference function stabil antar render — prasyarat agar
+     React.memo pada komponen anak (jika diterapkan nanti) benar2 efektif. */
+  const handleSupaBackup = useCallback(async () => {
     setSupaBU(true); setSupaStatus(null);
-    // Auto-delete backup lebih dari 2 tahun via singleton
     try{
       const twoYearsAgo = new Date(); twoYearsAgo.setFullYear(twoYearsAgo.getFullYear()-2);
       await SUPA_CLIENT.from("kamar_bedah_backup").delete().lt("created_at", twoYearsAgo.toISOString());
     }catch{ /* auto-delete non-critical */ }
-    const data = {exportedAt:fNow(), ops, archive, notifs, lemburPegawai, lemburData, monitoringEntries, monitoringCfg, staff, roster};
+    const data = {exportedAt:fNow(), ...latestDataRef.current};
     const res = await supabaseBackup(supaCfg, data, SUPA_CLIENT);
     setSupaStatus(res);
     if(res.ok) { setSupaCfg((p:any)=>({...p,lastBackup:fNow()})); showToast("✓ Backup Supabase berhasil","#3ECF8E"); }
     else { showToast(res.msg,C.d); }
     setSupaBU(false);
-  };
+  }, [supaCfg]);
 
-  const handleSupaRestoreOps = async () => {
+  const handleSupaRestoreOps = useCallback(async () => {
     if(!window.confirm("Pulihkan Jadwal Operasi dari Supabase?\nData jadwal operasi lokal akan ditimpa dengan data dari Supabase.")) return;
     setSupaBU(true); setSupaStatus(null);
     const res = await supabaseRestore(supaCfg, SUPA_CLIENT);
@@ -5577,9 +5972,9 @@ export default function App() {
       else showToast("⚠ Data operasi tidak ditemukan di backup","#E65100");
     } else { showToast(res.msg, C.d); }
     setSupaBU(false);
-  };
+  }, [supaCfg]);
 
-  const handleSupaRestoreLembur = async () => {
+  const handleSupaRestoreLembur = useCallback(async () => {
     if(!window.confirm("Pulihkan Data Lembur dari Supabase?\nData lembur lokal akan ditimpa dengan data dari Supabase.")) return;
     setSupaBU(true); setSupaStatus(null);
     const res = await supabaseRestore(supaCfg, SUPA_CLIENT);
@@ -5590,9 +5985,9 @@ export default function App() {
       showToast("✓ Data lembur dipulihkan dari Supabase","#3ECF8E");
     } else { showToast(res.msg, C.d); }
     setSupaBU(false);
-  };
+  }, [supaCfg]);
 
-  const handleSupaRestoreMonitoring = async () => {
+  const handleSupaRestoreMonitoring = useCallback(async () => {
     if(!window.confirm("Pulihkan Data Monitoring dari Supabase?\nData monitoring lokal akan ditimpa dengan data dari Supabase.")) return;
     setSupaBU(true); setSupaStatus(null);
     const res = await supabaseRestore(supaCfg, SUPA_CLIENT);
@@ -5603,9 +5998,9 @@ export default function App() {
       showToast("✓ Data monitoring dipulihkan dari Supabase","#3ECF8E");
     } else { showToast(res.msg, C.d); }
     setSupaBU(false);
-  };
+  }, [supaCfg]);
 
-  const handleSupaRestoreAll = async () => {
+  const handleSupaRestoreAll = useCallback(async () => {
     if(!window.confirm("Pulihkan SEMUA data dari Supabase?\nOperasi, Lembur, dan Monitoring lokal akan ditimpa dengan data dari Supabase.")) return;
     setSupaBU(true); setSupaStatus(null);
     const res = await supabaseRestore(supaCfg, SUPA_CLIENT);
@@ -5621,12 +6016,13 @@ export default function App() {
       showToast("✓ Semua data berhasil dipulihkan dari Supabase","#3ECF8E");
     } else { showToast(res.msg, C.d); }
     setSupaBU(false);
-  };
+  }, [supaCfg]);
 
-  const handleDropboxBackupMonitoringXls = async () => {
+  const handleDropboxBackupMonitoringXls = useCallback(async () => {
     setDbxBacking(true); setDbxStatus(null);
+    const {monitoringEntries:me, monitoringCfg:mc} = latestDataRef.current;
     const wb = XLSX.utils.book_new();
-    const monRows = monitoringEntries.map((e:MonitoringEntry)=>[e.ruang??monitoringCfg.lokasiRuang??"",e.tanggal,e.jam,e.suhu,e.kelembaban,monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas]);
+    const monRows = me.map((e:MonitoringEntry)=>[e.ruang??mc.lokasiRuang??"",e.tanggal,e.jam,e.suhu,e.kelembaban,monIsOK(e.suhu,e.kelembaban,mc)?"SESUAI":"TIDAK SESUAI",e.petugas]);
     const ws = XLSX.utils.aoa_to_sheet([["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"],...monRows]);
     ws["!cols"]=[{wch:18},{wch:12},{wch:8},{wch:12},{wch:14},{wch:16},{wch:22}];
     XLSX.utils.book_append_sheet(wb, ws, "Monitoring Suhu");
@@ -5640,23 +6036,25 @@ export default function App() {
     if(res.ok){ setDbxCfg((p:DropboxConfig)=>({...p,lastBackup:fNow()})); showToast("✓ Excel Monitoring berhasil diupload ke Dropbox","#0369A1"); }
     else showToast(res.msg, C.d);
     setDbxBacking(false);
-  };
+  }, [dbxCfg]);
 
-  const handleDropboxBackup = async () => {
+  const handleDropboxBackup = useCallback(async () => {
     setDbxBacking(true); setDbxStatus(null);
-    const data = {ops, archive, notifs, lemburPegawai, lemburData, monitoringEntries, monitoringCfg};
+    const {ops:o, archive:ar, notifs:nf, lemburPegawai:lp, lemburData:ld, monitoringEntries:me, monitoringCfg:mc} = latestDataRef.current;
+    const data = {ops:o, archive:ar, notifs:nf, lemburPegawai:lp, lemburData:ld, monitoringEntries:me, monitoringCfg:mc};
     const res = await dropboxUpload(dbxCfg, data);
     setDbxStatus(res);
     if(res.ok) { setDbxCfg(p=>({...p,lastBackup:fNow()})); showToast("✓ Backup Dropbox berhasil","#0061FF"); }
     else { showToast(res.msg, C.d); }
     setDbxBacking(false);
-  };
+  }, [dbxCfg]);
 
-  const handleDropboxBackupOpsXls = async () => {
+  const handleDropboxBackupOpsXls = useCallback(async () => {
     setDbxBacking(true); setDbxStatus(null);
+    const {ops:o} = latestDataRef.current;
     const wb = XLSX.utils.book_new();
     const h = ["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status","Dibuat"];
-    const rows = [...ops].sort((a:any,b:any)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map((o:any,i:number)=>[i+1,o.date,o.time,o.patient||"",o.age||"",o.rm||"",o.opType||"",o.diagnosis||"",o.procedure||"",o.room||"",o.surgeon||"",o.anesthesiologist||"",o.assistantNurse||"",o.circulatingNurse||"",o.anesthesiaNurse||"",o.onloopNurse||"",o.rrKatim||"",o.status||"",o.createdAt||""]);
+    const rows = [...o].sort((a:any,b:any)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map((op:any,i:number)=>[i+1,op.date,op.time,op.patient||"",op.age||"",op.rm||"",op.opType||"",op.diagnosis||"",op.procedure||"",op.room||"",op.surgeon||"",op.anesthesiologist||"",op.assistantNurse||"",op.circulatingNurse||"",op.anesthesiaNurse||"",op.onloopNurse||"",op.rrKatim||"",op.status||"",op.createdAt||""]);
     const ws = XLSX.utils.aoa_to_sheet([h,...rows]);
     ws["!cols"]=[{wch:4},{wch:12},{wch:7},{wch:22},{wch:5},{wch:10},{wch:9},{wch:26},{wch:26},{wch:14},{wch:22},{wch:22},{wch:20},{wch:20},{wch:16},{wch:16},{wch:14},{wch:12},{wch:20}];
     XLSX.utils.book_append_sheet(wb, ws, "Jadwal Operasi");
@@ -5667,16 +6065,17 @@ export default function App() {
     if(res.ok){ setDbxCfg((p:DropboxConfig)=>({...p,lastBackup:fNow()})); showToast("✓ Excel Operasi berhasil diupload ke Dropbox","#3730A3"); }
     else showToast(res.msg, C.d);
     setDbxBacking(false);
-  };
+  }, [dbxCfg]);
 
-  const handleDropboxBackupLemburXls = async () => {
+  const handleDropboxBackupLemburXls = useCallback(async () => {
     setDbxBacking(true); setDbxStatus(null);
+    const {lemburPegawai:lp, lemburData:ld} = latestDataRef.current;
     const wb = XLSX.utils.book_new();
     /* Per-employee sheets */
-    lemburPegawai.forEach((p:any)=>{
+    lp.forEach((p:any)=>{
       const pegEntries: any[][] = [];
-      Object.keys(lemburData).filter(k=>k.startsWith(p.id+"_")).sort().forEach(k=>{
-        const rec=lemburData[k];
+      Object.keys(ld).filter(k=>k.startsWith(p.id+"_")).sort().forEach(k=>{
+        const rec=ld[k];
         (rec.entries||[]).forEach((e:any)=>pegEntries.push([p.name,p.nik||"",k.replace(p.id+"_",""),e.tanggalAwal||"",e.tanggalAkhir||"",e.jamMasuk||"",e.jamKeluar||"",e.keperluanLembur||"",e.keterangan||"",e.ttd||""]));
       });
       if(pegEntries.length){
@@ -5696,9 +6095,9 @@ export default function App() {
     if(res.ok){ setDbxCfg((p:DropboxConfig)=>({...p,lastBackup:fNow()})); showToast("✓ Excel Lembur berhasil diupload ke Dropbox","#3730A3"); }
     else showToast(res.msg, C.d);
     setDbxBacking(false);
-  };
+  }, [dbxCfg]);
 
-  const handleDropboxRestoreOps = async () => {
+  const handleDropboxRestoreOps = useCallback(async () => {
     if(!window.confirm("Pulihkan Jadwal Operasi dari Dropbox?\nData jadwal operasi lokal akan ditimpa dengan data dari Dropbox.")) return;
     setDbxBacking(true); setDbxStatus(null);
     const res = await dropboxDownload(dbxCfg);
@@ -5709,9 +6108,9 @@ export default function App() {
       showToast("✓ Jadwal operasi berhasil dipulihkan dari Dropbox","#0061FF");
     } else { showToast(res.msg, C.d); }
     setDbxBacking(false);
-  };
+  }, [dbxCfg]);
 
-  const handleDropboxRestoreLembur = async () => {
+  const handleDropboxRestoreLembur = useCallback(async () => {
     if(!window.confirm("Pulihkan Data Lembur dari Dropbox?\nData lembur lokal akan ditimpa dengan data dari Dropbox.")) return;
     setDbxBacking(true); setDbxStatus(null);
     const res = await dropboxDownload(dbxCfg);
@@ -5723,11 +6122,14 @@ export default function App() {
       showToast("✓ Data lembur berhasil dipulihkan dari Dropbox","#0061FF");
     } else { showToast(res.msg, C.d); }
     setDbxBacking(false);
-  };
+  }, [dbxCfg]);
 
   /* FIX #1: saveOpFn menerima {opForm, editingOp, setOpErrors, setDupWarn, resetOp}
      dari ViewDaftar (state lokal) — root App tidak perlu menyimpan opForm lagi. */
-  const editOpRef = useRef<((op: Operation)=>void)|null>(null);
+  /* FIX AUDIT #24: pendingEditOp menggantikan editOpRef (useRef). Lihat
+     catatan lengkap di ViewDaftarProps & ViewDaftar untuk penjelasan bug
+     race condition yang diperbaiki. */
+  const [pendingEditOp, setPendingEditOp] = useState<Operation|null>(null);
   const saveOpFn = useCallback(({opForm, editingOp, setOpErrors, setDupWarn, resetOp}: SaveOpFnArgs) => {
     const e: Record<string,string>={};
     if(!opForm.patient||!opForm.patient.trim()) e.patient="Nama pasien wajib";
@@ -5772,7 +6174,7 @@ export default function App() {
     setTab("jadwal");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[ops, showToast, upsertOneToSupa, logAudit]);
-  const startEditOp= (op: Operation)  => { if(editOpRef.current) editOpRef.current(op); setTab("daftar"); };
+  const startEditOp= (op: Operation)  => { setPendingEditOp(op); setTab("daftar"); };
   const deleteOp   = async (id:string) => {
     const op=ops.find(o=>o.id===id);
     /* Optimistic remove lokal */
@@ -5863,14 +6265,34 @@ export default function App() {
   const content = (
     <ErrorBoundary>
       {tab==="jadwal"     && <ViewJadwal ops={ops} setOps={setOps} startEditOp={startEditOp} deleteOp={deleteOp} sendReminder={sendReminder} reqOpId={reqOpId} setReqOpId={setReqOpId} reqText={reqText} setReqText={setReqText} addReq={addReq} delReq={delReq} getPhone={getPhone} setNotifs={setNotifs} showToast={showToast} privacyMode={privacyMode} role={role} upsertOneToSupa={upsertOneToSupa}/>}
-      {tab==="daftar"     && <ViewDaftar editOpRef={editOpRef} saveOpFn={saveOpFn} staff={staff} setTab={setTab} templates={templates} setTemplates={setTemplates} showToast={showToast}/>}
-      {tab==="laporan"    && <ViewLaporan ops={ops} staff={staff} roster={roster} showToast={showToast} role={role}/>}
+      {tab==="daftar"     && <ViewDaftar pendingEditOp={pendingEditOp} clearPendingEditOp={()=>setPendingEditOp(null)} saveOpFn={saveOpFn} staff={staff} setTab={setTab} templates={templates} setTemplates={setTemplates} showToast={showToast}/>}
+      {tab==="laporan"    && <ViewLaporan ops={ops} staff={staff} roster={roster} showToast={showToast} role={role} privacyMode={privacyMode}/>}
       {tab==="wa"         && <ViewKirimWA ops={ops} staff={staff} setNotifs={setNotifs} showToast={showToast}/>}
       {tab==="statistik"  && <ViewStatistik ops={ops} archive={archive}/>}
       {tab==="staf"       && <ViewStaf staff={staff} setStaff={setStaff} roster={roster} setRoster={setRoster} showToast={showToast} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} upsertBulkToSupa={upsertBulkToSupa}/>}
       {tab==="lembur"     && <ViewLembur lemburPegawai={lemburPegawai} setLemburPegawai={setLemburPegawai} lemburData={lemburData} setLemburData={setLemburData} showToast={showToast} supaCfg={supaCfg} dbxCfg={dbxCfg} role={role} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa}/>}
       {tab==="monitoring" && <ViewMonitoring monitoringEntries={monitoringEntries} setMonitoringEntries={setMonitoringEntries} monitoringCfg={monitoringCfg} setMonitoringCfg={setMonitoringCfg} showToast={showToast} supaCfg={supaCfg} dbxCfg={dbxCfg} role={role} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa}/>}
-      {tab==="arsip"      && <ViewArsip ops={ops} setOps={setOps} notifs={notifs} archive={archive} showToast={showToast} privacyMode={privacyMode} setPrivacyMode={setPM} supaCfg={supaCfg} setSupaCfg={setSupaCfg} onSupaBackup={handleSupaBackup} onSupaRestoreOps={handleSupaRestoreOps} onSupaRestoreLembur={handleSupaRestoreLembur} onSupaRestoreMonitoring={handleSupaRestoreMonitoring} onSupaRestoreAll={handleSupaRestoreAll} supaStatus={supaStatus} supaBackingUp={supaBackingUp} auditLog={auditLog} rtStatus={rtStatus} rtEnabled={rtEnabled} setRtEnabled={setRtEnabled} dbxCfg={dbxCfg} setDbxCfg={setDbxCfg} onDbxBackup={handleDropboxBackup} onDbxRestoreOps={handleDropboxRestoreOps} onDbxRestoreLembur={handleDropboxRestoreLembur} dbxStatus={dbxStatus} dbxBacking={dbxBacking} onDbxBackupOpsXls={handleDropboxBackupOpsXls} onDbxBackupLemburXls={handleDropboxBackupLemburXls} onDbxBackupMonitoringXls={handleDropboxBackupMonitoringXls} lemburData={lemburData} lemburPegawai={lemburPegawai} monitoringEntries={monitoringEntries} monitoringCfg={monitoringCfg} role={role} upsertBulkToSupa={upsertBulkToSupa}/>}
+      {tab==="arsip"      && <ViewArsip
+        data={{ops, archive, notifs, lemburData, lemburPegawai, monitoringEntries, monitoringCfg}}
+        setOps={setOps}
+        showToast={showToast}
+        role={role}
+        upsertBulkToSupa={upsertBulkToSupa}
+        auditLog={auditLog}
+        privacy={{mode: privacyMode, setMode: setPM}}
+        supabase={{
+          cfg: supaCfg, setCfg: setSupaCfg, status: supaStatus, backingUp: supaBackingUp,
+          onBackup: handleSupaBackup, onRestoreOps: handleSupaRestoreOps, onRestoreLembur: handleSupaRestoreLembur,
+          onRestoreMonitoring: handleSupaRestoreMonitoring, onRestoreAll: handleSupaRestoreAll,
+        }}
+        dropbox={{
+          cfg: dbxCfg, setCfg: setDbxCfg, status: dbxStatus, backingUp: dbxBacking,
+          onBackup: handleDropboxBackup, onRestoreOps: handleDropboxRestoreOps, onRestoreLembur: handleDropboxRestoreLembur,
+          onBackupOpsXls: handleDropboxBackupOpsXls, onBackupLemburXls: handleDropboxBackupLemburXls,
+          onBackupMonitoringXls: handleDropboxBackupMonitoringXls,
+        }}
+        realtime={{status: rtStatus, enabled: rtEnabled, setEnabled: setRtEnabled}}
+      />}
     </ErrorBoundary>
   );
 
