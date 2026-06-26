@@ -48,3 +48,42 @@ Thumbs.db
 .cache/
 .local/
 .env.local
+
+# Git bare repos
+*.git/
+bikin-web.git/
+
+# Supabase temp
+supabase/.temp/
+**/supabase/.temp/
+
+# Package manager artifacts
+package.json.save
+pnpm-lock.yaml.save
+
+
+
+
+
+[200~cd "/c/project website"
+
+# Tambahkan ke .gitignore
+cat >> .gitignore << 'EOF'
+
+# Git bare repos
+*.git/
+bikin-web.git/
+
+# Supabase temp
+supabase/.temp/
+**/supabase/.temp/
+
+# Package manager artifacts
+package.json.save
+pnpm-lock.yaml.save
+
+# Wrangler/build artifacts
+tsc
+main
+pnpm
+workspace@0.0.0
