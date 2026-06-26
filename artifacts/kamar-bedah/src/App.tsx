@@ -5356,20 +5356,45 @@ type NurseType = "karu"|"senior"|"junior";
 interface RosterNurse { id: string; nik: string; pk: string; name: string; sisaCuti: number; tipe: NurseType; }
 interface RosterGenProps { showToast: ShowToastFn; upsertOneToSupa: UpsertOneFn; dbxCfg: DropboxConfig; }
 
+/* ── Master Perawat — interface & LS key (terpisah dari RosterNurse) ── */
+interface NurseMaster { id: string; nik: string; name: string; pk: string; }
+const LS_MASTER_KEY = "rostergen_master_v1";
+
+/* ── Seed awal: data RS Panti Rini (hanya dipakai saat LS kosong) ── */
+const SEED_MASTER: NurseMaster[] = [
+  { id:"m1",  nik:"201010056", name:"Jaka R",        pk:"III" },
+  { id:"m2",  nik:"199720045", name:"Eka S",          pk:"III" },
+  { id:"m3",  nik:"200315032", name:"Niken A",        pk:"II"  },
+  { id:"m4",  nik:"199805021", name:"Thresmiati CB",  pk:"IV"  },
+  { id:"m5",  nik:"200110078", name:"Yohana P",       pk:"III" },
+  { id:"m6",  nik:"200812034", name:"Agus W",         pk:"II"  },
+  { id:"m7",  nik:"199912067", name:"Dewi R",         pk:"III" },
+  { id:"m8",  nik:"200508043", name:"Sari U",         pk:"II"  },
+  { id:"m9",  nik:"201205089", name:"Budi S",         pk:"I"   },
+  { id:"m10", nik:"200001055", name:"Ratna K",        pk:"III" },
+];
+
+/** loadMasterFromLS: baca dari localStorage, fallback ke SEED jika kosong */
+function loadMasterFromLS(): NurseMaster[] {
+  try {
+    const raw = localStorage.getItem(LS_MASTER_KEY);
+    if(raw) { const parsed = JSON.parse(raw); if(Array.isArray(parsed) && parsed.length>0) return parsed; }
+  } catch { /* ignore */ }
+  return SEED_MASTER;
+}
+
 /* ── Nama-nama bulan Indonesia (dipakai di header Excel & label UI) ── */
 const BULAN_NAMA_ID = ["JANUARI","FEBRUARI","MARET","APRIL","MEI","JUNI","JULI","AGUSTUS","SEPTEMBER","OKTOBER","NOVEMBER","DESEMBER"];
 
-/* ── Kolom ringkasan individu di sisi kanan tabel Excel ── */
-const SUMMARY_COLS = ["P","PG","Si","S","SG","T","LG","L","∑","SS CUTI","G","S"] as const;
+/* ── Kolom ringkasan individu di sisi kanan tabel Excel (7 kolom sesuai UI) ── */
+const SUMMARY_COLS = ["∑P","∑PG","∑S","∑SG","∑L/LG","∑T","∑Total"] as const;
 
-/* ── Helper: hitung ringkasan shift per perawat satu bulan ── */
+/* ── Helper: hitung ringkasan 7 kolom per perawat (untuk Excel export) ── */
 function hitungRingkasan(row: string[], daysInMonth: number) {
   const cnt = (code: string) => row.slice(0, daysInMonth).filter(c=>c===code).length;
   const P=cnt("P"), PG=cnt("PG"), S=cnt("S"), SG=cnt("SG"),
-        T=cnt("T"), LG=cnt("LG"), L=cnt("L"), G=0, SSC=0;
-  /* Kolom ringkasan: P PG Si(=Siang) S(=Siang duplikat kolom) SG T LG L ∑ SSC G S2
-     "Si" dan "S" merujuk kolom berbeda di format resmi — keduanya = jumlah siang */
-  return { P, PG, Si: S, Siang: S, SG, T, LG, L, sum: P+PG+S+SG+T+LG+L, SSC, G, S2: S };
+        T=cnt("T"), LG=cnt("LG"), L=cnt("L");
+  return [P, PG, S, SG, LG+L, T, P+PG+S+SG+T+LG+L];
 }
 
 /* ── localStorage key untuk draft jadwal (offline resilience) ── */
@@ -5415,6 +5440,38 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
   const [syncingDbx, setSyncingDbx] = useState(false);
   const [savingJadwal, setSavingJadwal] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
+
+  /* ── FITUR 1: State Master Perawat (persisten via localStorage) ── */
+  const [nurseMasterList, setNurseMasterList] = useState<NurseMaster[]>(loadMasterFromLS);
+  const [masterForm, setMasterForm] = useState({ nik:"", name:"", pk:"III" });
+  const [masterFormErr, setMasterFormErr] = useState("");
+
+  /* Persist nurseMasterList ke localStorage setiap kali berubah */
+  useEffect(() => {
+    try { localStorage.setItem(LS_MASTER_KEY, JSON.stringify(nurseMasterList)); } catch { /* ignore */ }
+  }, [nurseMasterList]);
+
+  /* ── FITUR 3: useMemo — ringkasan individu per baris (Sumbu Kanan) ── */
+  const rowSummaries = useMemo(() =>
+    nurses.map((_, ni) => {
+      const cnt = (code: string) => Array.from({length:daysInMonth},(_,d)=>newGrid_safe(ni,d)).filter(c=>c===code).length;
+      const P=cnt("P"), PG=cnt("PG"), S=cnt("S"), SG=cnt("SG"), T=cnt("T"), LG=cnt("LG"), L=cnt("L");
+      return { P, PG, S, SG, T, LG_L: LG+L, total: P+PG+S+SG+T+LG+L };
+    }),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [grid, nurses, daysInMonth]);
+
+  /* ── FITUR 4/5: useMemo — ringkasan harian per kolom (Sumbu Bawah) ── */
+  const colSummaries = useMemo(() => ({
+    P:   Array.from({length:daysInMonth},(_,d) => nurses.reduce((c,_,ni)=>newGrid_safe(ni,d)==="P"?c+1:c,0)),
+    PG:  Array.from({length:daysInMonth},(_,d) => nurses.reduce((c,_,ni)=>newGrid_safe(ni,d)==="PG"?c+1:c,0)),
+    S:   Array.from({length:daysInMonth},(_,d) => nurses.reduce((c,_,ni)=>newGrid_safe(ni,d)==="S"?c+1:c,0)),
+    SG:  Array.from({length:daysInMonth},(_,d) => nurses.reduce((c,_,ni)=>newGrid_safe(ni,d)==="SG"?c+1:c,0)),
+    LLG: Array.from({length:daysInMonth},(_,d) => nurses.reduce((c,_,ni)=>["L","LG"].includes(newGrid_safe(ni,d))?c+1:c,0)),
+    T:   Array.from({length:daysInMonth},(_,d) => nurses.reduce((c,_,ni)=>newGrid_safe(ni,d)==="T"?c+1:c,0)),
+  }),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [grid, nurses, daysInMonth]);
 
   // Reset grid ketika jumlah nurses berubah atau bulan berubah
   const resetGrid = (newNurses: RosterNurse[], days: number) => {
@@ -5549,9 +5606,9 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
     });
   };
 
-  // BUG FIX #2: Handler NIK dropdown → auto-populate Nama & PK dari master
+  // Handler NIK dropdown → auto-populate Nama & PK dari nurseMasterList dinamis
   const handleNikChange = (ni: number, nik: string) => {
-    const master = MASTER_PERAWAT_LIST.find(m => m.nik === nik);
+    const master = nurseMasterList.find(m => m.nik === nik);
     setNurses(p => {
       const np = p.map((n, i) => i===ni
         ? { ...n, nik, name: master?.name ?? n.name, pk: master?.pk ?? n.pk }
@@ -5560,6 +5617,24 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
       triggerAutoSave(grid, np, holidays, month, year);
       return np;
     });
+  };
+
+  /* ── FITUR 1: CRUD Master Perawat ── */
+  const addToMaster = () => {
+    const nik  = masterForm.nik.trim();
+    const name = masterForm.name.trim();
+    const pk   = masterForm.pk.trim();
+    if(!nik)  return setMasterFormErr("NIK tidak boleh kosong.");
+    if(!name) return setMasterFormErr("Nama tidak boleh kosong.");
+    if(nurseMasterList.some(m => m.nik === nik))
+      return setMasterFormErr(`NIK ${nik} sudah ada di database.`);
+    setNurseMasterList(p => [...p, { id: gId(), nik, name, pk }]);
+    setMasterForm({ nik:"", name:"", pk:"III" });
+    setMasterFormErr("");
+  };
+
+  const removeFromMaster = (id: string) => {
+    setNurseMasterList(p => p.filter(m => m.id !== id));
   };
 
   // BUG FIX #2: Handler sisa cuti — tidak ada leading zero
@@ -5945,9 +6020,8 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
           sc.alignment = { horizontal:"center", vertical:"middle" };
           sc.border = { top:{style:"thin"}, bottom:{style:"thin"}, left:{style:"thin"}, right:{style:"thin"} };
         }
-        /* Kolom ringkasan individu */
-        const rk = hitungRingkasan(shiftRow, dim);
-        const sumVals = [rk.P, rk.PG, rk.Si, rk.Siang, rk.SG, rk.T, rk.LG, rk.L, rk.sum, rk.SSC, rk.G, rk.S2];
+        /* Kolom ringkasan individu (7 kolom: ∑P ∑PG ∑S ∑SG ∑L/LG ∑T ∑Total) */
+        const sumVals = hitungRingkasan(shiftRow, dim);
         sumVals.forEach((val, si) => {
           const sc = dr.getCell(COL_SUM_START + si);
           sc.value = val || "";
@@ -6153,34 +6227,70 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
         </div>
       }/>
 
-      {/* ── FITUR 2: Tombol Simpan Jadwal + Indikator Status Cloud ── */}
+      {/* ── Tombol Simpan Jadwal + Indikator Status Cloud ── */}
       <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
-        <button
-          onClick={saveJadwal}
-          disabled={savingJadwal}
-          style={{
-            flex:1, minWidth:200, padding:"13px 20px",
-            background: savingJadwal ? "#94A3B8" : "linear-gradient(135deg,#0284c7,#0369a1)",
-            color:"#fff", border:"none", borderRadius:12,
-            fontSize:14, fontWeight:800, cursor: savingJadwal ? "not-allowed" : "pointer",
-            fontFamily:"inherit", boxShadow:"0 4px 14px rgba(2,132,199,.35)",
-            display:"flex", alignItems:"center", justifyContent:"center", gap:8,
-            transition:"all .2s",
-          }}
-        >
-          {savingJadwal
-            ? <><span style={{animation:"spin 1s linear infinite",display:"inline-block"}}>⟳</span> Menyimpan...</>
-            : <>💾 Simpan Jadwal</>
-          }
+        <button onClick={saveJadwal} disabled={savingJadwal} style={{flex:1,minWidth:200,padding:"13px 20px",background:savingJadwal?"#94A3B8":"linear-gradient(135deg,#0284c7,#0369a1)",color:"#fff",border:"none",borderRadius:12,fontSize:14,fontWeight:800,cursor:savingJadwal?"not-allowed":"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(2,132,199,.35)",display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"all .2s"}}>
+          {savingJadwal?<><span style={{animation:"spin 1s linear infinite",display:"inline-block"}}>⟳</span> Menyimpan...</>:<>💾 Simpan Jadwal</>}
         </button>
-        <div style={{
-          background: csUI.bg, color: csUI.color, fontSize:11, fontWeight:700,
-          padding:"8px 12px", borderRadius:10, border:`1px solid ${csUI.color}33`,
-          whiteSpace:"nowrap", flexShrink:0,
-        }}>
+        <div style={{background:csUI.bg,color:csUI.color,fontSize:11,fontWeight:700,padding:"8px 12px",borderRadius:10,border:`1px solid ${csUI.color}33`,whiteSpace:"nowrap",flexShrink:0}}>
           {csUI.label}
         </div>
       </div>
+
+      {/* ══════════════════════════════════════════════════════════════════
+          FITUR 1 — CARD KELOLA DATA MASTER PERAWAT
+         ══════════════════════════════════════════════════════════════════ */}
+      <Card style={{marginBottom:12,background:"#F0FDF4",border:"1px solid #BBF7D0"}}>
+        <SH label="📁 Kelola Data Master Perawat" color="#15803D"/>
+
+        {/* Form Tambah */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 120px auto",gap:8,alignItems:"end",marginBottom:12}}>
+          <LF label="NIK Perawat">
+            <input style={{...iS,fontSize:12}} value={masterForm.nik} onChange={e=>setMasterForm(p=>({...p,nik:e.target.value}))} placeholder="cth: 201010056"/>
+          </LF>
+          <LF label="Nama Perawat">
+            <input style={{...iS,fontSize:12}} value={masterForm.name} onChange={e=>setMasterForm(p=>({...p,name:e.target.value}))} placeholder="cth: Jaka R"/>
+          </LF>
+          <LF label="Pangkat PK">
+            <select style={{...iS,fontSize:12}} value={masterForm.pk} onChange={e=>setMasterForm(p=>({...p,pk:e.target.value}))}>
+              {["I","II","III","IV"].map(v=><option key={v} value={v}>PK {v}</option>)}
+            </select>
+          </LF>
+          <button onClick={addToMaster} style={{padding:"11px 16px",background:"linear-gradient(135deg,#16a34a,#15803d)",color:"#fff",border:"none",borderRadius:10,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",flexShrink:0}}>
+            + Tambah
+          </button>
+        </div>
+        {masterFormErr && <div style={{fontSize:11,color:"#DC2626",marginBottom:8,marginTop:-4}}>⚠ {masterFormErr}</div>}
+
+        {/* Tabel Master */}
+        {nurseMasterList.length > 0 && (
+          <div style={{overflowX:"auto"}}>
+            <table style={{borderCollapse:"collapse",width:"100%",fontSize:11}}>
+              <thead>
+                <tr style={{background:"#DCFCE7"}}>
+                  {["No","NIK","Nama Perawat","Pangkat PK","Aksi"].map(h=>(
+                    <th key={h} style={{padding:"6px 10px",fontWeight:700,color:"#15803D",textAlign:h==="Aksi"?"center":"left",borderBottom:"2px solid #BBF7D0",whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {nurseMasterList.map((m,i)=>(
+                  <tr key={m.id} style={{background:i%2===0?"#fff":"#F0FDF4",borderBottom:"1px solid #D1FAE5"}}>
+                    <td style={{padding:"5px 10px",color:C.tL}}>{i+1}</td>
+                    <td style={{padding:"5px 10px",fontWeight:600,color:C.t,fontFamily:"monospace"}}>{m.nik}</td>
+                    <td style={{padding:"5px 10px",fontWeight:700,color:C.t}}>{m.name}</td>
+                    <td style={{padding:"5px 10px",color:"#15803D",fontWeight:600}}>PK {m.pk}</td>
+                    <td style={{padding:"5px 10px",textAlign:"center"}}>
+                      <button onClick={()=>removeFromMaster(m.id)} style={{padding:"3px 10px",background:"#FEE2E2",color:"#DC2626",border:"1px solid #FECACA",borderRadius:6,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Hapus</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{fontSize:11,color:C.tL,marginTop:6}}>Total: {nurseMasterList.length} perawat tersimpan di database master.</div>
+          </div>
+        )}
+      </Card>
 
       {/* Pilih Bulan / Tahun */}
       <Card style={{marginBottom:12}}>
@@ -6196,16 +6306,12 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
         </div>
       </Card>
 
-      {/* ── Pengaturan Footer Excel (PJ SIRS, Pembawa HP, Kepala Instalasi) ── */}
+      {/* Konfigurasi Dokumen */}
       <Card style={{marginBottom:12,background:"#F0F9FF",border:"1px solid #BAE6FD"}}>
         <SH label="📋 Konfigurasi Dokumen" color="#0369A1"/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          <LF label="PJ SIRS">
-            <input style={iS} value={pjSirs} onChange={e=>setPjSirs(e.target.value)} placeholder="Nama PJ SIRS"/>
-          </LF>
-          <LF label="Pembawa HP">
-            <input style={iS} value={pembawHP} onChange={e=>setPembawHP(e.target.value)} placeholder="Nama pembawa HP"/>
-          </LF>
+          <LF label="PJ SIRS"><input style={iS} value={pjSirs} onChange={e=>setPjSirs(e.target.value)} placeholder="Nama PJ SIRS"/></LF>
+          <LF label="Pembawa HP"><input style={iS} value={pembawHP} onChange={e=>setPembawHP(e.target.value)} placeholder="Nama pembawa HP"/></LF>
           <div style={{gridColumn:"1 / -1"}}>
             <LF label="Kepala Instalasi Kamar Bedah">
               <input style={iS} value={kepInstall} onChange={e=>setKepInstall(e.target.value)} placeholder="cth: drg. Agus Sri G, Sp. BM"/>
@@ -6232,7 +6338,9 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
         </Card>
       )}
 
-      {/* Tabel scrollable */}
+      {/* ══════════════════════════════════════════════════════════════════
+          TABEL ROSTER — DUAL AXIS (Kanan: ringkasan individu, Bawah: komposisi harian)
+         ══════════════════════════════════════════════════════════════════ */}
       <Card style={{padding:0,overflow:"hidden"}}>
         <div style={{overflowX:"auto"}}>
           <table style={{borderCollapse:"collapse",minWidth:"100%",fontSize:11}}>
@@ -6245,81 +6353,110 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
                     <input type="checkbox" checked={holidays[d]} onChange={e=>updateHoliday(d,e.target.checked)} style={{cursor:"pointer"}} title={`Hari ke-${d+1} = Hari Libur`}/>
                   </td>
                 ))}
+                {/* spacer di atas summary cols */}
+                <td colSpan={7} style={{borderBottom:"1px solid #e0e0e0",background:"#EEF2FF"}}/>
               </tr>
               {/* Header kolom */}
               <tr style={{background:C.p}}>
                 {["NO","NIK","PK","NAMA","SISA\nCUTI","TIPE"].map(h=>(
-                  <th key={h} style={{padding:"7px 8px",color:"#fff",fontWeight:700,fontSize:11,whiteSpace:"pre",textAlign:"center",borderRight:"1px solid rgba(255,255,255,.2)",position:"sticky",left:0,background:C.p}}>{h}</th>
+                  <th key={h} style={{padding:"7px 8px",color:"#fff",fontWeight:700,fontSize:11,whiteSpace:"pre",textAlign:"center",borderRight:"1px solid rgba(255,255,255,.2)"}}>{h}</th>
                 ))}
                 {Array.from({length:daysInMonth},(_,d)=>{
                   const date = new Date(year,month,d+1);
-                  const isHol = holidays[d];
-                  const isSun = date.getDay()===0;
+                  const isHol = holidays[d], isSun = date.getDay()===0;
                   return (
                     <th key={d} style={{padding:"4px 2px",color:"#fff",fontWeight:isSun||isHol?900:600,fontSize:10,textAlign:"center",background:isSun||isHol?"#C62828":C.p,minWidth:28,borderRight:"1px solid rgba(255,255,255,.15)"}}>
                       {d+1}<br/><span style={{fontSize:8,opacity:.8}}>{"MSLRKJS"[date.getDay()]}</span>
                     </th>
                   );
                 })}
+                {/* FITUR 3 — Header Ringkasan Individu (Sumbu Kanan) */}
+                {[["∑P","#1565C0"],["∑PG","#1565C0"],["∑S","#E65100"],["∑SG","#E65100"],["∑L/LG","#5C677D"],["∑T","#C62828"],["∑Total","#374151"]].map(([lbl,cl])=>(
+                  <th key={lbl} style={{padding:"4px 3px",color:"#fff",fontWeight:700,fontSize:9,textAlign:"center",background:"#3730A3",minWidth:30,borderLeft:"2px solid rgba(255,255,255,.3)",whiteSpace:"nowrap"}}>{lbl}</th>
+                ))}
               </tr>
             </thead>
+
             <tbody>
-              {nurses.map((n,ni)=>(
-                <tr key={n.id} style={{background:ni%2===0?"#fff":"#f0f7ff"}}>
-                  <td style={{padding:"4px 6px",textAlign:"center",fontWeight:700,fontSize:11,borderRight:"1px solid #f0f0f0",minWidth:32}}>{ni+1}</td>
-                  {/* NIK = dropdown dengan auto-populate Nama & PK */}
-                  <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:90}}>
-                    <select value={n.nik} onChange={e=>handleNikChange(ni, e.target.value)} style={{width:"100%",border:"none",background:"transparent",fontSize:10,outline:"none",cursor:"pointer"}}>
-                      <option value="">-- NIK --</option>
-                      {MASTER_PERAWAT_LIST.map(m=>(
-                        <option key={m.nik} value={m.nik}>{m.nik}</option>
-                      ))}
-                    </select>
-                  </td>
-                  <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:50}}>
-                    <input value={n.pk} onChange={e=>updateNurse(ni,"pk",e.target.value)} style={{width:"100%",border:"none",background:"transparent",fontSize:10,textAlign:"center",outline:"none"}} placeholder="PK"/>
-                  </td>
-                  <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:130}}>
-                    <input value={n.name} onChange={e=>updateNurse(ni,"name",e.target.value)} style={{width:"100%",border:"none",background:"transparent",fontSize:11,outline:"none"}} placeholder="Nama perawat..."/>
-                  </td>
-                  {/* sisaCuti — fixed leading zero bug */}
-                  <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:50}}>
-                    <input type="number" value={n.sisaCuti} onChange={e=>handleSisaCutiChange(ni, e.target.value)} style={{width:"100%",border:"none",background:"transparent",fontSize:10,textAlign:"center",outline:"none"}} min={0} max={30}/>
-                  </td>
-                  <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:70}}>
-                    <select value={n.tipe} onChange={e=>updateNurse(ni,"tipe",e.target.value as NurseType)} style={{width:"100%",border:"none",background:"transparent",fontSize:10,outline:"none",cursor:"pointer"}}>
-                      <option value="karu">Karu</option>
-                      <option value="senior">Senior</option>
-                      <option value="junior">Junior</option>
-                    </select>
-                  </td>
-                  {Array.from({length:daysInMonth},(_,d)=>{
-                    const code = newGrid_safe(ni,d);
-                    return (
-                      <td key={d} style={cellStyle(code)}>
-                        <input value={code} onChange={e=>updateCell(ni,d,e.target.value)} style={{width:26,border:"none",background:"transparent",textAlign:"center",fontSize:10,fontWeight:700,outline:"none",color:"inherit",padding:0}} maxLength={2}/>
+              {nurses.map((n,ni)=>{
+                const rs = rowSummaries[ni] ?? {P:0,PG:0,S:0,SG:0,T:0,LG_L:0,total:0};
+                return (
+                  <tr key={n.id} style={{background:ni%2===0?"#fff":"#f0f7ff"}}>
+                    <td style={{padding:"4px 6px",textAlign:"center",fontWeight:700,fontSize:11,borderRight:"1px solid #f0f0f0",minWidth:32}}>{ni+1}</td>
+
+                    {/* FITUR 2 — NIK dropdown dari nurseMasterList dinamis */}
+                    <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:100}}>
+                      <select value={n.nik} onChange={e=>handleNikChange(ni,e.target.value)} style={{width:"100%",border:"none",background:"transparent",fontSize:10,outline:"none",cursor:"pointer"}}>
+                        <option value="">-- NIK --</option>
+                        {nurseMasterList.map(m=>(
+                          <option key={m.nik} value={m.nik}>{m.nik} — {m.name}</option>
+                        ))}
+                      </select>
+                    </td>
+
+                    <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:44}}>
+                      <input value={n.pk} onChange={e=>updateNurse(ni,"pk",e.target.value)} style={{width:"100%",border:"none",background:"transparent",fontSize:10,textAlign:"center",outline:"none"}} placeholder="PK"/>
+                    </td>
+                    <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:130}}>
+                      <input value={n.name} onChange={e=>updateNurse(ni,"name",e.target.value)} style={{width:"100%",border:"none",background:"transparent",fontSize:11,outline:"none"}} placeholder="Nama perawat..."/>
+                    </td>
+                    <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:46}}>
+                      <input type="number" value={n.sisaCuti} onChange={e=>handleSisaCutiChange(ni,e.target.value)} style={{width:"100%",border:"none",background:"transparent",fontSize:10,textAlign:"center",outline:"none"}} min={0} max={30}/>
+                    </td>
+                    <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:68}}>
+                      <select value={n.tipe} onChange={e=>updateNurse(ni,"tipe",e.target.value as NurseType)} style={{width:"100%",border:"none",background:"transparent",fontSize:10,outline:"none",cursor:"pointer"}}>
+                        <option value="karu">Karu</option>
+                        <option value="senior">Senior</option>
+                        <option value="junior">Junior</option>
+                      </select>
+                    </td>
+
+                    {/* Sel shift harian */}
+                    {Array.from({length:daysInMonth},(_,d)=>{
+                      const code = newGrid_safe(ni,d);
+                      return (
+                        <td key={d} style={cellStyle(code)}>
+                          <input value={code} onChange={e=>updateCell(ni,d,e.target.value)} style={{width:26,border:"none",background:"transparent",textAlign:"center",fontSize:10,fontWeight:700,outline:"none",color:"inherit",padding:0}} maxLength={2}/>
+                        </td>
+                      );
+                    })}
+
+                    {/* FITUR 3 — Ringkasan individu real-time (Sumbu Kanan) */}
+                    {[
+                      {v:rs.P,    bg:"#DBEAFE",cl:"#1565C0"},
+                      {v:rs.PG,   bg:"#BFDBFE",cl:"#1E40AF"},
+                      {v:rs.S,    bg:"#FEF3C7",cl:"#D97706"},
+                      {v:rs.SG,   bg:"#FDE68A",cl:"#B45309"},
+                      {v:rs.LG_L, bg:"#F1F5F9",cl:"#475569"},
+                      {v:rs.T,    bg:"#FFE4E6",cl:"#BE123C"},
+                      {v:rs.total,bg:"#EEF2FF",cl:"#3730A3"},
+                    ].map(({v,bg,cl},i)=>(
+                      <td key={i} style={{textAlign:"center",fontSize:11,fontWeight:700,color:cl,background:bg,borderLeft:"2px solid rgba(99,102,241,.2)",minWidth:30,padding:"2px 3px"}}>
+                        {v||""}
                       </td>
-                    );
-                  })}
-                </tr>
-              ))}
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
-            {/* Summary footer */}
+
+            {/* FITUR 4/5 — Summary footer (Sumbu Bawah) — dipertahankan utuh */}
             <tfoot>
               {[
-                {label:"∑ Pagi (P)",          codes:["P"],       bg:"#E3F2FD", cl:"#1565C0"},
-                {label:"∑ Pagi Siaga (PG)",   codes:["PG"],      bg:"#BBDEFB", cl:"#1565C0"},
-                {label:"∑ Siang (S)",         codes:["S"],        bg:"#FFF3E0", cl:"#E65100"},
-                {label:"∑ Siang Siaga (SG)",  codes:["SG"],       bg:"#FFE0B2", cl:"#E65100"},
-                {label:"∑ Libur (L/LG)",      codes:["L","LG"],   bg:"#F3F3F3", cl:"#5C677D"},
-                {label:"∑ Cuti (T)",          codes:["T"],        bg:"#FFEBEE", cl:"#C62828"},
-              ].map(({label,codes,bg,cl})=>(
+                {label:"∑ Pagi (P)",         key:"P"   as keyof typeof colSummaries, bg:"#E3F2FD", cl:"#1565C0"},
+                {label:"∑ Pagi Siaga (PG)",  key:"PG"  as keyof typeof colSummaries, bg:"#BBDEFB", cl:"#1565C0"},
+                {label:"∑ Siang (S)",        key:"S"   as keyof typeof colSummaries, bg:"#FFF3E0", cl:"#E65100"},
+                {label:"∑ Siang Siaga (SG)", key:"SG"  as keyof typeof colSummaries, bg:"#FFE0B2", cl:"#E65100"},
+                {label:"∑ Libur/LG",         key:"LLG" as keyof typeof colSummaries, bg:"#F3F3F3", cl:"#5C677D"},
+                {label:"∑ Cuti (T)",         key:"T"   as keyof typeof colSummaries, bg:"#FFEBEE", cl:"#C62828"},
+              ].map(({label,key,bg,cl})=>(
                 <tr key={label} style={{background:bg}}>
-                  <td colSpan={6} style={{padding:"4px 10px",fontSize:12,fontWeight:800,color:cl,textAlign:"right",borderTop:"2px solid rgba(0,0,0,.12)"}}>{label}</td>
-                  {Array.from({length:daysInMonth},(_,d)=>{
-                    const cnt = nurses.reduce((c,_,ni)=>codes.includes(newGrid_safe(ni,d))?c+1:c,0);
-                    return <td key={d} style={{textAlign:"center",fontSize:12,fontWeight:800,color:cl,borderTop:"2px solid rgba(0,0,0,.12)",minWidth:28}}>{cnt||""}</td>;
-                  })}
+                  <td colSpan={6} style={{padding:"5px 10px",fontSize:12,fontWeight:800,color:cl,textAlign:"right",borderTop:"3px solid rgba(0,0,0,.14)"}}>{label}</td>
+                  {colSummaries[key].map((cnt,d)=>(
+                    <td key={d} style={{textAlign:"center",fontSize:12,fontWeight:800,color:cl,borderTop:"3px solid rgba(0,0,0,.14)",minWidth:28}}>{cnt||""}</td>
+                  ))}
+                  {/* 7 sel kosong di bawah kolom ringkasan kanan */}
+                  {Array.from({length:7},(_,i)=><td key={`sp${i}`} style={{background:"#EEF2FF",borderTop:"3px solid rgba(0,0,0,.14)"}}/>)}
                 </tr>
               ))}
             </tfoot>
@@ -6327,24 +6464,13 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
         </div>
       </Card>
 
-      {/* Tombol Tambah Perawat */}
+      {/* Tombol Tambah Perawat + Simpan bawah */}
       <div style={{marginTop:12,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-        <Btn sm onClick={addNurse} color={C.g} outline>+ Tambah Perawat</Btn>
+        <Btn sm onClick={addNurse} color={C.g} outline>+ Tambah Baris Perawat</Btn>
         <span style={{fontSize:11,color:C.tL}}>Total: {nurses.length} perawat</span>
         <div style={{flex:1}}/>
-        {/* Tombol Simpan di bawah tabel juga (duplikat untuk akses mudah) */}
-        <button
-          onClick={saveJadwal}
-          disabled={savingJadwal}
-          style={{
-            padding:"10px 18px",
-            background: savingJadwal ? "#94A3B8" : "linear-gradient(135deg,#0284c7,#1e3a8a)",
-            color:"#fff", border:"none", borderRadius:10,
-            fontSize:12, fontWeight:700, cursor: savingJadwal ? "not-allowed" : "pointer",
-            fontFamily:"inherit", boxShadow:"0 2px 8px rgba(2,132,199,.3)",
-          }}
-        >
-          {savingJadwal ? "⟳ Menyimpan..." : "💾 Simpan Jadwal"}
+        <button onClick={saveJadwal} disabled={savingJadwal} style={{padding:"10px 18px",background:savingJadwal?"#94A3B8":"linear-gradient(135deg,#0284c7,#1e3a8a)",color:"#fff",border:"none",borderRadius:10,fontSize:12,fontWeight:700,cursor:savingJadwal?"not-allowed":"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(2,132,199,.3)"}}>
+          {savingJadwal?"⟳ Menyimpan...":"💾 Simpan Jadwal"}
         </button>
       </div>
       <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
