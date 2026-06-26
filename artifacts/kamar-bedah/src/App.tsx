@@ -635,6 +635,17 @@ const defaultSupaCfg: SupabaseConfig = { url:"", anonKey:"", autoBackup:true, ba
    — sebuah shared secret terbatas yang HANYA bisa memicu 2 aksi spesifik
    (backup/restore 1 folder) lewat proxy ini, BUKAN kunci akses Dropbox
    penuh. Lihat catatan di vite-env.d.ts / .env.local untuk cara isi nilainya. */
+const SUPA_URL    = (import.meta as any).env?.VITE_SUPABASE_URL as string | undefined;
+const SUPA_ANON   = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY as string | undefined;
+if (!SUPA_URL || !SUPA_ANON) {
+  // eslint-disable-next-line no-console
+  console.error(
+    "[Konfigurasi] VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY belum diset di .env.local. " +
+    "Aplikasi tidak dapat terhubung ke Supabase sampai env var ini dikonfigurasi."
+  );
+}
+const SUPA_CLIENT = createClient(SUPA_URL || "", SUPA_ANON || "");
+
 const DBX_PROXY_SECRET = (import.meta as any).env?.VITE_PROXY_SHARED_SECRET || "";
 const DBX_PROXY_FN     = "dropbox-proxy";
 
@@ -5300,17 +5311,6 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
    di-hardcode di source: hardcode membuat rotasi key sulit, membuat key
    bocor ke setiap fork/clone repo, dan menyamarkan kebutuhan RLS yang benar.
    ─────────────────────────────────────────────────────────────────── */
-const SUPA_URL    = (import.meta as any).env?.VITE_SUPABASE_URL as string | undefined;
-const SUPA_ANON   = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY as string | undefined;
-if (!SUPA_URL || !SUPA_ANON) {
-  // eslint-disable-next-line no-console
-  console.error(
-    "[Konfigurasi] VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY belum diset di .env.local. " +
-    "Aplikasi tidak dapat terhubung ke Supabase sampai env var ini dikonfigurasi."
-  );
-}
-const SUPA_CLIENT = createClient(SUPA_URL || "", SUPA_ANON || "");
-
 /* ─── DROPBOX: token DIHAPUS dari sini sepenuhnya — lihat DBX_PROXY_SECRET
    di atas. Token asli sekarang hanya hidup sbg secret server-side di
    Supabase Edge Function "dropbox-proxy" (Deno.env.get("DROPBOX_ACCESS_TOKEN")). */
