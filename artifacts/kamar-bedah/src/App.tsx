@@ -43,7 +43,25 @@ const BT    = ["A+","A-","B+","B-","AB+","AB-","O+","O-","Tidak Diketahui"];
 const ST    = { surgeon:"Dokter Bedah", anesthesiologist:"Dokter Anestesi", circulating:"PERAWAT Instrumen", anesthesia_nurse:"Perawat Anestesi", onloop:"Perawat Onloop", katim:"RR / Katim" };
 const OT    = { elektif:{label:"Elektif",c:"#1565C0",bg:"#E3F2FD"}, semi:{label:"Semi-Elektif",c:"#E65100",bg:"#FFF3E0"}, cyto:{label:"⚠ CYTO",c:"#B71C1C",bg:"#FFCDD2"} };
 const STS   = { scheduled:{l:"Terjadwal",c:"#1565C0",bg:"#E3F2FD"}, ongoing:{l:"Berlangsung",c:"#00897B",bg:"#E0F2F1"}, done:{l:"Selesai",c:"#2E7D32",bg:"#E8F5E9"}, batal:{l:"Batal/Tunda",c:"#C62828",bg:"#FFEBEE"} };
-const C     = { p:"#16685F",pL:"#2D9A87",pBg:"#E4F3F0", d:"#D62828",dBg:"#FFEBEE",dL:"#FF8FA3", w:"#E07800",wBg:"#FFF8E1", i:"#1565C0",iBg:"#E3F2FD", s:"#2E7D32",sBg:"#F0FFF4", wa:"#25D366",waBg:"#DCFCE7", g:"#5C677D",gBg:"#F0F4F8", t:"#234B45",tL:"#577590", b:"#D0E8F2",white:"#FFFFFF",bg:"#F4F7F6", gold:"#C9A961" };
+const C     = {
+  /* ── Brand Blues (core gradient palette) ── */
+  p:"#0284c7",   pL:"#38bdf8",  pBg:"#e0f2fe",
+  /* ── Danger ── */
+  d:"#dc2626",   dBg:"#fef2f2", dL:"#fca5a5",
+  /* ── Warning ── */
+  w:"#d97706",   wBg:"#fffbeb",
+  /* ── Info / secondary blue ── */
+  i:"#1d4ed8",   iBg:"#eff6ff",
+  /* ── Success green ── */
+  s:"#16a34a",   sBg:"#f0fdf4",
+  /* ── WhatsApp ── */
+  wa:"#25D366",  waBg:"#dcfce7",
+  /* ── Neutrals ── */
+  g:"#475569",   gBg:"#f1f5f9",
+  t:"#0f172a",   tL:"#64748b",
+  b:"#e2e8f0",   white:"#ffffff",
+  bg:"#f8fafc",  gold:"#C9A961",
+};
 const EOP: Partial<Operation> = {patient:"",age:"",ageMonths:"",rm:"",opType:"elektif",diagnosis:"",procedure:"",ruangAsal:"",room:ROOMS[0],date:"",time:"",surgeon:"",anesthesiologist:"",assistantNurse:"",circulatingNurse:"",anesthesiaNurse:"",onloopNurse:"",rrKatim:"",allergy:"Tidak Ada",specialNeeds:"",bloodType:"O+"};
 const PAGE_SIZE = 10;
 const DEFAULT_RECIPIENT = "Suster Thresmiati CB, bu Niken, pak Jaka dan teman sejawat, mohon ijin laporan kamar bedah:";
@@ -824,40 +842,20 @@ function buildLaporan({greeting,recipients,keterangan,todayOps,tomorrowOps,anest
   const active = [...todayOps].filter((o:any)=>o.status!=="batal");
   const batal  = todayOps.filter((o:any)=>o.status==="batal");
 
-  /* ── Poin ③: group by dokter anestesi (case-insensitive, trimmed) → di
-     dalam tiap anestesi, sub-group by dokter bedah → di dalam tiap dokter
-     bedah, urutkan jamOperasi ascending. ── */
-  const anestGroups: Record<string, any[]> = {}; const anestOrder: string[] = [];
-  active.forEach((o:any)=>{ const k=(o.anesthesiologist||"").trim().toLowerCase(); if(!anestGroups[k]){anestGroups[k]=[];anestOrder.push(k);} anestGroups[k].push(o); });
-
-  const anestSections = anestOrder.map(k=>{
-    const opsForAnest = [...anestGroups[k]].sort((a,b)=>a.time.localeCompare(b.time));
-    const anestDisplay = sanitize(opsForAnest[0].anesthesiologist) || "-";
-    const surgGroups: Record<string, any[]> = {}; const surgOrder: string[] = [];
-    opsForAnest.forEach((o:any)=>{ const sk=(o.surgeon||"").trim().toLowerCase(); if(!surgGroups[sk]){surgGroups[sk]=[];surgOrder.push(sk);} surgGroups[sk].push(o); });
-    const surgeonBlocks = surgOrder.map(sk=>{
-      const group = [...surgGroups[sk]].sort((a,b)=>a.time.localeCompare(b.time));
-      const surgeonDisplay = sanitize(group[0].surgeon) || "-";
-      const jam = fTR(group[0].time);
-      const lines = group.map((o:any,i:number)=>{
-        const cytoMark = o.opType==="cyto" ? "⚠️[CYTO]⚠️ " : "";
-        const team: string[] = [];
-        if(o.assistantNurse) team.push(`assistant ${o.assistantNurse}`);
-        if(o.onloopNurse) team.push(`onloop ${o.onloopNurse}`);
-        if(o.rrKatim) team.push(`rr/katim ${o.rrKatim}`);
-        const teamStr = team.length ? ` (${team.join(", ")})` : "";
-        const diag = sanitize(o.diagnosis||"").trim();
-        return `${i+1}. ${cytoMark}${sanitize(o.patient)} ${sanitize(o.procedure)}${diag?` ${diag}`:""}${teamStr}`;
-      }).join("\n");
-      return `* ${surgeonDisplay} ada ${group.length} jam ${jam}\n${lines}`;
-    }).join("\n\n");
-    return `Anestesi ${anestDisplay}\n${surgeonBlocks}`;
-  }).join("\n\n");
+  /* ── Poin ③: urutan kronologis murni berdasarkan jam operasi (a→z) ── */
+  const sortedActive = [...active].sort((a:any,b:any)=>a.time.localeCompare(b.time));
+  const todayLines = sortedActive.map((o:any, i:number)=>{
+    const cytoMark = o.opType==="cyto" ? "⚠️[CYTO]⚠️ " : "";
+    const anest = sanitize(o.anesthesiologist)||"-";
+    const surg  = sanitize(o.surgeon)||"-";
+    const proc  = sanitize(o.procedure);
+    return `_${i+1}. ${o.time} ${cytoMark}${sanitize(o.patient)} - ${proc} - ${surg} (Anest: ${anest})_`;
+  }).join("\n");
 
   const batalLine = batal.length?`\n_Batal/Tunda: ${batal.map((o:any)=>sanitize(o.patient)+(o.cancelReason?` (${sanitize(o.cancelReason)})`:""  )).join("; ")}_`:"";
   const todaySec = active.length
-    ? `*Hari ini acara operasi ada ${active.length} berjalan lancar*\n${anestSections}${batalLine}`
-    : `*Hari ini tidak ada operasi berjalan${batalLine}*`;
+    ? `*Hari ini acara operasi ada ${active.length} berjalan lancar*\n${todayLines}${batalLine}`
+    : `_Hari Ini Tidak Ada Acara Operasi_${batalLine}`;
 
   /* ── Poin ④: split shift Pagi (00:00-13:59) / Sore (14:00-23:59) → group
      by jamOperasi → group by dokter bedah → IF jumlah>1 list bernumor,
@@ -948,14 +946,19 @@ function SF({label,req,err,options,empty="-- Pilih --",...p}: any) {
     </LF>
   );
 }
-const Btn = ({children,onClick,color=C.p,outline,sm,full,disabled,style={}}: any) => (
-  <button onClick={onClick} disabled={disabled} style={{padding:sm?"7px 12px":"10px 18px",borderRadius:10,border:`1.5px solid ${disabled?"#ccc":color}`,background:outline?C.white:disabled?"#eee":color,color:outline?color:C.white,fontSize:sm?12:14,fontWeight:700,cursor:disabled?"not-allowed":"pointer",opacity:disabled?.45:1,width:full?"100%":"auto",fontFamily:"inherit",transition:"opacity .15s",...style}}>{children}</button>
-);
+const Btn = ({children,onClick,color=C.p,outline,sm,full,disabled,style={}}: any) => {
+  const isGrad = typeof color==="string" && color.startsWith("linear-gradient");
+  const borderCol = isGrad ? "rgba(30,58,138,.4)" : (disabled?"#ccc":color);
+  const bgStyle = outline ? C.white : disabled ? "#eee" : color;
+  return (
+    <button onClick={onClick} disabled={disabled} style={{padding:sm?"7px 12px":"10px 18px",borderRadius:10,border:`1.5px solid ${borderCol}`,background:bgStyle,color:outline?color:C.white,fontSize:sm?12:14,fontWeight:700,cursor:disabled?"not-allowed":"pointer",opacity:disabled?.45:1,width:full?"100%":"auto",fontFamily:"inherit",transition:"opacity .15s",boxShadow:isGrad&&!disabled?"0 2px 8px rgba(30,58,138,.25)":"none",...style}}>{children}</button>
+  );
+};
 const WaBt = ({children,onClick,sm,full,disabled,style={}}: any) => (
   <button onClick={onClick} disabled={disabled} style={{padding:sm?"7px 12px":"10px 18px",borderRadius:10,border:`1.5px solid ${disabled?"#ccc":C.wa}`,background:disabled?"#eee":C.wa,color:C.white,fontSize:sm?12:14,fontWeight:700,cursor:disabled?"not-allowed":"pointer",width:full?"100%":"auto",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:5,...style}}>✓ {children}</button>
 );
 const Card = ({children,style={},hi}: any) => (
-  <div style={{background:C.white,borderRadius:14,padding:"18px 20px",marginBottom:12,boxShadow:"0 2px 8px rgba(0,0,0,.06)",border:`1px solid ${hi||C.b}`,...style}}>{children}</div>
+  <div style={{background:"#ffffff",borderRadius:14,padding:"18px 20px",marginBottom:12,boxShadow:"0 4px 6px -1px rgba(0,0,0,0.05),0 2px 4px -1px rgba(59,130,246,0.06)",border:`1px solid ${hi||C.b}`,...style}}>{children}</div>
 );
 const Row  = ({title,right}: any) => (
   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
@@ -1521,7 +1524,7 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,staff,setTab,temp
         <SH label="③ Tim Dokter"/>
         <div style={{background:C.iBg,borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:12,color:C.i}}>Belum ada dokter? Tambahkan di menu <b>👥 Staf</b></div>
         <SF label="Dokter Operator / Bedah" req options={byT("surgeon")} empty="-- Pilih Dokter Bedah --" value={opForm.surgeon} onChange={(ev:any)=>setR("surgeon",ev.target.value)} err={e.surgeon}/>
-        <SF label="Dokter Anestesi" options={byT("anesthesiologist")} empty="-- Pilih Dokter Anestesi --" value={opForm.anesthesiologist} onChange={(ev:any)=>setR("anesthesiologist",ev.target.value)}/>
+        <SF label="Dokter Anestesi" options={["Lokal Anestesi", ...byT("anesthesiologist")]} empty="-- Pilih Dokter Anestesi --" value={opForm.anesthesiologist} onChange={(ev:any)=>setR("anesthesiologist",ev.target.value)}/>
       </Card>
       <Card>
         <SH label="④ Tim Perawat (5 Peran Wajib)"/>
@@ -1693,13 +1696,14 @@ function ViewLaporan({ops,staff,roster,showToast,role,privacyMode}: ViewLaporanP
       </Card>
       <Card style={{background:tActive.length>0?"#F8FBF0":C.gBg,border:`1px solid ${tActive.length>0?"#D4E6A0":C.b}`}}>
         <SH label="③ Acara Operasi Hari Ini" color={C.s}/>
-        {tActive.length===0 ? <div style={{fontSize:13,color:C.tL,textAlign:"center",padding:"6px 0"}}>Tidak ada operasi aktif hari ini</div>
-          : tActive.sort((a:any,b:any)=>a.time.localeCompare(b.time)).map((op:any,i:number)=>(
-            <div key={op.id} style={{display:"flex",gap:10,marginBottom:8,paddingBottom:8,borderBottom:i<tActive.length-1?`1px solid ${C.b}`:"none"}}>
+        {tActive.length===0
+          ? <div style={{fontSize:13,color:C.tL,textAlign:"center",padding:"6px 0",fontStyle:"italic"}}>Hari Ini Tidak Ada Acara Operasi</div>
+          : [...tActive].sort((a:any,b:any)=>a.time.localeCompare(b.time)).map((op:any,i:number)=>(
+            <div key={op.id} style={{display:"flex",gap:10,marginBottom:8,paddingBottom:8,borderBottom:i<tActive.length-1?`1px solid ${C.b}`:"none",fontStyle:"italic"}}>
               <div style={{background:op.opType==="cyto"?"#FFCDD2":C.sBg,borderRadius:8,padding:"5px 9px",fontSize:12,fontWeight:700,color:op.opType==="cyto"?"#B71C1C":C.s,flexShrink:0,minWidth:52,textAlign:"center"}}>{op.time}</div>
               <div style={{flex:1}}>
                 <div style={{fontSize:13,fontWeight:700,color:C.t}}>{maskName(op.patient,privacyMode)}{op.age?`, ${op.age}th`:""}</div>
-                <div style={{fontSize:11,color:C.tL}}>{op.surgeon}</div>
+                <div style={{fontSize:11,color:C.tL}}>{op.surgeon} / {op.anesthesiologist||"—"}</div>
               </div>
               <Bdg label={STS[op.status as keyof typeof STS]?.l||"Terjadwal"} color={STS[op.status as keyof typeof STS]?.c||C.i} bg={STS[op.status as keyof typeof STS]?.bg||C.iBg}/>
             </div>
@@ -5204,8 +5208,580 @@ function HeaderClock() {
 
 /* ─── MAIN APP ───────────────────────────────────────────────────────── */
 
+/* ─── VIEW ROSTER GENERATOR ─────────────────────────────────────────── */
+/* Kamus kode shift */
+const SHIFT_CODES = { PAGI:"P", PAGI_SIAGA:"PG", SIANG:"S", SIANG_SIAGA:"SG", LIBUR:"L", LIBUR_SIAGA:"LG", CUTI:"T" } as const;
+type NurseType = "karu"|"senior"|"junior";
+interface RosterNurse { id: string; nik: string; pk: string; name: string; sisaCuti: number; tipe: NurseType; }
+interface RosterGenProps { showToast: ShowToastFn; upsertOneToSupa: UpsertOneFn; dbxCfg: DropboxConfig; }
+
+function mkNurse(tipe: NurseType = "junior"): RosterNurse {
+  return { id: gId(), nik:"", pk:"", name:"", sisaCuti: 12, tipe };
+}
+
+function fisherYates<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; }
+  return a;
+}
+
+function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenProps) {
+  const today = new Date();
+  const [month, setMonth] = useState(today.getMonth());
+  const [year,  setYear]  = useState(today.getFullYear());
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+
+  const defaultNurses = (): RosterNurse[] => [
+    mkNurse("karu"),
+    mkNurse("senior"), mkNurse("senior"), mkNurse("senior"), mkNurse("senior"),
+    mkNurse("junior"), mkNurse("junior"), mkNurse("junior"), mkNurse("junior"), mkNurse("junior"),
+  ];
+
+  const [nurses, setNurses]     = useState<RosterNurse[]>(defaultNurses);
+  // grid[nurseIdx][dayIdx] = kode shift string
+  const [grid, setGrid]         = useState<string[][]>(() => defaultNurses().map(()=>Array(31).fill("")));
+  const [holidays, setHolidays] = useState<boolean[]>(()=>Array(31).fill(false));
+  const [syncing, setSyncing]   = useState(false);
+  const [syncingDbx, setSyncingDbx] = useState(false);
+  const [warnings, setWarnings] = useState<string[]>([]);
+
+  // Reset grid ketika jumlah nurses berubah atau bulan berubah
+  const resetGrid = (newNurses: RosterNurse[], days: number) => {
+    setGrid(newNurses.map(()=>Array(days).fill("")));
+    setHolidays(Array(days).fill(false));
+    setWarnings([]);
+  };
+
+  const handleMonthYear = (m: number, y: number) => {
+    setMonth(m); setYear(y);
+    const d = new Date(y, m+1, 0).getDate();
+    resetGrid(nurses, d);
+  };
+
+  const addNurse = () => {
+    const newN = [...nurses, mkNurse("junior")];
+    setNurses(newN);
+    setGrid(g => [...g, Array(daysInMonth).fill("")]);
+  };
+
+  const updateNurse = (idx: number, field: keyof RosterNurse, val: any) => {
+    setNurses(p => p.map((n,i) => i===idx ? {...n,[field]:val} : n));
+  };
+
+  const updateCell = (ni: number, di: number, val: string) => {
+    setGrid(g => g.map((row, ri) => ri===ni ? row.map((c,ci) => ci===di ? val.toUpperCase() : c) : row));
+  };
+
+  /* ─── CORE ENGINE (REFACTORED) ───────────────────────────────────── */
+  const generateRoster = () => {
+    const newGrid = grid.map(row => [...row]); // Deep copy — jaga beset manual
+    const warns: string[] = [];
+
+    /* ── TRACKER FREKUENSI (Aturan 4) ──────────────────────────────────
+       Dua objek counter per-perawat (index) untuk membatasi jumlah siaga.
+       Keduanya dihitung ulang dari nol setiap kali Generate ditekan. ── */
+    // Monthly counter: berapa kali tiap perawat mendapat LG dalam bulan ini
+    const lgMonthCount:  number[] = Array(nurses.length).fill(0);
+    // Weekly counter: { nurseIdx → count dalam 7 hari terakhir }
+    // Kita track per-7-hari berjalan: window dimulai dari hari ke-(d-6) hingga d.
+    // Untuk efisiensi, kita simpan array harian dan hitung sliding window saat needed.
+    const pgsgDailyLog:  Array<boolean[]> = nurses.map(()=>Array(daysInMonth).fill(false));
+
+    /* Helper: hitung jumlah PG/SG perawat ni dalam window 7 hari [d-6..d-1]
+       (hari d sendiri belum diassign saat pengecekan). */
+    const pgsgCountInWindow = (ni: number, d: number): number => {
+      let count = 0;
+      for(let w = Math.max(0, d-6); w < d; w++){
+        if(pgsgDailyLog[ni][w]) count++;
+      }
+      return count;
+    };
+
+    /* ── Limit konstanta ── */
+    const MAX_PGSG_PER_WEEK = 3;  // bisa dinaikkan ke 4 jika diperlukan
+    const MAX_LG_PER_MONTH  = 2;  // bisa dinaikkan ke 3 jika diperlukan
+    // Kuota LG per hari libur: wajar 2–3 orang
+    const LG_QUOTA_PER_HOLIDAY = Math.min(3, Math.max(2, Math.floor(nurses.length / 4)));
+
+    /* ── LOOP UTAMA PER HARI ────────────────────────────────────────── */
+    for(let d = 0; d < daysInMonth; d++){
+
+      /* ── Langkah 1: Identifikasi perawat & status beset manual ─────
+         Perawat dengan cell tidak kosong → "locked" (sudah di-beset).
+         Hanya perawat dengan cell kosong yang masuk array "available". */
+      const available: number[] = [];
+      nurses.forEach((_, ni) => {
+        const cell = newGrid[ni][d];
+        if(cell === "") available.push(ni);
+        // Jika sudah ter-assign PG/SG dari beset manual, log ke tracker
+        if(cell === "PG" || cell === "SG") pgsgDailyLog[ni][d] = true;
+        if(cell === "LG") lgMonthCount[ni]++;
+      });
+
+      /* ── Langkah 2: Aturan 2 — Hari Minggu / Libur Nasional ────────
+         Cek apakah hari ini Minggu (getDay()===0) ATAU ditandai libur. */
+      const isSunday  = new Date(year, month, d+1).getDay() === 0;
+      const isHoliday = holidays[d] === true;
+
+      if(isSunday || isHoliday){
+        // Pisahkan Karu dari available (Karu tidak boleh LG — Aturan 3)
+        const karuAvail = available.filter(ni => nurses[ni].tipe === "karu");
+        const nonKaruAvail = fisherYates(available.filter(ni => nurses[ni].tipe !== "karu"));
+
+        // Kandidat LG: non-Karu yang belum mencapai limit bulanan
+        const lgCandidates = nonKaruAvail.filter(ni => lgMonthCount[ni] < MAX_LG_PER_MONTH);
+        const lgForced     = nonKaruAvail.filter(ni => lgMonthCount[ni] >= MAX_LG_PER_MONTH);
+
+        // Ambil maks LG_QUOTA_PER_HOLIDAY perawat untuk LG
+        const lgAssigned = lgCandidates.slice(0, LG_QUOTA_PER_HOLIDAY);
+        lgAssigned.forEach(ni => {
+          newGrid[ni][d] = SHIFT_CODES.LIBUR_SIAGA;
+          lgMonthCount[ni]++;
+        });
+
+        // Sisa non-Karu → L
+        const restNonKaru = [...lgCandidates.slice(LG_QUOTA_PER_HOLIDAY), ...lgForced];
+        restNonKaru.forEach(ni => { newGrid[ni][d] = SHIFT_CODES.LIBUR; });
+
+        // Karu selalu L (tidak boleh LG)
+        karuAvail.forEach(ni => { newGrid[ni][d] = SHIFT_CODES.LIBUR; });
+
+        // Warning jika semua kandidat LG sudah over-limit sehingga kuota LG tidak terpenuhi
+        if(lgAssigned.length < LG_QUOTA_PER_HOLIDAY && lgCandidates.length < LG_QUOTA_PER_HOLIDAY){
+          warns.push(`⚠️ Hari ke-${d+1} (Libur): Semua perawat sudah mencapai limit LG bulanan. LG dikurangi menjadi ${lgAssigned.length} orang.`);
+        }
+        continue; // skip langkah 3-6 untuk hari ini
+      }
+
+      /* ── Langkah 3: Dynamic Load Balancing ─────────────────────────
+         Hitung total aktif (exclude yang sudah T/L/LG dari beset). */
+      const preFilledActive = nurses.reduce((cnt, _, ni) => {
+        const c = newGrid[ni][d];
+        return (c==="P"||c==="PG"||c==="S"||c==="SG") ? cnt+1 : cnt;
+      }, 0);
+      const totalActive = preFilledActive + available.length;
+      let quotaPagi  = Math.ceil(totalActive / 2);
+      let quotaSiang = Math.floor(totalActive / 2);
+
+      // Kurangi kuota dari yang sudah di-beset (P/PG/S/SG)
+      nurses.forEach((_, ni) => {
+        const c = newGrid[ni][d];
+        if(c==="P"||c==="PG") quotaPagi  = Math.max(0, quotaPagi  - 1);
+        if(c==="S"||c==="SG") quotaSiang = Math.max(0, quotaSiang - 1);
+      });
+
+      /* ── Langkah 4: Aturan 3 — Karu wajib Pagi, bebas dari siaga ───
+         Karu dicari berdasarkan properti .tipe === "karu", bukan indeks. */
+      const karuInAvail = available.filter(ni => nurses[ni].tipe === "karu");
+      karuInAvail.forEach(ni => {
+        newGrid[ni][d] = SHIFT_CODES.PAGI; // Karu selalu P, tidak pernah PG
+        quotaPagi = Math.max(0, quotaPagi - 1);
+      });
+      // Hapus Karu dari pool available sebelum distribusi siaga
+      const nonKaruAvailable = fisherYates(available.filter(ni => nurses[ni].tipe !== "karu"));
+
+      /* ── Langkah 5: Distribusi Siaga & Shift — Aturan 1 & 4 ────────
+         PG dan SG bisa diberikan ke senior maupun junior (Aturan 1).
+         Tidak ada hardcode indeks. Evaluasi seluruh nonKaruAvailable.
+         Batasi frekuensi PG/SG per-perawat (Aturan 4 limit mingguan). */
+
+      // Senioritas: senior diutamakan di pagi, junior boleh di keduanya
+      const avSeniors = fisherYates(nonKaruAvailable.filter(ni => nurses[ni].tipe === "senior"));
+      const avJuniors = fisherYates(nonKaruAvailable.filter(ni => nurses[ni].tipe === "junior"));
+
+      const pagiList:  number[] = [];
+      const siangList: number[] = [];
+
+      // Distribusi senior best-effort ke pagi & siang
+      if(avSeniors.length >= 4){
+        pagiList.push(...avSeniors.slice(0, 2));
+        siangList.push(...avSeniors.slice(2, 4));
+        avSeniors.slice(4).forEach((ni, i) => (i % 2 === 0 ? pagiList : siangList).push(ni));
+      } else {
+        const half = Math.ceil(avSeniors.length / 2);
+        pagiList.push(...avSeniors.slice(0, half));
+        siangList.push(...avSeniors.slice(half));
+      }
+
+      // Isi sisa kuota dengan junior
+      avJuniors.forEach(ni => {
+        if(pagiList.length < quotaPagi) pagiList.push(ni);
+        else if(siangList.length < quotaSiang) siangList.push(ni);
+        else newGrid[ni][d] = SHIFT_CODES.LIBUR; // kelebihan staf → L
+      });
+
+      /* Assign kode shift — cek limit PG/SG mingguan sebelum assign (Aturan 4) */
+      let pgAssigned = 0;
+      pagiList.forEach(ni => {
+        const canPG = pgAssigned < 2
+          && quotaPagi > 2
+          && pgsgCountInWindow(ni, d) < MAX_PGSG_PER_WEEK;
+        if(canPG){
+          newGrid[ni][d] = SHIFT_CODES.PAGI_SIAGA;
+          pgsgDailyLog[ni][d] = true;
+          pgAssigned++;
+        } else {
+          newGrid[ni][d] = SHIFT_CODES.PAGI;
+        }
+      });
+
+      let sgAssigned = 0;
+      siangList.forEach(ni => {
+        const canSG = sgAssigned < 2
+          && quotaSiang > 2
+          && pgsgCountInWindow(ni, d) < MAX_PGSG_PER_WEEK;
+        if(canSG){
+          newGrid[ni][d] = SHIFT_CODES.SIANG_SIAGA;
+          pgsgDailyLog[ni][d] = true;
+          sgAssigned++;
+        } else {
+          newGrid[ni][d] = SHIFT_CODES.SIANG;
+        }
+      });
+
+      /* ── Langkah 6: Soft Warning jika formasi darurat ───────────────
+         Jika >= 2 perawat Cuti/Libur di hari kerja, tampilkan notifikasi. */
+      const cutiCount = nurses.filter((_, ni) => {
+        const c = newGrid[ni][d]; return c==="T" || c==="L";
+      }).length;
+      if(cutiCount >= 2){
+        const pagiCount  = pagiList.length  + karuInAvail.length;
+        const siangCount = siangList.length;
+        warns.push(`⚠️ Hari ke-${d+1}: ${cutiCount} perawat cuti/libur. Formasi darurat diterapkan (Pagi: ${pagiCount}, Siang: ${siangCount}).`);
+      }
+    } // ── end for loop hari ──
+
+    setGrid(newGrid);
+    setWarnings(warns);
+    warns.forEach(w => showToast(w, "#E07800"));
+    showToast("✅ Roster berhasil di-generate!", "#2E7D32");
+  };
+
+  /* ─── Live counter per kolom ──────────────────────────────────────── */
+  const countCode = (code: string) => {
+    return Array.from({length:daysInMonth},(_,d)=>nurses.reduce((c,_,ni)=>newGrid_safe(ni,d)===code?c+1:c,0));
+  };
+  const newGrid_safe = (ni:number, d:number) => grid[ni]?.[d] ?? "";
+  const sumRow = (codes: string[]) => (d:number) => nurses.reduce((c,_,ni)=>codes.includes(newGrid_safe(ni,d))?c+1:c,0);
+
+  /* ─── Download Excel ─────────────────────────────────────────────── */
+  const downloadExcel = async () => {
+    try{
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet("Roster Perawat");
+      // Header row 1: info rumah sakit
+      const bulanNama = new Date(year, month, 1).toLocaleString("id-ID",{month:"long",year:"numeric"});
+      ws.mergeCells(1,1,1,5+daysInMonth);
+      const titleCell = ws.getCell(1,1);
+      titleCell.value = `ROSTER PERAWAT — ${HOSPITAL} — ${bulanNama.toUpperCase()}`;
+      titleCell.font = {bold:true, size:12, color:{argb:"FFFFFFFF"}};
+      titleCell.fill = {type:"pattern",pattern:"solid",fgColor:{argb:"FF16685F"}};
+      titleCell.alignment = {horizontal:"center",vertical:"middle"};
+      ws.getRow(1).height = 28;
+
+      // Header row 2: kolom
+      const headers = ["NO","NIK","PK","NAMA","SISA CUTI","TIPE",...Array.from({length:daysInMonth},(_,i)=>String(i+1))];
+      const hRow = ws.getRow(2);
+      headers.forEach((h,ci) => {
+        const cell = hRow.getCell(ci+1);
+        cell.value = h;
+        cell.font = {bold:true, size:10, color:{argb:"FFFFFFFF"}};
+        cell.fill = {type:"pattern",pattern:"solid",fgColor:{argb:"FF234B45"}};
+        cell.alignment = {horizontal:"center",vertical:"middle"};
+        cell.border = {top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
+      });
+      hRow.height = 22;
+
+      // Data rows (tanpa pewarnaan — warna diisi manual oleh pengguna)
+      nurses.forEach((n,ni) => {
+        const dr = ws.getRow(3+ni);
+        [ni+1,n.nik,n.pk,n.name,n.sisaCuti,n.tipe].forEach((v,ci) => {
+          const cell = dr.getCell(ci+1);
+          cell.value = v;
+          cell.alignment = {horizontal:"center",vertical:"middle"};
+          cell.border = {top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
+        });
+        Array.from({length:daysInMonth},(_,d) => {
+          const code = newGrid_safe(ni,d);
+          const cell = dr.getCell(7+d);
+          cell.value = code;
+          cell.alignment = {horizontal:"center",vertical:"middle"};
+          cell.border = {top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
+        });
+        dr.height = 18;
+      });
+
+      // Summary row
+      const sumR = ws.getRow(3+nurses.length);
+      const summaryLabels = ["","","","∑ Pagi","","","∑ Siang","","","∑ Libur","","","∑ Cuti"];
+      summaryLabels.forEach((l,ci) => {
+        if(l){ const c=sumR.getCell(ci+1); c.value=l; c.font={bold:true,size:9,color:{argb:"FF234B45"}}; c.alignment={horizontal:"center"}; }
+      });
+      Array.from({length:daysInMonth},(_,d) => {
+        const p = sumRow(["P","PG"])(d), s = sumRow(["S","SG"])(d), l = sumRow(["L","LG"])(d), t = sumRow(["T"])(d);
+        const c=sumR.getCell(7+d);
+        c.value=`P:${p} S:${s} L:${l} T:${t}`;
+        c.font={size:8};
+        c.alignment={horizontal:"center"};
+        c.border={top:{style:"medium"}};
+      });
+
+      // Column widths
+      ws.getColumn(1).width=5; ws.getColumn(2).width=12; ws.getColumn(3).width=8;
+      ws.getColumn(4).width=22; ws.getColumn(5).width=10; ws.getColumn(6).width=8;
+      for(let d=1;d<=daysInMonth;d++) ws.getColumn(6+d).width=4;
+
+      const buf = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href=url; a.download=`Roster_Perawat_${bulanNama.replace(" ","_")}.xlsx`;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+      showToast("✅ File Excel berhasil diunduh!", "#2E7D32");
+    } catch(e:any){ showToast("⚠ Gagal export Excel: "+(e?.message||"error"), "#D62828"); }
+  };
+
+  /* ─── Sync to Supabase ───────────────────────────────────────────── */
+  const syncToCloud = async () => {
+    setSyncing(true);
+    const payload = {
+      updated_at: new Date().toISOString(),
+      data: {
+        year, month, nurses,
+        jadwal: nurses.map((_,ni) => grid[ni].slice(0,daysInMonth).join(",")).join("|"),
+        holidays: holidays.slice(0,daysInMonth).join(","),
+        generatedAt: fNow(),
+      }
+    };
+    const res = await upsertOneToSupa("kb_roster_gen", payload);
+    setSyncing(false);
+    if(res.ok) showToast("✅ Roster tersinkron ke Supabase!", "#2E7D32");
+    else showToast("⚠ Gagal sync: "+(res.error||"error"), "#D62828");
+  };
+
+  /* ─── Backup to Dropbox ──────────────────────────────────────────── */
+  const backupToDropbox = async () => {
+    setSyncingDbx(true);
+    try {
+      // 1. Build Excel workbook
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet("Roster Perawat");
+      const bulanNama = new Date(year, month, 1).toLocaleString("id-ID",{month:"long",year:"numeric"});
+      ws.mergeCells(1,1,1,6+daysInMonth);
+      const titleCell = ws.getCell(1,1);
+      titleCell.value = `ROSTER PERAWAT — ${HOSPITAL} — ${bulanNama.toUpperCase()}`;
+      titleCell.font = {bold:true,size:12,color:{argb:"FFFFFFFF"}};
+      titleCell.fill = {type:"pattern",pattern:"solid",fgColor:{argb:"FF16685F"}};
+      titleCell.alignment = {horizontal:"center",vertical:"middle"};
+      ws.getRow(1).height = 28;
+      const headers = ["NO","NIK","PK","NAMA","SISA CUTI","TIPE",...Array.from({length:daysInMonth},(_,i)=>String(i+1))];
+      const hRow = ws.getRow(2);
+      headers.forEach((h,ci)=>{
+        const cell=hRow.getCell(ci+1);
+        cell.value=h; cell.font={bold:true,size:10,color:{argb:"FFFFFFFF"}};
+        cell.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF234B45"}};
+        cell.alignment={horizontal:"center",vertical:"middle"};
+        cell.border={top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
+      });
+      hRow.height=22;
+      nurses.forEach((n,ni)=>{
+        const dr=ws.getRow(3+ni);
+        [ni+1,n.nik,n.pk,n.name,n.sisaCuti,n.tipe].forEach((v,ci)=>{
+          const cell=dr.getCell(ci+1); cell.value=v;
+          cell.alignment={horizontal:"center",vertical:"middle"};
+          cell.border={top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
+        });
+        Array.from({length:daysInMonth},(_,d)=>{
+          const code=newGrid_safe(ni,d);
+          const cell=dr.getCell(7+d); cell.value=code;
+          cell.alignment={horizontal:"center",vertical:"middle"};
+          cell.border={top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
+        });
+        dr.height=18;
+      });
+      ws.getColumn(1).width=5; ws.getColumn(2).width=12; ws.getColumn(3).width=8;
+      ws.getColumn(4).width=22; ws.getColumn(5).width=10; ws.getColumn(6).width=8;
+      for(let d=1;d<=daysInMonth;d++) ws.getColumn(6+d).width=4;
+
+      // 2. Upload ke Dropbox via proxy (callDbxProxy langsung dengan base64 ExcelJS buffer)
+      const folder = dbxCfg.path.replace(/[^/]+$/,"");
+      const stamp  = `${year}-${String(month+1).padStart(2,"0")}`;
+      const path   = `${folder}Roster_Perawat_${stamp}.xlsx`;
+      const buf = await wb.xlsx.writeBuffer() as unknown as Uint8Array;
+      const CHUNK = 8192; let binary = "";
+      for(let i=0;i<buf.length;i+=CHUNK) binary+=String.fromCharCode(...buf.subarray(i,i+CHUNK));
+      const base64 = btoa(binary);
+      const dbxRes = await callDbxProxy({action:"upload_excel", path, base64});
+      if(dbxRes.ok) showToast("✅ Roster berhasil di-backup ke Dropbox!", "#0061FF");
+      else showToast("⚠ Gagal backup Dropbox: "+dbxRes.msg, "#D62828");
+    } catch(e:any){
+      showToast("⚠ Error backup Dropbox: "+(e?.message||"error"), "#D62828");
+    }
+    setSyncingDbx(false);
+  };
+
+  const bulanOptions = Array.from({length:12},(_,i)=>({ v:String(i), l:new Date(2000,i,1).toLocaleString("id-ID",{month:"long"}) }));
+  const yearOptions  = [year-1, year, year+1].map(y=>({v:String(y), l:String(y)}));
+
+  const cellStyle = (code: string): React.CSSProperties => {
+    const base: React.CSSProperties = { textAlign:"center", fontSize:10, fontWeight:700, padding:"2px 0", border:"1px solid #e0e0e0", minWidth:28, cursor:"text" };
+    if(code==="P"||code==="PG") return {...base, background:"#E3F2FD", color:"#1565C0"};
+    if(code==="S"||code==="SG") return {...base, background:"#FFF3E0", color:"#E65100"};
+    if(code==="L"||code==="LG") return {...base, background:"#F3F3F3", color:"#5C677D"};
+    if(code==="T") return {...base, background:"#FFEBEE", color:"#C62828"};
+    return {...base, background:"#fff", color:"#999"};
+  };
+
+  return (
+    <div style={{paddingBottom:40}}>
+      {/* Header */}
+      <Row title="🗓 Generator Roster Perawat" right={
+        <div style={{display:"flex",gap:8}}>
+          <Btn sm onClick={generateRoster} color="linear-gradient(135deg,#1e3a8a,#0284c7)">⚡ Generate</Btn>
+          <Btn sm onClick={downloadExcel} color="linear-gradient(135deg,#0369a1,#38bdf8)">⬇ Excel</Btn>
+          <Btn sm onClick={syncToCloud} color="linear-gradient(135deg,#1d4ed8,#6366f1)" disabled={syncing}>{syncing?"⏳ Supabase...":"☁ Supabase"}</Btn>
+          <Btn sm onClick={backupToDropbox} color="linear-gradient(135deg,#0061FF,#38bdf8)" disabled={syncingDbx}>{syncingDbx?"⏳ Dropbox...":"📦 Dropbox"}</Btn>
+        </div>
+      }/>
+
+      {/* Pilih Bulan / Tahun */}
+      <Card style={{marginBottom:12}}>
+        <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.g}}>Bulan & Tahun:</div>
+          <select value={month} onChange={e=>handleMonthYear(Number(e.target.value),year)} style={{...iS,width:140,padding:"7px 12px"}}>
+            {bulanOptions.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+          </select>
+          <select value={year} onChange={e=>handleMonthYear(month,Number(e.target.value))} style={{...iS,width:100,padding:"7px 12px"}}>
+            {yearOptions.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
+          </select>
+          <div style={{fontSize:12,color:C.tL}}>→ {daysInMonth} hari</div>
+        </div>
+      </Card>
+
+      {/* Legend */}
+      <Card style={{marginBottom:12}}>
+        <div style={{fontSize:11,fontWeight:700,color:C.g,marginBottom:8}}>KETERANGAN KODE SHIFT</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {[["P","Pagi","#E3F2FD","#1565C0"],["PG","Pagi Siaga","#E3F2FD","#1565C0"],["S","Siang","#FFF3E0","#E65100"],["SG","Siang Siaga","#FFF3E0","#E65100"],["L","Libur","#F3F3F3","#5C677D"],["LG","Libur Siaga","#F3F3F3","#5C677D"],["T","Cuti","#FFEBEE","#C62828"]].map(([k,l,bg,cl])=>(
+            <span key={k} style={{background:bg,color:cl,border:`1px solid ${cl}33`,fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:6}}>{k} = {l}</span>
+          ))}
+        </div>
+      </Card>
+
+      {/* Warnings */}
+      {warnings.length>0 && (
+        <Card style={{marginBottom:12,background:"#FFF8E1",border:"1px solid #E07800"}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#E07800",marginBottom:8}}>⚠ Peringatan Formasi Darurat</div>
+          {warnings.map((w,i)=><div key={i} style={{fontSize:11,color:"#5C4000",marginBottom:4}}>• {w}</div>)}
+        </Card>
+      )}
+
+      {/* Tabel scrollable */}
+      <Card style={{padding:0,overflow:"hidden"}}>
+        <div style={{overflowX:"auto"}}>
+          <table style={{borderCollapse:"collapse",minWidth:"100%",fontSize:11}}>
+            <thead>
+              {/* Row hari libur checkbox */}
+              <tr style={{background:"#F8F9FA"}}>
+                <td colSpan={6} style={{padding:"6px 10px",fontSize:11,fontWeight:700,color:C.g,borderBottom:"1px solid #e0e0e0"}}>Hari Libur ↓</td>
+                {Array.from({length:daysInMonth},(_,d)=>(
+                  <td key={d} style={{textAlign:"center",padding:"4px 2px",borderBottom:"1px solid #e0e0e0",minWidth:28}}>
+                    <input type="checkbox" checked={holidays[d]} onChange={e=>setHolidays(h=>h.map((v,i)=>i===d?e.target.checked:v))} style={{cursor:"pointer"}} title={`Hari ke-${d+1} = Hari Libur`}/>
+                  </td>
+                ))}
+              </tr>
+              {/* Header kolom */}
+              <tr style={{background:C.p}}>
+                {["NO","NIK","PK","NAMA","SISA\nCUTI","TIPE"].map(h=>(
+                  <th key={h} style={{padding:"7px 8px",color:"#fff",fontWeight:700,fontSize:11,whiteSpace:"pre",textAlign:"center",borderRight:"1px solid rgba(255,255,255,.2)",position:"sticky",left:0,background:C.p}}>{h}</th>
+                ))}
+                {Array.from({length:daysInMonth},(_,d)=>{
+                  const date = new Date(year,month,d+1);
+                  const isHol = holidays[d];
+                  const isSun = date.getDay()===0;
+                  return (
+                    <th key={d} style={{padding:"4px 2px",color:"#fff",fontWeight:isSun||isHol?900:600,fontSize:10,textAlign:"center",background:isSun||isHol?"#C62828":C.p,minWidth:28,borderRight:"1px solid rgba(255,255,255,.15)"}}>
+                      {d+1}<br/><span style={{fontSize:8,opacity:.8}}>{"MSLRKJS"[date.getDay()]}</span>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {nurses.map((n,ni)=>(
+                <tr key={n.id} style={{background:ni%2===0?"#fff":"#F8FDFC"}}>
+                  <td style={{padding:"4px 6px",textAlign:"center",fontWeight:700,fontSize:11,borderRight:"1px solid #f0f0f0",minWidth:32}}>{ni+1}</td>
+                  <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:70}}>
+                    <input value={n.nik} onChange={e=>updateNurse(ni,"nik",e.target.value)} style={{width:"100%",border:"none",background:"transparent",fontSize:10,textAlign:"center",outline:"none"}} placeholder="NIK"/>
+                  </td>
+                  <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:50}}>
+                    <input value={n.pk} onChange={e=>updateNurse(ni,"pk",e.target.value)} style={{width:"100%",border:"none",background:"transparent",fontSize:10,textAlign:"center",outline:"none"}} placeholder="PK"/>
+                  </td>
+                  <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:120}}>
+                    <input value={n.name} onChange={e=>updateNurse(ni,"name",e.target.value)} style={{width:"100%",border:"none",background:"transparent",fontSize:11,outline:"none"}} placeholder="Nama perawat..."/>
+                  </td>
+                  <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:50}}>
+                    <input type="number" value={n.sisaCuti} onChange={e=>updateNurse(ni,"sisaCuti",Number(e.target.value))} style={{width:"100%",border:"none",background:"transparent",fontSize:10,textAlign:"center",outline:"none"}} min={0} max={30}/>
+                  </td>
+                  <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:70}}>
+                    <select value={n.tipe} onChange={e=>updateNurse(ni,"tipe",e.target.value as NurseType)} style={{width:"100%",border:"none",background:"transparent",fontSize:10,outline:"none",cursor:"pointer"}}>
+                      <option value="karu">Karu</option>
+                      <option value="senior">Senior</option>
+                      <option value="junior">Junior</option>
+                    </select>
+                  </td>
+                  {Array.from({length:daysInMonth},(_,d)=>{
+                    const code = newGrid_safe(ni,d);
+                    return (
+                      <td key={d} style={cellStyle(code)}>
+                        <input
+                          value={code}
+                          onChange={e=>updateCell(ni,d,e.target.value)}
+                          style={{width:26,border:"none",background:"transparent",textAlign:"center",fontSize:10,fontWeight:700,outline:"none",color:"inherit",padding:0}}
+                          maxLength={2}
+                        />
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+            {/* Summary footer */}
+            <tfoot>
+              {[
+                {label:"∑ Pagi (P)",   codes:["P"],   bg:"#E3F2FD", cl:"#1565C0"},
+                {label:"∑ Pagi Siaga (PG)", codes:["PG"], bg:"#BBDEFB", cl:"#1565C0"},
+                {label:"∑ Siang (S)",  codes:["S"],   bg:"#FFF3E0", cl:"#E65100"},
+                {label:"∑ Siang Siaga (SG)", codes:["SG"], bg:"#FFE0B2", cl:"#E65100"},
+                {label:"∑ Libur (L/LG)", codes:["L","LG"], bg:"#F3F3F3", cl:"#5C677D"},
+                {label:"∑ Cuti (T)",   codes:["T"],   bg:"#FFEBEE", cl:"#C62828"},
+              ].map(({label,codes,bg,cl})=>(
+                <tr key={label} style={{background:bg}}>
+                  <td colSpan={6} style={{padding:"4px 10px",fontSize:11,fontWeight:700,color:cl,textAlign:"right",borderTop:"2px solid rgba(0,0,0,.08)"}}>{label}</td>
+                  {Array.from({length:daysInMonth},(_,d)=>{
+                    const cnt = nurses.reduce((c,_,ni)=>codes.includes(newGrid_safe(ni,d))?c+1:c,0);
+                    return <td key={d} style={{textAlign:"center",fontSize:11,fontWeight:700,color:cl,borderTop:"2px solid rgba(0,0,0,.08)",minWidth:28}}>{cnt||""}</td>;
+                  })}
+                </tr>
+              ))}
+            </tfoot>
+          </table>
+        </div>
+      </Card>
+
+      {/* Tombol Tambah Perawat */}
+      <div style={{marginTop:12}}>
+        <Btn sm onClick={addNurse} color={C.g} outline>+ Tambah Perawat</Btn>
+        <span style={{marginLeft:12,fontSize:11,color:C.tL}}>Total: {nurses.length} perawat</span>
+      </div>
+    </div>
+  );
+}
+
 /* FIX AUDIT #12: ALL_TABS sebagai module-level constant (stabil antar render) */
 const ALL_TABS: Array<{k:string; l:string; roles:Array<"admin"|"perawat">}> = [
+  {k:"home",      l:"🏠 Home",       roles:["admin","perawat"]},
   {k:"jadwal",    l:"📋 Jadwal",     roles:["admin","perawat"]},
   {k:"daftar",    l:"📝 Daftar",     roles:["admin","perawat"]},
   {k:"laporan",   l:"📄 Laporan",    roles:["admin","perawat"]},
@@ -5214,6 +5790,7 @@ const ALL_TABS: Array<{k:string; l:string; roles:Array<"admin"|"perawat">}> = [
   {k:"staf",      l:"👥 Staf",       roles:["admin"]},
   {k:"lembur",    l:"⏰ Lembur",     roles:["admin","perawat"]},
   {k:"monitoring",l:"🌡 Monitoring", roles:["admin","perawat"]},
+  {k:"roster_gen", l:"🗓 Generator",   roles:["admin"]},
   {k:"arsip",     l:"🗂 Arsip",      roles:["admin"]},
 ];
 
@@ -5225,7 +5802,7 @@ export default function App() {
   const [pinLoaded,  setPinLoaded]  = useState(false);
   const [pinFromCloud, setPinFromCloud] = useState(false); // true jika PIN loaded dari Supabase
   const isFirstTime = pinLoaded && !pinFromCloud; // first time jika Supabase tidak punya PIN
-  const [tab,      setTab]      = useState("jadwal");
+  const [tab,      setTab]      = useState("home");
 
   // Load PIN dari Supabase saat pertama buka — pakai SUPA_CLIENT singleton
   useEffect(()=>{
@@ -5463,35 +6040,36 @@ export default function App() {
       *{box-sizing:border-box;}
       html,body{margin:0;padding:0;}
       @keyframes kbPulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(201,169,97,.55);}50%{opacity:.85;box-shadow:0 0 0 4px rgba(201,169,97,0);}}
+      @keyframes lgFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
 
       /* ── Mobile default (<640px) ── */
-      body{background:${C.bg};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
+      body{background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
       .kbShell{width:100%;min-height:100vh;}
       .kb-header{padding:12px 16px 0;}
       .kb-header-inner{margin-bottom:10px;}
       .kb-tabs{display:flex;overflow-x:auto;-webkit-overflow-scrolling:touch;gap:0;padding-bottom:0;}
-      .kb-tab-btn{padding:9px 12px;flex-shrink:0;white-space:nowrap;font-size:13px;font-weight:600;}
-      .kb-content{padding:14px 16px 32px;}
+      .kb-tab-btn{padding:10px 14px;flex-shrink:0;white-space:nowrap;font-size:15px;font-weight:700;}
+      .kb-content{padding:14px 16px 32px;background:#f8fafc;}
       .kb-sidebar{display:none;}
       .kb-main{display:block;}
-      .kb-hospital{font-size:10px;}
-      .kb-title{font-size:15px;}
+      .kb-hospital{font-size:11px;}
+      .kb-title{font-size:20px;}
 
       /* ── Tablet (640px–1023px) ── */
       @media(min-width:640px){
-        body{background:#E0EEE9;}
-        .kbShell{max-width:720px;margin:0 auto;box-shadow:0 4px 24px rgba(0,0,0,.10);}
+        body{background:#dbeafe;}
+        .kbShell{max-width:720px;margin:0 auto;box-shadow:0 4px 24px rgba(59,130,246,.12);}
         input,select,textarea{font-size:15px!important;}
-        .kb-tab-btn{padding:10px 16px;font-size:14px;font-weight:700;}
-        .kb-content{padding:18px 22px 36px;}
-        .kb-title{font-size:16px;}
-        .kb-hospital{font-size:11px;}
+        .kb-tab-btn{padding:11px 18px;font-size:16px;font-weight:800;}
+        .kb-content{padding:18px 22px 36px;background:#f8fafc;}
+        .kb-title{font-size:22px;}
+        .kb-hospital{font-size:12px;}
       }
 
       /* ── Desktop (≥1024px) ── */
       @media(min-width:1024px){
         body{
-          background:linear-gradient(135deg,#15473F 0%,#16685F 50%,#1F5A52 100%)!important;
+          background:linear-gradient(135deg,#0c1445 0%,#1e3a8a 45%,#0284c7 100%)!important;
           min-height:100vh;
           display:flex;align-items:flex-start;justify-content:center;
           padding:28px 20px;
@@ -5501,7 +6079,7 @@ export default function App() {
           width:100%;max-width:1160px;
           border-radius:20px;
           overflow:hidden;
-          box-shadow:0 24px 80px rgba(0,0,0,.40);
+          box-shadow:0 24px 80px rgba(30,58,138,.45);
           min-height:calc(100vh - 56px);
           display:flex;flex-direction:column;
           margin:0 auto;
@@ -5512,25 +6090,25 @@ export default function App() {
         .kb-sidebar{
           display:flex;flex-direction:column;
           width:200px;min-width:200px;
-          background:linear-gradient(180deg,#234B45,#1F5A52);
+          background:linear-gradient(180deg,#1e3a8a,#1d4ed8 60%,#0284c7);
           padding:16px 10px;gap:4px;position:relative;
-          border-right:1px solid rgba(255,255,255,.10);
+          border-right:1px solid rgba(255,255,255,.12);
           min-height:calc(100vh - 56px - 60px);
         }
         .kb-sidebar-btn{
           display:flex;align-items:center;gap:10px;
           padding:11px 14px;border-radius:10px;
           font-size:14px;font-weight:600;
-          color:rgba(255,255,255,.75);
+          color:rgba(255,255,255,.72);
           background:none;border:none;cursor:pointer;
           text-align:left;width:100%;
           font-family:inherit;transition:all .15s;
         }
-        .kb-sidebar-btn:hover{background:rgba(255,255,255,.08);color:#fff;}
-        .kb-sidebar-btn.active{background:rgba(255,255,255,.07);color:#fff;font-weight:800;box-shadow:inset 3px 0 0 #C9A961;}
-        .kb-main{display:flex;flex:1;}
-        .kb-content{flex:1;padding:24px 32px 40px;overflow-y:auto;}
-        .kb-title{font-size:18px;}
+        .kb-sidebar-btn:hover{background:rgba(255,255,255,.10);color:#fff;}
+        .kb-sidebar-btn.active{background:rgba(255,255,255,.18);color:#fff;font-weight:900;box-shadow:inset 3px 0 0 #38bdf8;}
+        .kb-main{display:flex;flex:1;background:#f8fafc;}
+        .kb-content{flex:1;padding:24px 32px 40px;overflow-y:auto;background:#f8fafc;}
+        .kb-title{font-size:24px;}
         .kb-hospital{font-size:12px;}
         input,select,textarea{font-size:15px!important;}
       }
@@ -6241,13 +6819,26 @@ export default function App() {
      agar referensinya stabil. handleTabChange dibuat satu kali via useCallback
      sehingga setiap tombol tab tidak mendapat fungsi baru setiap render.
      TABS di-memoize bergantung hanya pada role — stabil selama role tidak berubah. */
-  const handleTabChange = useCallback((k: string) => setTab(k), []);
+  const handleTabChange = useCallback((k: string) => {
+    if(k === "roster_gen" && role !== "admin"){
+      showToast("⚠️ Akses Ditolak: Fitur ini memerlukan hak akses Admin.", C.d);
+      setTab("home");
+      return;
+    }
+    setTab(k);
+  }, [role, showToast]);
   /* Handler untuk event button — membaca key dari data-tab attribute.
      Satu fungsi stabil untuk semua tombol tab (tidak perlu arrow function per tombol). */
   const handleTabClickEvt = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
     const k = e.currentTarget.dataset.tab;
-    if(k) setTab(k);
-  }, []);
+    if(!k) return;
+    if(k === "roster_gen" && role !== "admin"){
+      showToast("⚠️ Akses Ditolak: Fitur ini memerlukan hak akses Admin.", C.d);
+      setTab("home");
+      return;
+    }
+    setTab(k);
+  }, [role, showToast]);
   const TABS = useMemo(() => ALL_TABS.filter(t => t.roles.includes(role)), [role]);
 
   if(!pinLoaded) return (
@@ -6262,8 +6853,78 @@ export default function App() {
   );
   if(!pinOK) return <PinScreen onVerify={handlePinVerify} pinAdmin={pinAdmin} pinPerawat={pinPerawat} isFirstTime={isFirstTime}/>;
 
+  const todayOpsCount = ops.filter((o:any)=>o.date===todayDate()).length;
+
   const content = (
     <ErrorBoundary>
+      {tab==="home" && (
+        <div style={{paddingBottom:32}}>
+          {/* Welcome Banner */}
+          <div style={{background:"linear-gradient(135deg,#1e3a8a,#0284c7)",borderRadius:16,padding:"28px 24px",marginBottom:20,color:"#fff",boxShadow:"0 4px 20px rgba(30,58,138,.30)"}}>
+            <div style={{fontSize:11,fontWeight:700,letterSpacing:2,opacity:.75,textTransform:"uppercase",marginBottom:6}}>Selamat Datang</div>
+            <div style={{fontSize:22,fontWeight:900,lineHeight:1.2,marginBottom:6}}>Sistem Koordinasi<br/>Kamar Bedah</div>
+            <div style={{fontSize:13,opacity:.85}}>RS Panti Rini · {new Date().toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
+          </div>
+
+          {/* Quick Stats */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:20}}>
+            {/* Card 1: Operasi Hari Ini */}
+            <div style={{background:"#fff",borderRadius:14,padding:"16px 14px",boxShadow:"0 2px 12px rgba(0,0,0,.07)",border:"1px solid #E3F2FD",textAlign:"center"}}>
+              <div style={{fontSize:32,fontWeight:900,color:"#1565C0",lineHeight:1}}>{todayOpsCount}</div>
+              <div style={{fontSize:11,fontWeight:700,color:"#1565C0",marginTop:4}}>Operasi</div>
+              <div style={{fontSize:10,color:"#5C677D",marginTop:2}}>Hari Ini</div>
+            </div>
+            {/* Card 2: Status Sync */}
+            <div style={{background:"#fff",borderRadius:14,padding:"16px 14px",boxShadow:"0 2px 12px rgba(0,0,0,.07)",border:`1px solid ${rtStatus==="online"?"#E8F5E9":"#FFF3E0"}`,textAlign:"center"}}>
+              <div style={{fontSize:28,lineHeight:1}}>{rtStatus==="online"?"🟢":"🟡"}</div>
+              <div style={{fontSize:11,fontWeight:700,color:rtStatus==="online"?C.s:C.w,marginTop:4}}>{rtStatus==="online"?"Online":"Offline"}</div>
+              <div style={{fontSize:10,color:"#5C677D",marginTop:2}}>Cloud Sync</div>
+            </div>
+            {/* Card 3: Staf terdaftar */}
+            <div style={{background:"#fff",borderRadius:14,padding:"16px 14px",boxShadow:"0 2px 12px rgba(0,0,0,.07)",border:"1px solid #EDE7F6",textAlign:"center"}}>
+              <div style={{fontSize:32,fontWeight:900,color:"#512DA8",lineHeight:1}}>{staff.length}</div>
+              <div style={{fontSize:11,fontWeight:700,color:"#512DA8",marginTop:4}}>Staf</div>
+              <div style={{fontSize:10,color:"#5C677D",marginTop:2}}>Terdaftar</div>
+            </div>
+          </div>
+
+          {/* Operasi hari ini ringkas */}
+          <Card style={{marginBottom:16}}>
+            <SH label="📋 Operasi Hari Ini" color={C.i}/>
+            {ops.filter((o:any)=>o.date===todayDate()&&o.status!=="batal").length===0
+              ? <div style={{fontSize:13,color:C.tL,textAlign:"center",padding:"8px 0",fontStyle:"italic"}}>Tidak ada operasi terjadwal hari ini</div>
+              : [...ops.filter((o:any)=>o.date===todayDate()&&o.status!=="batal")].sort((a:any,b:any)=>a.time.localeCompare(b.time)).map((op:any)=>(
+                <div key={op.id} style={{display:"flex",gap:10,alignItems:"center",marginBottom:8,paddingBottom:8,borderBottom:`1px solid ${C.b}`}}>
+                  <div style={{background:op.opType==="cyto"?"#FFCDD2":C.iBg,borderRadius:8,padding:"4px 8px",fontSize:11,fontWeight:700,color:op.opType==="cyto"?"#B71C1C":C.i,flexShrink:0,minWidth:46,textAlign:"center"}}>{op.time}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,fontWeight:700,color:C.t,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{maskName(op.patient,privacyMode)}</div>
+                    <div style={{fontSize:11,color:C.tL,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{op.procedure} · {op.room}</div>
+                  </div>
+                  <Bdg label={STS[op.status as keyof typeof STS]?.l||"Terjadwal"} color={STS[op.status as keyof typeof STS]?.c||C.i} bg={STS[op.status as keyof typeof STS]?.bg||C.iBg}/>
+                </div>
+              ))
+            }
+          </Card>
+
+          {/* Quick Links */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <button onClick={()=>setTab("daftar")} style={{background:"linear-gradient(135deg,#0284c7,#38bdf8)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(2,132,199,.35)",textAlign:"center",fontFamily:"inherit"}}>
+              📝 Daftar Operasi
+            </button>
+            <button onClick={()=>setTab("laporan")} style={{background:"linear-gradient(135deg,#1d4ed8,#6366f1)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(29,78,216,.30)",textAlign:"center",fontFamily:"inherit"}}>
+              📄 Laporan Kepala Jaga
+            </button>
+            <button onClick={()=>setTab("jadwal")} style={{background:"linear-gradient(135deg,#1e3a8a,#1d4ed8)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(30,58,138,.30)",textAlign:"center",fontFamily:"inherit"}}>
+              📋 Lihat Jadwal
+            </button>
+            {role==="admin" && (
+              <button onClick={()=>setTab("roster_gen")} style={{background:"linear-gradient(135deg,#0369a1,#0284c7)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(3,105,161,.30)",textAlign:"center",fontFamily:"inherit"}}>
+                🗓 Generator Roster
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {tab==="jadwal"     && <ViewJadwal ops={ops} setOps={setOps} startEditOp={startEditOp} deleteOp={deleteOp} sendReminder={sendReminder} reqOpId={reqOpId} setReqOpId={setReqOpId} reqText={reqText} setReqText={setReqText} addReq={addReq} delReq={delReq} getPhone={getPhone} setNotifs={setNotifs} showToast={showToast} privacyMode={privacyMode} role={role} upsertOneToSupa={upsertOneToSupa}/>}
       {tab==="daftar"     && <ViewDaftar pendingEditOp={pendingEditOp} clearPendingEditOp={()=>setPendingEditOp(null)} saveOpFn={saveOpFn} staff={staff} setTab={setTab} templates={templates} setTemplates={setTemplates} showToast={showToast}/>}
       {tab==="laporan"    && <ViewLaporan ops={ops} staff={staff} roster={roster} showToast={showToast} role={role} privacyMode={privacyMode}/>}
@@ -6272,6 +6933,7 @@ export default function App() {
       {tab==="staf"       && <ViewStaf staff={staff} setStaff={setStaff} roster={roster} setRoster={setRoster} showToast={showToast} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} upsertBulkToSupa={upsertBulkToSupa}/>}
       {tab==="lembur"     && <ViewLembur lemburPegawai={lemburPegawai} setLemburPegawai={setLemburPegawai} lemburData={lemburData} setLemburData={setLemburData} showToast={showToast} supaCfg={supaCfg} dbxCfg={dbxCfg} role={role} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa}/>}
       {tab==="monitoring" && <ViewMonitoring monitoringEntries={monitoringEntries} setMonitoringEntries={setMonitoringEntries} monitoringCfg={monitoringCfg} setMonitoringCfg={setMonitoringCfg} showToast={showToast} supaCfg={supaCfg} dbxCfg={dbxCfg} role={role} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa}/>}
+      {tab==="roster_gen" && role==="admin" && <ViewRosterGenerator showToast={showToast} upsertOneToSupa={upsertOneToSupa} dbxCfg={dbxCfg}/>}
       {tab==="arsip"      && <ViewArsip
         data={{ops, archive, notifs, lemburData, lemburPegawai, monitoringEntries, monitoringCfg}}
         setOps={setOps}
@@ -6300,13 +6962,13 @@ export default function App() {
     <div className="kbShell" style={{color:C.t,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}>
 
       {/* ── Sticky header (mobile + tablet: full header; desktop: top bar only) ── */}
-      <div className="kb-header" style={{background:`linear-gradient(135deg,${C.p},${C.pL})`,position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 12px rgba(0,0,0,.18)"}}>
+      <div className="kb-header" style={{background:"linear-gradient(135deg,#1e3a8a,#1d4ed8 55%,#0284c7)",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 16px rgba(30,58,138,.35)"}}>
         <div className="kb-header-inner" style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
             <img src="/logo.jpeg" alt="Logo KB" style={{width:50,height:50,borderRadius:"50%",objectFit:"cover",border:"2px solid rgba(255,255,255,.5)",animation:"lgFloat 3s ease-in-out infinite",flexShrink:0}}/>
             <div>
               <div style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,.6)",letterSpacing:2,textTransform:"uppercase",marginBottom:1}}>Rumah Sakit Panti Rini</div>
-              <div className="kb-title" style={{fontWeight:900,color:"#fff",letterSpacing:.5,fontSize:16,lineHeight:1.1}}>SISTEM KOORDINASI<br/>KAMAR BEDAH</div>
+              <div className="kb-title" style={{fontWeight:900,color:"#fff",letterSpacing:.5,lineHeight:1.1}}>SISTEM KOORDINASI<br/>KAMAR BEDAH</div>
               <HeaderClock/>
             </div>
           </div>
@@ -6331,7 +6993,7 @@ export default function App() {
         <div className="kb-tabs">
           {TABS.map(t=>(
             <button key={t.k} data-tab={t.k} onClick={handleTabClickEvt} className="kb-tab-btn"
-              style={{border:"none",background:tab===t.k?"rgba(255,255,255,.18)":"none",color:tab===t.k?"#fff":"rgba(255,255,255,.6)",fontWeight:tab===t.k?700:400,cursor:"pointer",borderBottom:tab===t.k?"3px solid #fff":"3px solid transparent",borderRadius:"8px 8px 0 0",transition:"all .15s",fontFamily:"inherit"}}>
+              style={{border:"none",background:tab===t.k?"rgba(255,255,255,.20)":"none",color:tab===t.k?"#fff":"rgba(255,255,255,.60)",fontWeight:tab===t.k?900:600,cursor:"pointer",borderBottom:tab===t.k?"3px solid #38bdf8":"3px solid transparent",borderRadius:"8px 8px 0 0",transition:"all .15s",fontFamily:"inherit"}}>
               {t.l}
             </button>
           ))}
@@ -6340,7 +7002,7 @@ export default function App() {
 
       {/* ── Storage warning banner ── */}
       {/* ── Body: sidebar (desktop only) + content ── */}
-      <div className="kb-main" style={{background:C.bg,flex:1}}>
+      <div className="kb-main" style={{background:"#f8fafc",flex:1}}>
 
         {/* Desktop sidebar — hidden on mobile via CSS */}
         <aside className="kb-sidebar">
