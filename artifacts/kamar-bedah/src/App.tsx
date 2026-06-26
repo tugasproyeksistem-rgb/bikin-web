@@ -5435,6 +5435,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
   const [nurses, setNurses]     = useState<RosterNurse[]>(defaultNurses);
   // grid[nurseIdx][dayIdx] = kode shift string
   const [grid, setGrid]         = useState<string[][]>(() => defaultNurses().map(()=>Array(31).fill("")));
+  const newGrid_safe = (ni:number, d:number) => grid[ni]?.[d] ?? "";
   const [holidays, setHolidays] = useState<boolean[]>(()=>Array(31).fill(false));
   const [syncing, setSyncing]   = useState(false);
   const [syncingDbx, setSyncingDbx] = useState(false);
@@ -5865,7 +5866,6 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
   const countCode = (code: string) => {
     return Array.from({length:daysInMonth},(_,d)=>nurses.reduce((c,_,ni)=>newGrid_safe(ni,d)===code?c+1:c,0));
   };
-  const newGrid_safe = (ni:number, d:number) => grid[ni]?.[d] ?? "";
   const sumRow = (codes: string[]) => (d:number) => nurses.reduce((c,_,ni)=>codes.includes(newGrid_safe(ni,d))?c+1:c,0);
 
   /* ─── FITUR 2 — TOMBOL "SIMPAN JADWAL" ─────────────────────────────── */
