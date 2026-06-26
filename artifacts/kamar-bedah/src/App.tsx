@@ -373,7 +373,10 @@ const toLocalISODate = (d: Date): string => `${d.getFullYear()}-${String(d.getMo
 const todayDate = () => toLocalISODate(new Date());
 const tmrwDate  = () => { const d=new Date(); d.setDate(d.getDate()+1); return toLocalISODate(d); };
 const fD        = (d: string) => { if(!d)return"-"; try{ return new Date(d+"T00:00:00").toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long",year:"numeric"}); }catch{ return d; } };
-const fNow      = () => new Date().toLocaleString("id-ID",{day:"numeric",month:"long",year:"numeric",hour:"2-digit",minute:"2-digit"});
+/* fDMY: format DD / MM / YYYY — dipakai di semua tab untuk display tanggal seragam */
+const fDMY      = (d: string): string => { if(!d)return"—"; try{ const [y,m,day]=d.split("-"); if(!y||!m||!day)return d; return `${day.padStart(2,"0")} / ${m.padStart(2,"0")} / ${y}`; }catch{ return d; } };
+/* fNowMY: tanggal+waktu sekarang, tanggal dalam format DD/MM/YYYY */
+const fNow      = () => { const n=new Date(); const day=String(n.getDate()).padStart(2,"0"); const mo=String(n.getMonth()+1).padStart(2,"0"); const y=n.getFullYear(); const hh=String(n.getHours()).padStart(2,"0"); const mm=String(n.getMinutes()).padStart(2,"0"); return `${day}/${mo}/${y} ${hh}:${mm}`; };
 const fTR       = (t: string) => t?t.replace(":",".") : "";
 /* FIX AUDIT #11 (MEDIUM): gWord sebelumnya memanggil new Date() dua kali —
    jika dipanggil tepat saat jam berganti (mis. 11:59:59.999 → 12:00:00.000),
@@ -886,7 +889,7 @@ function buildLaporan({greeting,recipients,keterangan,todayOps,tomorrowOps,anest
       }).join("\n\n");
     }).join("\n\n");
   };
-  let tmrwSec = `Rencana operasi besok hari ${fDLower(tmrwDate())}:\n`;
+  let tmrwSec = `Rencana operasi besok tanggal ${fDMY(tmrwDate())}:\n`;
   if(pagi.length) tmrwSec += `\n*PAGI*\n${renderShift(pagi)}`;
   if(sore.length) tmrwSec += `\n\n*SORE*\n${renderShift(sore)}`;
   if(!pagi.length&&!sore.length) tmrwSec += "\nBelum ada rencana operasi";
@@ -1180,9 +1183,16 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
       return true;
     })
     .sort((a:any,b:any)=>{
-      const at=a.date===todayDate(),bt=b.date===todayDate();
+      // Prioritas 1: cyto hari ini selalu paling atas
+      const at=a.date===todayStr, bt=b.date===todayStr;
       if(at&&a.opType==="cyto"&&!(bt&&b.opType==="cyto")) return -1;
       if(bt&&b.opType==="cyto"&&!(at&&a.opType==="cyto")) return 1;
+      // Prioritas 2: yang belum selesai naik, yang done turun
+      const aDone = a.status==="done"||a.status==="batal";
+      const bDone = b.status==="done"||b.status==="batal";
+      if(!aDone && bDone) return -1;
+      if(aDone && !bDone) return 1;
+      // Prioritas 3: kronologis tanggal & jam
       return a.date.localeCompare(b.date)||a.time.localeCompare(b.time);
     });
   const total  = Math.ceil(sorted.length/PAGE_SIZE);
@@ -1244,32 +1254,91 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
       {paged.map((op:any)=>{
         const sc=STS[op.status as keyof typeof STS]||STS.scheduled, ot=OT[op.opType as keyof typeof OT||"elektif"];
         const hasAlg=op.allergy&&op.allergy!=="Tidak Ada", isBatal=op.status==="batal";
+        const isDone   = op.status==="done";
+        const isToday  = op.date===todayStr;
+        const isActive = isToday && !isDone && !isBatal; // blinking dot condition
+
+        /* ── Auto-minimize: pasien selesai hari ini ── */
+        if(isDone && isToday) return (
+          <div key={op.id} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 14px",marginBottom:6,borderRadius:10,background:"#f1f5f9",border:"1px solid #e2e8f0",opacity:.45,transition:"opacity .3s"}}>
+            <span style={{fontSize:11,color:"#94a3b8",fontWeight:700,flexShrink:0}}>✅</span>
+            <span style={{fontSize:12,color:"#475569",flex:1,textDecoration:"line-through",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{maskName(op.patient,privacyMode)} — {op.time} — {op.procedure}</span>
+            <Bdg label="Selesai" color={C.s} bg={C.sBg}/>
+          </div>
+        );
+
         return (
-          <Card key={op.id} hi={op.opType==="cyto"&&!isBatal?"#F44336":hasAlg&&!isBatal?C.dL:undefined} style={{opacity:isBatal?.72:1}}>
+          <Card key={op.id}
+            hi={op.opType==="cyto"&&!isBatal?"#F44336":hasAlg&&!isBatal?C.dL:undefined}
+            style={{
+              opacity:isBatal?.72:1,
+              background:isActive?"#fef2f2":undefined,
+              border:isActive?"1.5px solid #fca5a5":undefined,
+              transition:"all .3s"
+            }}
+          >
+            {/* ── Alert banners ── */}
             {op.opType==="cyto"&&!isBatal && <div style={{background:"#FFCDD2",borderRadius:8,padding:"6px 12px",marginBottom:8,fontSize:12,fontWeight:700,color:"#B71C1C"}}>⚠️ CYTO / EMERGENCY — SEGERA DITANGANI</div>}
             {hasAlg&&op.opType!=="cyto"&&!isBatal && <div style={{background:C.dBg,borderRadius:8,padding:"5px 12px",marginBottom:8,fontSize:12,fontWeight:700,color:C.d}}>⚠ ALERGI: {op.allergy}</div>}
             {isBatal && <div style={{background:C.dBg,borderRadius:8,padding:"5px 12px",marginBottom:8,fontSize:12,fontWeight:700,color:C.d}}>✕ {op.cancelReason?"BATAL: "+op.cancelReason:"BATAL/DITUNDA"}</div>}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-              <div style={{flex:1,marginRight:8}}>
-                <div style={{fontSize:15,fontWeight:800,color:C.t,textDecoration:isBatal?"line-through":"none"}}>{maskName(op.patient,privacyMode)||"—"}</div>
-                <div style={{fontSize:12,color:C.tL,marginTop:2}}>{op.age?op.age+"th  ":""}{op.rm?"RM "+maskRM(op.rm,privacyMode)+"  ":""}{op.bloodType}</div>
+
+            {/* ── Header row: nama + badge + Mulai/Selesai di kanan ── */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8,gap:8}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:2}}>
+                  {/* Blinking red dot — hanya untuk pasien aktif hari ini */}
+                  {isActive && (
+                    <span style={{width:10,height:10,borderRadius:"50%",background:"#ef4444",flexShrink:0,display:"inline-block",animation:"redPulse 1.2s ease-in-out infinite"}}/>
+                  )}
+                  <div style={{fontSize:15,fontWeight:800,color:C.t,textDecoration:isBatal?"line-through":"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{maskName(op.patient,privacyMode)||"—"}</div>
+                </div>
+                <div style={{fontSize:12,color:C.tL}}>{op.age?op.age+"th  ":""}{op.rm?"RM "+maskRM(op.rm,privacyMode)+"  ":""}{op.bloodType}</div>
               </div>
-              <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end"}}>
+              {/* Badges */}
+              <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end",flexShrink:0}}>
                 <Bdg label={ot?.label||"Elektif"} color={ot?.c||C.i} bg={ot?.bg||C.iBg}/>
                 <Bdg label={sc.l} color={sc.c} bg={sc.bg}/>
               </div>
+              {/* Tombol Mulai / Selesai — ujung kanan, besar & terang */}
+              {!isBatal && (
+                <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
+                  {op.status==="scheduled" && (
+                    <button onClick={()=>{
+                      const upd={...op,status:"ongoing",updated_at:new Date().toISOString()};
+                      setOps((p:any)=>p.map((o:any)=>o.id===op.id?upd:o));
+                      upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal: ${res?.error||"error"}`,C.d); } });
+                    }} style={{background:"#22c55e",color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(34,197,94,.4)"}}>
+                      ▶ Mulai
+                    </button>
+                  )}
+                  {op.status==="ongoing" && (
+                    <button onClick={()=>{
+                      const upd={...op,status:"done",updated_at:new Date().toISOString()};
+                      setOps((p:any)=>p.map((o:any)=>o.id===op.id?upd:o));
+                      upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal: ${res?.error||"error"}`,C.d); } });
+                    }} style={{background:"#ef4444",color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(239,68,68,.4)"}}>
+                      ✓ Selesai
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* ── Procedure block ── */}
             <div style={{background:"#F8FBF0",border:"1px solid #D4E6A0",borderRadius:10,padding:"10px 12px",marginBottom:8}}>
               <div style={{fontSize:14,fontWeight:700,color:"#33691E"}}>{op.procedure}</div>
               <div style={{fontSize:12,color:"#558B2F",marginTop:2}}>{op.diagnosis}</div>
-              <div style={{fontSize:12,color:"#558B2F",marginTop:3}}>📅 {fD(op.date)} · {op.time} WIB · {op.room}</div>
+              <div style={{fontSize:12,color:"#558B2F",marginTop:3}}>📅 {fDMY(op.date)} · {op.time} WIB · {op.room}</div>
             </div>
+
+            {/* ── Staff detail ── */}
             <div style={{fontSize:12,color:C.tL,lineHeight:1.9,marginBottom:8}}>
               <div><b>Operator:</b> {op.surgeon||"—"}</div>
               <div><b>Anestesi:</b> {op.anesthesiologist||"—"}</div>
               <div><b>Asisten:</b> {op.assistantNurse||"—"} · <b>Instrumen:</b> {op.circulatingNurse||"—"}</div>
               <div><b>Onloop:</b> {op.onloopNurse||"—"} · <b>RR:</b> {op.rrKatim||"—"}</div>
             </div>
+
             {op.specialNeeds && <div style={{background:C.wBg,borderRadius:8,padding:"6px 12px",marginBottom:8,fontSize:12,color:C.w}}>📌 {op.specialNeeds}</div>}
             {op.ruangAsal&&op.opType==="cyto" && <div style={{background:"#FFCDD2",borderRadius:8,padding:"5px 12px",marginBottom:8,fontSize:12,color:"#B71C1C"}}>📍 Ruang Asal: {op.ruangAsal}</div>}
             {(op.requests||[]).length>0 && (
@@ -1284,6 +1353,8 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
               </div>
             )}
             {(op.reminders||[]).length>0 && <div style={{marginBottom:8}}>{op.reminders.map((r:string,i:number)=><span key={i} style={{background:C.sBg,color:C.s,fontSize:11,padding:"3px 10px",borderRadius:10,fontWeight:700,marginRight:4}}>✓ {r==="H-1"?"H-1":"1 Jam"}</span>)}</div>}
+
+            {/* ── Secondary action row (edit, reminder, batal, hapus) ── */}
             {!isBatal && (
               <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:6}}>
                 {op.opType==="cyto"
@@ -1292,24 +1363,14 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
                 }
                 <Btn sm outline color={C.p} onClick={()=>startEditOp(op)}>✏ Edit</Btn>
                 <Btn sm outline color={C.w} onClick={()=>{setReqOpId(op.id);setReqText("");}}>+ Permintaan</Btn>
+                <Btn sm outline color={C.d} onClick={()=>{setCId(op.id);setCR("");}}>Batal/Tunda</Btn>
               </div>
             )}
             <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              {!isBatal&&op.status==="scheduled" && <Btn sm outline color={C.pL} onClick={()=>{
-                const upd={...op,status:"ongoing",updated_at:new Date().toISOString()};
-                setOps((p:any)=>p.map((o:any)=>o.id===op.id?upd:o));
-                upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal menyimpan status: ${res?.error||"kesalahan tidak diketahui"}`,C.d); } });
-              }}>Mulai</Btn>}
-              {!isBatal&&op.status==="ongoing"    && <Btn sm outline color={C.s} onClick={()=>{
-                const upd={...op,status:"done",updated_at:new Date().toISOString()};
-                setOps((p:any)=>p.map((o:any)=>o.id===op.id?upd:o));
-                upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal menyimpan status: ${res?.error||"kesalahan tidak diketahui"}`,C.d); } });
-              }}>Selesai</Btn>}
-              {!isBatal && <Btn sm outline color={C.d} onClick={()=>{setCId(op.id);setCR("");}}>Batal/Tunda</Btn>}
-              {isBatal   && <Btn sm outline color={C.g} onClick={()=>{
+              {isBatal && <Btn sm outline color={C.g} onClick={()=>{
                 const upd={...op,status:"scheduled",cancelReason:"",updated_at:new Date().toISOString()};
                 setOps((p:any)=>p.map((o:any)=>o.id===op.id?upd:o));
-                upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal menyimpan status: ${res?.error||"kesalahan tidak diketahui"}`,C.d); } });
+                upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal: ${res?.error||"error"}`,C.d); } });
               }}>Aktifkan</Btn>}
               <Btn sm outline color={C.d} onClick={()=>setDelC(op.id)}>Hapus</Btn>
             </div>
@@ -1321,7 +1382,7 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
                   const upd={...op,status:"batal",cancelReason:sanitize(cR),updated_at:new Date().toISOString()};
                   setOps((p:any)=>p.map((o:any)=>o.id===op.id?upd:o));
                   setCId(null);setCR("");showToast("Operasi ditandai batal",C.w);
-                  upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal menyimpan status: ${res?.error||"kesalahan tidak diketahui"}`,C.d); } });
+                  upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal: ${res?.error||"error"}`,C.d); } });
                 }}>Konfirmasi Batal</Btn><Btn full outline color={C.g} onClick={()=>setCId(null)}>Tutup</Btn></div>
               </div>
             )}
@@ -1733,7 +1794,7 @@ function ViewLaporan({ops,staff,roster,showToast,role,privacyMode}: ViewLaporanP
       {/* ⑤ Siaga Dokter Anestesi — 2 kolom fixed */}
       <Card>
         <SH label="⑤ Siaga Dokter Anestesi" color={C.p}/>
-        {rTmrw && <div style={{fontSize:11,color:C.s,marginBottom:8,fontWeight:600}}>✓ Terisi otomatis dari jadwal jaga {fD(todayDate())} — bisa diedit</div>}
+        {rTmrw && <div style={{fontSize:11,color:C.s,marginBottom:8,fontWeight:600}}>✓ Terisi otomatis dari jadwal jaga {fDMY(todayDate())} — bisa diedit</div>}
         <div style={{display:"flex",gap:8}}>
           {[0,1].map(i=>(
             <div key={i} style={{flex:1}}>
@@ -1746,7 +1807,7 @@ function ViewLaporan({ops,staff,roster,showToast,role,privacyMode}: ViewLaporanP
       {/* ⑥ Siaga Cyto Dokter Anestesi — 3 kolom fixed */}
       <Card hi={C.dL}>
         <SH label="⑥ Siaga Cyto Dokter Anestesi" color="#B71C1C"/>
-        {rTmrw && <div style={{fontSize:11,color:C.s,marginBottom:8,fontWeight:600}}>✓ Terisi otomatis dari jadwal jaga {fD(todayDate())} — bisa diedit</div>}
+        {rTmrw && <div style={{fontSize:11,color:C.s,marginBottom:8,fontWeight:600}}>✓ Terisi otomatis dari jadwal jaga {fDMY(todayDate())} — bisa diedit</div>}
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           {[0,1,2].map(i=>(
             <div key={i} style={{flex:"1 1 calc(33% - 8px)",minWidth:120}}>
@@ -1759,7 +1820,7 @@ function ViewLaporan({ops,staff,roster,showToast,role,privacyMode}: ViewLaporanP
       {/* ⑦ Siaga Perawat — 4 kolom fixed */}
       <Card>
         <SH label="⑦ Siaga Perawat" color={C.p}/>
-        {rTmrw && <div style={{fontSize:11,color:C.s,marginBottom:8,fontWeight:600}}>✓ Terisi otomatis dari jadwal jaga {fD(todayDate())} — bisa diedit</div>}
+        {rTmrw && <div style={{fontSize:11,color:C.s,marginBottom:8,fontWeight:600}}>✓ Terisi otomatis dari jadwal jaga {fDMY(todayDate())} — bisa diedit</div>}
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           {[0,1,2,3].map(i=>(
             <div key={i} style={{flex:"1 1 calc(50% - 8px)",minWidth:140}}>
@@ -1812,10 +1873,10 @@ function ViewKirimWA({ops,staff,setNotifs,showToast}: ViewKirimWAProps) {
     <div>
       <div style={{background:`linear-gradient(90deg,${C.pBg},${C.waBg})`,borderRadius:14,padding:"14px 16px",marginBottom:14,border:`1px solid ${C.pL}33`}}>
         <div style={{fontSize:14,fontWeight:700,color:C.p}}>Kamar Bedah {HOSPITAL}</div>
-        <div style={{fontSize:12,color:C.tL,marginTop:2}}>Pengiriman H-1 — Besok: {fD(tmrwDate())} · {tmrwOps.length} operasi</div>
+        <div style={{fontSize:12,color:C.tL,marginTop:2}}>Pengiriman H-1 — Besok: {fDMY(tmrwDate())} · {tmrwOps.length} operasi</div>
       </div>
       <div style={{background:C.iBg,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:C.i,lineHeight:1.6}}>ℹ️ Pesan bersifat DRAFT. Pratinjau wajib ditampilkan. Tekan Kirim di WhatsApp untuk konfirmasi manual.</div>
-      {tmrwOps.length===0 && <Card><div style={{textAlign:"center",padding:20,color:C.tL,fontSize:13}}>Belum ada operasi terjadwal untuk besok ({fD(tmrwDate())})</div></Card>}
+      {tmrwOps.length===0 && <Card><div style={{textAlign:"center",padding:20,color:C.tL,fontSize:13}}>Belum ada operasi terjadwal untuk besok ({fDMY(tmrwDate())})</div></Card>}
       {(surgeons as string[]).length>0 && (
         <div style={{marginBottom:16}}>
           <div style={{fontSize:12,fontWeight:700,color:C.g,textTransform:"uppercase",letterSpacing:.8,marginBottom:10}}>H-1 → Dokter Bedah / Operator</div>
@@ -1915,6 +1976,16 @@ function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
   const byAnest: Record<string,number> = {};
   filtered.forEach((o:any)=>{ if(o.anesthesiologist) byAnest[o.anesthesiologist]=(byAnest[o.anesthesiologist]||0)+1; });
   const anestData = Object.entries(byAnest).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([label,value],i)=>({label,value,color:COLORS[i%COLORS.length]}));
+
+  // Agregasi Tindakan (procedure)
+  const byProcedure: Record<string,number> = {};
+  filtered.forEach((o:any)=>{ const k=(o.procedure||"").trim(); if(k) byProcedure[k]=(byProcedure[k]||0)+1; });
+  const procedureData = Object.entries(byProcedure).sort((a,b)=>b[1]-a[1]);
+
+  // Agregasi Diagnosa
+  const byDiagnosis: Record<string,number> = {};
+  filtered.forEach((o:any)=>{ const k=(o.diagnosis||"").trim(); if(k) byDiagnosis[k]=(byDiagnosis[k]||0)+1; });
+  const diagnosisData = Object.entries(byDiagnosis).sort((a,b)=>b[1]-a[1]);
 
   const exportToExcel = () => {
     setExporting(true);
@@ -2081,6 +2152,62 @@ function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
         <Card>
           <SH label="Operasi per Dokter Anestesi (Top 6)"/>
           <MiniBar data={anestData}/>
+        </Card>
+      )}
+
+      {/* ── Rekapitulasi Tindakan ── */}
+      {procedureData.length>0 && (
+        <Card>
+          <SH label="🔪 Rekapitulasi Tindakan Medis" color="#0284c7"/>
+          <div style={{fontSize:11,color:C.tL,marginBottom:10}}>Total {procedureData.length} jenis tindakan · {filtered.length} operasi</div>
+          {procedureData.map(([label,val],i)=>{
+            const pct = filtered.length>0 ? Math.round((val/filtered.length)*100) : 0;
+            const barColor = COLORS[i%COLORS.length];
+            return (
+              <div key={label} style={{marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                  <div style={{fontSize:12,fontWeight:600,color:C.t,flex:1,marginRight:8,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                    <span style={{color:C.tL,marginRight:6,fontSize:11}}>#{i+1}</span>{label}
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                    <span style={{fontSize:13,fontWeight:800,color:barColor}}>{val}</span>
+                    <span style={{fontSize:10,color:C.tL}}>({pct}%)</span>
+                  </div>
+                </div>
+                <div style={{background:"#f1f5f9",borderRadius:6,height:8,overflow:"hidden"}}>
+                  <div style={{height:"100%",background:barColor,borderRadius:6,width:`${pct}%`,transition:"width .4s"}}/>
+                </div>
+              </div>
+            );
+          })}
+        </Card>
+      )}
+
+      {/* ── Rekapitulasi Diagnosa ── */}
+      {diagnosisData.length>0 && (
+        <Card>
+          <SH label="🏥 Rekapitulasi Diagnosa" color="#7c3aed"/>
+          <div style={{fontSize:11,color:C.tL,marginBottom:10}}>Total {diagnosisData.length} jenis diagnosa</div>
+          {diagnosisData.map(([label,val],i)=>{
+            const pct = filtered.length>0 ? Math.round((val/filtered.length)*100) : 0;
+            const barColor = ["#7c3aed","#a855f7","#8b5cf6","#6d28d9","#9333ea","#4f46e5","#7c3aed","#c026d3"][i%8];
+            return (
+              <div key={label} style={{marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                  <div style={{fontSize:12,fontWeight:600,color:C.t,flex:1,marginRight:8,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                    <span style={{color:C.tL,marginRight:6,fontSize:11}}>#{i+1}</span>{label}
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                    <span style={{fontSize:13,fontWeight:800,color:barColor}}>{val}</span>
+                    <span style={{fontSize:10,color:C.tL}}>({pct}%)</span>
+                  </div>
+                </div>
+                <div style={{background:"#f5f3ff",borderRadius:6,height:8,overflow:"hidden"}}>
+                  <div style={{height:"100%",background:barColor,borderRadius:6,width:`${pct}%`,transition:"width .4s"}}/>
+                </div>
+              </div>
+            );
+          })}
         </Card>
       )}
 
@@ -3905,7 +4032,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                           return (
                             <tr key={e.id} style={{background:isAmbil?"#FFF4ED":(i%2===0?"#FAFBFD":"#F0FFF8"),borderBottom:`1px solid ${C.b}`}}>
                               <td style={{padding:"8px 10px",textAlign:"center",fontWeight:700,color:C.p}}>{e.no}</td>
-                              <td style={{padding:"8px 10px",fontWeight:600,color:C.t}}>{e.tanggalAwal||e.jadwalDinas||"—"}</td>
+                              <td style={{padding:"8px 10px",fontWeight:600,color:C.t}}>{fDMY(e.tanggalAwal||e.jadwalDinas)||"—"}</td>
                               <td style={{padding:"8px 10px",fontWeight:600,color:C.t}}>{e.tanggalAkhir||"—"}</td>
                               <td style={{padding:"8px 10px",color:"#1565C0",fontWeight:600}}>{isAmbil?"—":(e.jamMasuk||"—")}</td>
                               <td style={{padding:"8px 10px",color:"#B71C1C",fontWeight:600}}>{isAmbil?"—":(e.jamKeluar||"—")}</td>
@@ -4693,7 +4820,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
         <div>
           {/* Form input: 1 tabel per ruangan */}
           <div style={{background:"linear-gradient(135deg,#EFF6FF,#F0FDF4)",border:"1px solid #BAE6FD",borderRadius:14,padding:18,marginBottom:18}}>
-            <div style={{fontWeight:700,color:MC.pri,fontSize:14,marginBottom:16}}>📝 Input Pemantauan — {fD(formDate)}</div>
+            <div style={{fontWeight:700,color:MC.pri,fontSize:14,marginBottom:16}}>📝 Input Pemantauan — {fDMY(formDate)}</div>
             {MON_ROOMS.map((ruang,ri)=>(
               <div key={ruang} style={{marginBottom:ri<MON_ROOMS.length-1?22:0}}>
                 {/* Section header ruangan */}
@@ -4761,7 +4888,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
             ))}
             <div style={{marginTop:18}}>
               <Btn color={MC.pri} onClick={handleSave} style={{background:MC.pri,color:"#fff",border:"none"}}>
-                💾 Simpan Semua Data {formDate}
+                💾 Simpan Semua Data {fDMY(formDate)}
               </Btn>
             </div>
           </div>
@@ -4804,7 +4931,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
                             )}
                           </td>
                           <td style={{padding:"7px 10px",fontWeight:e.tanggal!==prevDate||e.ruang!==prevRuang?700:400,color:"#374151"}}>
-                            {e.tanggal!==prevDate||e.ruang!==prevRuang?e.tanggal:""}
+                            {e.tanggal!==prevDate||e.ruang!==prevRuang?fDMY(e.tanggal):""}
                           </td>
                           <td style={{padding:"7px 10px",fontWeight:700,color:MON_ROOM_COLORS[ri]??MC.pri}}>{e.jam}</td>
                           <td style={{padding:"7px 10px",fontWeight:700,color:ok?MC.ok:MC.err}}>{e.suhu}°C</td>
@@ -5208,12 +5335,45 @@ function HeaderClock() {
 
 /* ─── MAIN APP ───────────────────────────────────────────────────────── */
 
+/* ─── MASTER DATA PERAWAT RS PANTI RINI ────────────────────────────── */
+const MASTER_PERAWAT_LIST: Array<{nik:string; name:string; pk:string}> = [
+  { nik:"201010056", name:"Jaka R",        pk:"III"  },
+  { nik:"199720045", name:"Eka S",         pk:"III"  },
+  { nik:"200315032", name:"Niken A",       pk:"II"   },
+  { nik:"199805021", name:"Thresmiati CB", pk:"IV"   },
+  { nik:"200110078", name:"Yohana P",      pk:"III"  },
+  { nik:"200812034", name:"Agus W",        pk:"II"   },
+  { nik:"199912067", name:"Dewi R",        pk:"III"  },
+  { nik:"200508043", name:"Sari U",        pk:"II"   },
+  { nik:"201205089", name:"Budi S",        pk:"I"    },
+  { nik:"200001055", name:"Ratna K",       pk:"III"  },
+];
+
 /* ─── VIEW ROSTER GENERATOR ─────────────────────────────────────────── */
 /* Kamus kode shift */
 const SHIFT_CODES = { PAGI:"P", PAGI_SIAGA:"PG", SIANG:"S", SIANG_SIAGA:"SG", LIBUR:"L", LIBUR_SIAGA:"LG", CUTI:"T" } as const;
 type NurseType = "karu"|"senior"|"junior";
 interface RosterNurse { id: string; nik: string; pk: string; name: string; sisaCuti: number; tipe: NurseType; }
 interface RosterGenProps { showToast: ShowToastFn; upsertOneToSupa: UpsertOneFn; dbxCfg: DropboxConfig; }
+
+/* ── Nama-nama bulan Indonesia (dipakai di header Excel & label UI) ── */
+const BULAN_NAMA_ID = ["JANUARI","FEBRUARI","MARET","APRIL","MEI","JUNI","JULI","AGUSTUS","SEPTEMBER","OKTOBER","NOVEMBER","DESEMBER"];
+
+/* ── Kolom ringkasan individu di sisi kanan tabel Excel ── */
+const SUMMARY_COLS = ["P","PG","Si","S","SG","T","LG","L","∑","SS CUTI","G","S"] as const;
+
+/* ── Helper: hitung ringkasan shift per perawat satu bulan ── */
+function hitungRingkasan(row: string[], daysInMonth: number) {
+  const cnt = (code: string) => row.slice(0, daysInMonth).filter(c=>c===code).length;
+  const P=cnt("P"), PG=cnt("PG"), S=cnt("S"), SG=cnt("SG"),
+        T=cnt("T"), LG=cnt("LG"), L=cnt("L"), G=0, SSC=0;
+  /* Kolom ringkasan: P PG Si(=Siang) S(=Siang duplikat kolom) SG T LG L ∑ SSC G S2
+     "Si" dan "S" merujuk kolom berbeda di format resmi — keduanya = jumlah siang */
+  return { P, PG, Si: S, Siang: S, SG, T, LG, L, sum: P+PG+S+SG+T+LG+L, SSC, G, S2: S };
+}
+
+/* ── localStorage key untuk draft jadwal (offline resilience) ── */
+const LS_DRAFT_KEY = "rostergen_draft_v1";
 
 function mkNurse(tipe: NurseType = "junior"): RosterNurse {
   return { id: gId(), nik:"", pk:"", name:"", sisaCuti: 12, tipe };
@@ -5231,6 +5391,16 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
   const [year,  setYear]  = useState(today.getFullYear());
   const daysInMonth = new Date(year, month+1, 0).getDate();
 
+  /* ── PJ & Pembawa HP (untuk footer Excel) ── */
+  const [pjSirs,     setPjSirs]     = useState("Jaka R");
+  const [pembawHP,   setPembawHP]   = useState("Niken A");
+  const [kepInstall, setKepInstall] = useState("drg. Agus Sri G, Sp. BM");
+
+  /* ── Status cloud ── */
+  const [cloudStatus, setCloudStatus] = useState<"idle"|"saving"|"ok"|"error"|"offline">("idle");
+  const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout>|null>(null);
+  const pendingOfflineRef = useRef(false);
+
   const defaultNurses = (): RosterNurse[] => [
     mkNurse("karu"),
     mkNurse("senior"), mkNurse("senior"), mkNurse("senior"), mkNurse("senior"),
@@ -5243,6 +5413,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
   const [holidays, setHolidays] = useState<boolean[]>(()=>Array(31).fill(false));
   const [syncing, setSyncing]   = useState(false);
   const [syncingDbx, setSyncingDbx] = useState(false);
+  const [savingJadwal, setSavingJadwal] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
 
   // Reset grid ketika jumlah nurses berubah atau bulan berubah
@@ -5252,24 +5423,170 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
     setWarnings([]);
   };
 
+  /* ─────────────────────────────────────────────────────────────────────
+     FITUR 3 — AUTO-BACKUP MULTI-CHANNEL (Supabase + Dropbox + localStorage)
+     ─────────────────────────────────────────────────────────────────────
+     Setiap kali grid/nurses/holidays berubah, kita:
+       1. Simpan ke localStorage (selalu, offline-proof)
+       2. Debounce 2,5 detik → upsert ke Supabase tabel kb_roster_gen
+       3. Setelah Supabase sukses → trigger upload JSON ke Dropbox via proxy
+     Jika jaringan offline: data tersimpan di localStorage & flag
+     pendingOfflineRef=true. window "online" event memicu retry otomatis. ── */
+
+  /** buildPayload: konversi state saat ini → objek JSON yang siap disimpan */
+  const buildPayload = useCallback((
+    g: string[][], n: RosterNurse[], h: boolean[], m: number, y: number
+  ) => ({
+    id: `roster_${y}_${String(m+1).padStart(2,"00")}`,   // id deterministik → upsert aman
+    updated_at: new Date().toISOString(),
+    year: y, month: m,
+    nurses: JSON.stringify(n),
+    jadwal: n.map((_,ni) => g[ni]?.slice(0, new Date(y,m+1,0).getDate()).join(",") ?? "").join("|"),
+    holidays: h.slice(0, new Date(y,m+1,0).getDate()).join(","),
+    generatedAt: fNow(),
+    pjSirs, pembawHP, kepInstall,
+  }), [pjSirs, pembawHP, kepInstall]);
+
+  /** saveDraftToLS: simpan draft ke localStorage — tidak pernah throw */
+  const saveDraftToLS = useCallback((
+    g: string[][], n: RosterNurse[], h: boolean[], m: number, y: number
+  ) => {
+    try {
+      const draft = { g, n, h, m, y, ts: Date.now() };
+      localStorage.setItem(LS_DRAFT_KEY, JSON.stringify(draft));
+    } catch { /* kuota penuh — abaikan senyap */ }
+  }, []);
+
+  /** syncToCloudSilent: upsert ke Supabase + backup Dropbox JSON,
+      dipanggil dari debounce & tombol "Simpan Jadwal" */
+  const syncToCloudSilent = useCallback(async (
+    g: string[][], n: RosterNurse[], h: boolean[], m: number, y: number,
+    showFeedback = false
+  ): Promise<boolean> => {
+    if(!navigator.onLine){
+      pendingOfflineRef.current = true;
+      setCloudStatus("offline");
+      if(showFeedback) showToast("⚠ Jaringan offline — jadwal tersimpan lokal, akan sync saat kembali online.", "#E65100");
+      return false;
+    }
+    try {
+      setCloudStatus("saving");
+      const payload = buildPayload(g, n, h, m, y);
+
+      /* ── Supabase upsert ── */
+      const res = await upsertOneToSupa("kb_roster_gen", payload);
+      if(!res.ok) throw new Error(res.error || "Supabase error");
+
+      /* ── Dropbox JSON backup ── */
+      try {
+        const folder = (dbxCfg?.path || "/kamarbedah/").replace(/[^/]+$/,"");
+        const stamp  = `${y}-${String(m+1).padStart(2,"0")}`;
+        const path   = `${folder}Roster_JSON_${stamp}.json`;
+        const body   = JSON.stringify({ ...payload, nurses: n, grid: g, holidays: h }, null, 2);
+        const b64    = btoa(unescape(encodeURIComponent(body)));
+        await callDbxProxy({ action:"upload_excel", path, base64: b64 });
+      } catch { /* Dropbox gagal tidak membatalkan simpan utama */ }
+
+      setCloudStatus("ok");
+      pendingOfflineRef.current = false;
+      if(showFeedback) showToast("✓ Jadwal berhasil disimpan permanen ke database pusat.", "#2E7D32");
+      return true;
+    } catch(e: any) {
+      setCloudStatus("error");
+      if(showFeedback) showToast("⚠ Gagal sync cloud: " + (e?.message || "error"), "#D62828");
+      return false;
+    }
+  }, [buildPayload, upsertOneToSupa, dbxCfg, showToast]);
+
+  /** triggerAutoSave: simpan LS segera, debounce cloud 2,5 s */
+  const triggerAutoSave = useCallback((
+    g: string[][], n: RosterNurse[], h: boolean[], m: number, y: number
+  ) => {
+    saveDraftToLS(g, n, h, m, y);
+    if(autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+    autoSaveTimerRef.current = setTimeout(() => {
+      syncToCloudSilent(g, n, h, m, y, false);
+    }, 2500);
+  }, [saveDraftToLS, syncToCloudSilent]);
+
+  /* ── Auto-retry saat kembali online ── */
+  useEffect(() => {
+    const handler = () => {
+      if(pendingOfflineRef.current){
+        setCloudStatus("saving");
+        syncToCloudSilent(grid, nurses, holidays, month, year, true);
+      }
+    };
+    window.addEventListener("online", handler);
+    return () => window.removeEventListener("online", handler);
+  }, [grid, nurses, holidays, month, year, syncToCloudSilent]);
+
+  /* Cleanup debounce on unmount */
+  useEffect(() => () => { if(autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); }, []);
+
   const handleMonthYear = (m: number, y: number) => {
     setMonth(m); setYear(y);
     const d = new Date(y, m+1, 0).getDate();
     resetGrid(nurses, d);
+    // Jangan auto-save saat reset grid — jadwal akan kosong
   };
 
   const addNurse = () => {
     const newN = [...nurses, mkNurse("junior")];
     setNurses(newN);
-    setGrid(g => [...g, Array(daysInMonth).fill("")]);
+    setGrid(g => {
+      const ng = [...g, Array(daysInMonth).fill("")];
+      triggerAutoSave(ng, newN, holidays, month, year);
+      return ng;
+    });
   };
 
   const updateNurse = (idx: number, field: keyof RosterNurse, val: any) => {
-    setNurses(p => p.map((n,i) => i===idx ? {...n,[field]:val} : n));
+    setNurses(p => {
+      const np = p.map((n,i) => i===idx ? {...n,[field]:val} : n);
+      triggerAutoSave(grid, np, holidays, month, year);
+      return np;
+    });
+  };
+
+  // BUG FIX #2: Handler NIK dropdown → auto-populate Nama & PK dari master
+  const handleNikChange = (ni: number, nik: string) => {
+    const master = MASTER_PERAWAT_LIST.find(m => m.nik === nik);
+    setNurses(p => {
+      const np = p.map((n, i) => i===ni
+        ? { ...n, nik, name: master?.name ?? n.name, pk: master?.pk ?? n.pk }
+        : n
+      );
+      triggerAutoSave(grid, np, holidays, month, year);
+      return np;
+    });
+  };
+
+  // BUG FIX #2: Handler sisa cuti — tidak ada leading zero
+  const handleSisaCutiChange = (ni: number, raw: string) => {
+    const parsed = parseInt(raw, 10);
+    const val = isNaN(parsed) ? 0 : Math.min(Math.max(parsed, 0), 30);
+    setNurses(p => {
+      const np = p.map((n,i) => i===ni ? {...n, sisaCuti: val} : n);
+      triggerAutoSave(grid, np, holidays, month, year);
+      return np;
+    });
   };
 
   const updateCell = (ni: number, di: number, val: string) => {
-    setGrid(g => g.map((row, ri) => ri===ni ? row.map((c,ci) => ci===di ? val.toUpperCase() : c) : row));
+    setGrid(g => {
+      const ng = g.map((row, ri) => ri===ni ? row.map((c,ci) => ci===di ? val.toUpperCase() : c) : row);
+      triggerAutoSave(ng, nurses, holidays, month, year);
+      return ng;
+    });
+  };
+
+  const updateHoliday = (di: number, checked: boolean) => {
+    setHolidays(h => {
+      const nh = h.map((v,i) => i===di ? checked : v);
+      triggerAutoSave(grid, nurses, nh, month, year);
+      return nh;
+    });
   };
 
   /* ─── CORE ENGINE (REFACTORED) ───────────────────────────────────── */
@@ -5380,19 +5697,31 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
       // Hapus Karu dari pool available sebelum distribusi siaga
       const nonKaruAvailable = fisherYates(available.filter(ni => nurses[ni].tipe !== "karu"));
 
-      /* ── Langkah 5: Distribusi Siaga & Shift — Aturan 1 & 4 ────────
-         PG dan SG bisa diberikan ke senior maupun junior (Aturan 1).
-         Tidak ada hardcode indeks. Evaluasi seluruh nonKaruAvailable.
-         Batasi frekuensi PG/SG per-perawat (Aturan 4 limit mingguan). */
+      /* ── Langkah 4.5: Constraint Sequence — 2 Siang berturut → wajib Pagi ──
+         Cek riwayat 2 hari sebelumnya per perawat. Jika d-1 dan d-2 keduanya
+         S atau SG (dan hari ini sel masih tersedia), perawat WAJIB masuk pagi. */
+      const forcedToPagi = new Set<number>();
+      if(d >= 2){
+        nonKaruAvailable.forEach(ni => {
+          const prev1 = newGrid[ni][d-1];
+          const prev2 = newGrid[ni][d-2];
+          const wasSiang1 = prev1==="S" || prev1==="SG";
+          const wasSiang2 = prev2==="S" || prev2==="SG";
+          if(wasSiang1 && wasSiang2) forcedToPagi.add(ni);
+        });
+      }
 
-      // Senioritas: senior diutamakan di pagi, junior boleh di keduanya
-      const avSeniors = fisherYates(nonKaruAvailable.filter(ni => nurses[ni].tipe === "senior"));
-      const avJuniors = fisherYates(nonKaruAvailable.filter(ni => nurses[ni].tipe === "junior"));
+      /* Pisahkan forced-pagi dari pool sebelum distribusi senioritas */
+      const forcedPagiArr = nonKaruAvailable.filter(ni => forcedToPagi.has(ni));
+      const freePool      = nonKaruAvailable.filter(ni => !forcedToPagi.has(ni));
+      const avSeniors     = fisherYates(freePool.filter(ni => nurses[ni].tipe==="senior"));
+      const avJuniors     = fisherYates(freePool.filter(ni => nurses[ni].tipe==="junior"));
 
-      const pagiList:  number[] = [];
+      /* ── Langkah 5: Distribusi Siaga & Shift — Aturan 1 & 4 ──────── */
+      const pagiList:  number[] = [...forcedPagiArr]; // forced-pagi masuk duluan
       const siangList: number[] = [];
 
-      // Distribusi senior best-effort ke pagi & siang
+      // Distribusi senior best-effort ke pagi & siang (dari freePool)
       if(avSeniors.length >= 4){
         pagiList.push(...avSeniors.slice(0, 2));
         siangList.push(...avSeniors.slice(2, 4));
@@ -5464,159 +5793,328 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
   const newGrid_safe = (ni:number, d:number) => grid[ni]?.[d] ?? "";
   const sumRow = (codes: string[]) => (d:number) => nurses.reduce((c,_,ni)=>codes.includes(newGrid_safe(ni,d))?c+1:c,0);
 
-  /* ─── Download Excel ─────────────────────────────────────────────── */
+  /* ─── FITUR 2 — TOMBOL "SIMPAN JADWAL" ─────────────────────────────── */
+  const saveJadwal = async () => {
+    setSavingJadwal(true);
+    const ok = await syncToCloudSilent(grid, nurses, holidays, month, year, true);
+    setSavingJadwal(false);
+    if(ok){
+      /* Juga simpan ke localStorage sebagai konfirmasi final */
+      saveDraftToLS(grid, nurses, holidays, month, year);
+    }
+  };
+
+  /* ─── FITUR 1 — DOWNLOAD EXCEL FORMAT RESMI ────────────────────────── */
   const downloadExcel = async () => {
-    try{
-      const wb = new ExcelJS.Workbook();
-      const ws = wb.addWorksheet("Roster Perawat");
-      // Header row 1: info rumah sakit
-      const bulanNama = new Date(year, month, 1).toLocaleString("id-ID",{month:"long",year:"numeric"});
-      ws.mergeCells(1,1,1,5+daysInMonth);
-      const titleCell = ws.getCell(1,1);
-      titleCell.value = `ROSTER PERAWAT — ${HOSPITAL} — ${bulanNama.toUpperCase()}`;
-      titleCell.font = {bold:true, size:12, color:{argb:"FFFFFFFF"}};
-      titleCell.fill = {type:"pattern",pattern:"solid",fgColor:{argb:"FF16685F"}};
-      titleCell.alignment = {horizontal:"center",vertical:"middle"};
-      ws.getRow(1).height = 28;
+    try {
+      const wb  = new ExcelJS.Workbook();
+      const ws  = wb.addWorksheet("Roster Perawat");
+      const dim = daysInMonth;
+      const bulanLabel = `${BULAN_NAMA_ID[month]} ${year}`;
+      /* Kolom: NO(1) NIK(2) PK(3) SISA CUTI(4) NAMA(5)  tanggal 1..dim  ringkasan 12 kolom */
+      const COL_NO=1, COL_NIK=2, COL_PK=3, COL_CUTI=4, COL_NAMA=5;
+      const COL_DATE_START = 6;                    // tanggal mulai kolom 6
+      const COL_DATE_END   = COL_DATE_START + dim - 1;
+      const COL_SUM_START  = COL_DATE_END + 1;     // kolom ringkasan individu
+      const TOTAL_COLS     = COL_SUM_START + SUMMARY_COLS.length - 1;
 
-      // Header row 2: kolom
-      const headers = ["NO","NIK","PK","NAMA","SISA CUTI","TIPE",...Array.from({length:daysInMonth},(_,i)=>String(i+1))];
-      const hRow = ws.getRow(2);
-      headers.forEach((h,ci) => {
-        const cell = hRow.getCell(ci+1);
-        cell.value = h;
-        cell.font = {bold:true, size:10, color:{argb:"FFFFFFFF"}};
-        cell.fill = {type:"pattern",pattern:"solid",fgColor:{argb:"FF234B45"}};
-        cell.alignment = {horizontal:"center",vertical:"middle"};
-        cell.border = {top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
+      /* ── BARIS 1: Judul ── */
+      ws.mergeCells(1, 1, 1, TOTAL_COLS);
+      const r1 = ws.getCell(1, 1);
+      r1.value = "JADWAL PETUGAS KAMAR BEDAH";
+      r1.font  = { bold: true, size: 14, color: { argb: "FF0F172A" } };
+      r1.fill  = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE0F2FE" } };
+      r1.alignment = { horizontal: "center", vertical: "middle" };
+      ws.getRow(1).height = 30;
+
+      /* ── BARIS 2: Bulan ── */
+      ws.mergeCells(2, 1, 2, TOTAL_COLS);
+      const r2 = ws.getCell(2, 1);
+      r2.value = `BULAN : ${bulanLabel}`;
+      r2.font  = { bold: true, size: 12, color: { argb: "FF0369A1" } };
+      r2.fill  = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F9FF" } };
+      r2.alignment = { horizontal: "center", vertical: "middle" };
+      ws.getRow(2).height = 22;
+
+      /* ── BARIS 3 & 4: Spacer ── */
+      ws.getRow(3).height = 8;
+      ws.getRow(4).height = 8;
+
+      /* ── BARIS 5: Header label kolom (merged 5–6 untuk kolom statis & ringkasan) ── */
+      const fixedLabels: Array<[number, number, string]> = [
+        [COL_NO,   COL_NO,   "NO"],
+        [COL_NIK,  COL_NIK,  "NIK"],
+        [COL_PK,   COL_PK,   "PK"],
+        [COL_CUTI, COL_CUTI, "SISA\nCUTI"],
+        [COL_NAMA, COL_NAMA, "NAMA"],
+      ];
+      fixedLabels.forEach(([c1, c2, label]) => {
+        ws.mergeCells(5, c1, 6, c2);
+        const cell = ws.getCell(5, c1);
+        cell.value = label;
+        cell.font  = { bold: true, size: 10, color: { argb: "FFFFFFFF" } };
+        cell.fill  = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0284C7" } };
+        cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+        cell.border = { top:{style:"thin"}, bottom:{style:"thin"}, left:{style:"thin"}, right:{style:"thin"} };
       });
-      hRow.height = 22;
 
-      // Data rows (tanpa pewarnaan — warna diisi manual oleh pengguna)
-      nurses.forEach((n,ni) => {
-        const dr = ws.getRow(3+ni);
-        [ni+1,n.nik,n.pk,n.name,n.sisaCuti,n.tipe].forEach((v,ci) => {
-          const cell = dr.getCell(ci+1);
-          cell.value = v;
-          cell.alignment = {horizontal:"center",vertical:"middle"};
-          cell.border = {top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
-        });
-        Array.from({length:daysInMonth},(_,d) => {
-          const code = newGrid_safe(ni,d);
-          const cell = dr.getCell(7+d);
-          cell.value = code;
-          cell.alignment = {horizontal:"center",vertical:"middle"};
-          cell.border = {top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
-        });
+      /* ── BARIS 5: Merged header "TANGGAL" di atas kolom 1..dim ── */
+      ws.mergeCells(5, COL_DATE_START, 5, COL_DATE_END);
+      const tanggalHeader = ws.getCell(5, COL_DATE_START);
+      tanggalHeader.value = "TANGGAL";
+      tanggalHeader.font  = { bold: true, size: 10, color: { argb: "FFFFFFFF" } };
+      tanggalHeader.fill  = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0369A1" } };
+      tanggalHeader.alignment = { horizontal: "center", vertical: "middle" };
+      tanggalHeader.border = { top:{style:"thin"}, bottom:{style:"thin"}, left:{style:"thin"}, right:{style:"thin"} };
+
+      /* ── BARIS 5: Merged header "RINGKASAN" ── */
+      ws.mergeCells(5, COL_SUM_START, 5, TOTAL_COLS);
+      const ringkasanH = ws.getCell(5, COL_SUM_START);
+      ringkasanH.value = "RINGKASAN";
+      ringkasanH.font  = { bold: true, size: 10, color: { argb: "FFFFFFFF" } };
+      ringkasanH.fill  = { type: "pattern", pattern: "solid", fgColor: { argb: "FF7C3AED" } };
+      ringkasanH.alignment = { horizontal: "center", vertical: "middle" };
+      ringkasanH.border = { top:{style:"thin"}, bottom:{style:"thin"}, left:{style:"thin"}, right:{style:"thin"} };
+
+      /* ── BARIS 6: Angka tanggal + kode ringkasan ── */
+      ws.getRow(5).height = 20;
+      ws.getRow(6).height = 18;
+      for(let d=0; d<dim; d++){
+        const date  = new Date(year, month, d+1);
+        const isSun = date.getDay() === 0;
+        const isHol = holidays[d];
+        const dc    = ws.getCell(6, COL_DATE_START + d);
+        dc.value    = d + 1;
+        dc.font     = { bold: isSun||isHol, size: 9, color: { argb: isSun||isHol?"FFDC2626":"FF0F172A" } };
+        dc.fill     = { type: "pattern", pattern: "solid", fgColor: { argb: isSun||isHol?"FFFFCDD2":"FFF0F9FF" } };
+        dc.alignment = { horizontal: "center", vertical: "middle" };
+        dc.border    = { top:{style:"thin"}, bottom:{style:"thin"}, left:{style:"thin"}, right:{style:"thin"} };
+      }
+      SUMMARY_COLS.forEach((lbl, si) => {
+        const sc = ws.getCell(6, COL_SUM_START + si);
+        sc.value = lbl;
+        sc.font  = { bold: true, size: 9, color: { argb: "FFFFFFFF" } };
+        sc.fill  = { type: "pattern", pattern: "solid", fgColor: { argb: "FF6D28D9" } };
+        sc.alignment = { horizontal: "center", vertical: "middle" };
+        sc.border    = { top:{style:"thin"}, bottom:{style:"thin"}, left:{style:"thin"}, right:{style:"thin"} };
+      });
+
+      /* ── BARIS DATA perawat (mulai baris 7) ── */
+      const DATA_START = 7;
+      nurses.forEach((n, ni) => {
+        const rowNum = DATA_START + ni;
+        const isEven = ni % 2 === 0;
+        const dr = ws.getRow(rowNum);
         dr.height = 18;
+        const bgData = isEven ? "FFFAFBFF" : "FFF0F7FF";
+        const statics: [number, any][] = [
+          [COL_NO,   ni+1],
+          [COL_NIK,  n.nik  || ""],
+          [COL_PK,   n.pk   || ""],
+          [COL_CUTI, n.sisaCuti],
+          [COL_NAMA, n.name || ""],
+        ];
+        statics.forEach(([col, val]) => {
+          const cell = dr.getCell(col);
+          cell.value = val;
+          cell.fill  = { type:"pattern", pattern:"solid", fgColor:{ argb: bgData } };
+          cell.alignment = { horizontal: col===COL_NAMA ? "left" : "center", vertical: "middle" };
+          cell.border = { top:{style:"thin"}, bottom:{style:"thin"}, left:{style:"thin"}, right:{style:"thin"} };
+          if(col===COL_NAMA) cell.font = { bold: true, size: 10 };
+        });
+        /* Kolom shift harian */
+        const shiftRow: string[] = [];
+        for(let d=0; d<dim; d++){
+          const code = newGrid_safe(ni, d);
+          shiftRow.push(code);
+          const sc = dr.getCell(COL_DATE_START + d);
+          sc.value = code;
+          /* Warna per kode */
+          const argbFill = code==="P"||code==="PG" ? "FFE3F2FD"
+            : code==="S"||code==="SG" ? "FFFFF3E0"
+            : code==="T"              ? "FFFFEBEE"
+            : code==="L"||code==="LG" ? "FFF3F3F3"
+            : bgData;
+          const argbFont = code==="P"||code==="PG" ? "FF1565C0"
+            : code==="S"||code==="SG" ? "FFE65100"
+            : code==="T"              ? "FFC62828"
+            : code==="L"||code==="LG" ? "FF5C677D"
+            : "FF374151";
+          sc.fill = { type:"pattern", pattern:"solid", fgColor:{ argb: argbFill } };
+          sc.font = { bold: true, size: 9, color:{ argb: argbFont } };
+          sc.alignment = { horizontal:"center", vertical:"middle" };
+          sc.border = { top:{style:"thin"}, bottom:{style:"thin"}, left:{style:"thin"}, right:{style:"thin"} };
+        }
+        /* Kolom ringkasan individu */
+        const rk = hitungRingkasan(shiftRow, dim);
+        const sumVals = [rk.P, rk.PG, rk.Si, rk.Siang, rk.SG, rk.T, rk.LG, rk.L, rk.sum, rk.SSC, rk.G, rk.S2];
+        sumVals.forEach((val, si) => {
+          const sc = dr.getCell(COL_SUM_START + si);
+          sc.value = val || "";
+          sc.fill  = { type:"pattern", pattern:"solid", fgColor:{ argb: "FFF5F3FF" } };
+          sc.font  = { bold: val > 0, size: 10, color:{ argb: "FF6D28D9" } };
+          sc.alignment = { horizontal:"center", vertical:"middle" };
+          sc.border = { top:{style:"thin"}, bottom:{style:"thin"}, left:{style:"thin"}, right:{style:"thin"} };
+        });
       });
 
-      // Summary row
-      const sumR = ws.getRow(3+nurses.length);
-      const summaryLabels = ["","","","∑ Pagi","","","∑ Siang","","","∑ Libur","","","∑ Cuti"];
-      summaryLabels.forEach((l,ci) => {
-        if(l){ const c=sumR.getCell(ci+1); c.value=l; c.font={bold:true,size:9,color:{argb:"FF234B45"}}; c.alignment={horizontal:"center"}; }
-      });
-      Array.from({length:daysInMonth},(_,d) => {
-        const p = sumRow(["P","PG"])(d), s = sumRow(["S","SG"])(d), l = sumRow(["L","LG"])(d), t = sumRow(["T"])(d);
-        const c=sumR.getCell(7+d);
-        c.value=`P:${p} S:${s} L:${l} T:${t}`;
-        c.font={size:8};
-        c.alignment={horizontal:"center"};
-        c.border={top:{style:"medium"}};
+      /* ── BARIS AGREGAT TOTAL HARIAN (di bawah semua data) ── */
+      const TOTAL_ROW_START = DATA_START + nurses.length;
+      const SUMMARY_DEFS2 = [
+        { label:"∑ PAGI (P)",         codes:["P"],       argbBg:"FFBBDEFB", argbFg:"FF0D47A1" },
+        { label:"∑ PAGI SIAGA (PG)",  codes:["PG"],      argbBg:"FF90CAF9", argbFg:"FF1565C0" },
+        { label:"∑ SIANG (S)",        codes:["S"],        argbBg:"FFFFE0B2", argbFg:"FFE65100" },
+        { label:"∑ SIANG SIAGA (SG)", codes:["SG"],       argbBg:"FFFFCC80", argbFg:"FFE65100" },
+        { label:"∑ LIBUR SIAGA (LG)", codes:["LG"],       argbBg:"FFCFD8DC", argbFg:"FF37474F" },
+        { label:"∑ CUTI (T)",         codes:["T"],        argbBg:"FFFFCDD2", argbFg:"FFC62828" },
+      ];
+      SUMMARY_DEFS2.forEach(({ label, codes, argbBg, argbFg }, si) => {
+        const rowNum = TOTAL_ROW_START + si;
+        const sr = ws.getRow(rowNum);
+        sr.height = 22;
+        ws.mergeCells(rowNum, COL_NO, rowNum, COL_DATE_START - 1);
+        const lc = sr.getCell(COL_NO);
+        lc.value = label;
+        lc.font  = { bold: true, size: 12, color: { argb: argbFg } };
+        lc.fill  = { type:"pattern", pattern:"solid", fgColor:{ argb: argbBg } };
+        lc.alignment = { horizontal: "right", vertical: "middle" };
+        lc.border = { top:{style:"medium"}, bottom:{style:"medium"}, left:{style:"thin"}, right:{style:"thin"} };
+        for(let d=0; d<dim; d++){
+          const cnt = nurses.reduce((c,_,ni) => codes.includes(newGrid_safe(ni,d)) ? c+1 : c, 0);
+          const nc = sr.getCell(COL_DATE_START + d);
+          nc.value = cnt || "";
+          nc.font  = { bold: true, size: 13, color: { argb: argbFg } };
+          nc.fill  = { type:"pattern", pattern:"solid", fgColor:{ argb: argbBg } };
+          nc.alignment = { horizontal:"center", vertical:"middle" };
+          nc.border = { top:{style:"medium"}, bottom:{style:"medium"}, left:{style:"thin"}, right:{style:"thin"} };
+        }
+        /* kosongkan kolom ringkasan di baris total */
+        for(let sc2=0; sc2<SUMMARY_COLS.length; sc2++){
+          const ec = sr.getCell(COL_SUM_START + sc2);
+          ec.fill = { type:"pattern", pattern:"solid", fgColor:{ argb: "FFF5F5F5" } };
+          ec.border = { top:{style:"thin"}, bottom:{style:"thin"}, left:{style:"thin"}, right:{style:"thin"} };
+        }
       });
 
-      // Column widths
-      ws.getColumn(1).width=5; ws.getColumn(2).width=12; ws.getColumn(3).width=8;
-      ws.getColumn(4).width=22; ws.getColumn(5).width=10; ws.getColumn(6).width=8;
-      for(let d=1;d<=daysInMonth;d++) ws.getColumn(6+d).width=4;
+      /* ── FOOTER / TANDA TANGAN ── */
+      const FOOTER_ROW = TOTAL_ROW_START + SUMMARY_DEFS2.length + 3;
+      ws.getRow(FOOTER_ROW - 1).height = 14; // spacer
 
-      const buf = await wb.xlsx.writeBuffer();
-      const blob = new Blob([buf], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href=url; a.download=`Roster_Perawat_${bulanNama.replace(" ","_")}.xlsx`;
+      /* Kiri: PJ SIRS & Pembawa HP */
+      ws.getCell(FOOTER_ROW, 1).value = `PJ SIRS : ${pjSirs}`;
+      ws.getCell(FOOTER_ROW, 1).font  = { bold: true, size: 10 };
+      ws.getCell(FOOTER_ROW + 1, 1).value = `Pembawa HP : ${pembawHP}`;
+      ws.getCell(FOOTER_ROW + 1, 1).font  = { size: 10 };
+
+      /* Kanan: Blok tanda tangan kepala instalasi */
+      const sigCol = TOTAL_COLS - 4;
+      ws.mergeCells(FOOTER_ROW, sigCol, FOOTER_ROW, TOTAL_COLS);
+      ws.getCell(FOOTER_ROW, sigCol).value = "MENGETAHUI";
+      ws.getCell(FOOTER_ROW, sigCol).font  = { bold: true, size: 10 };
+      ws.getCell(FOOTER_ROW, sigCol).alignment = { horizontal: "center" };
+
+      ws.mergeCells(FOOTER_ROW+1, sigCol, FOOTER_ROW+1, TOTAL_COLS);
+      ws.getCell(FOOTER_ROW+1, sigCol).value = "Kepala Instalasi Kamar Bedah";
+      ws.getCell(FOOTER_ROW+1, sigCol).font  = { size: 10 };
+      ws.getCell(FOOTER_ROW+1, sigCol).alignment = { horizontal: "center" };
+
+      /* Spasi tanda tangan 4 baris */
+      for(let r=0; r<4; r++){
+        ws.getRow(FOOTER_ROW + 2 + r).height = 16;
+      }
+
+      ws.mergeCells(FOOTER_ROW+6, sigCol, FOOTER_ROW+6, TOTAL_COLS);
+      ws.getCell(FOOTER_ROW+6, sigCol).value = kepInstall;
+      ws.getCell(FOOTER_ROW+6, sigCol).font  = { bold: true, size: 10, underline: true };
+      ws.getCell(FOOTER_ROW+6, sigCol).alignment = { horizontal: "center" };
+
+      /* ── Lebar kolom ── */
+      ws.getColumn(COL_NO).width   = 5;
+      ws.getColumn(COL_NIK).width  = 13;
+      ws.getColumn(COL_PK).width   = 5;
+      ws.getColumn(COL_CUTI).width = 7;
+      ws.getColumn(COL_NAMA).width = 24;
+      for(let d=1; d<=dim; d++) ws.getColumn(COL_DATE_START + d - 1).width = 4.5;
+      SUMMARY_COLS.forEach((_, si) => { ws.getColumn(COL_SUM_START + si).width = 5; });
+
+      /* ── Freeze pane: beku 5 kolom kiri + 6 baris atas ── */
+      ws.views = [{ state:"frozen", xSplit: COL_DATE_START - 1, ySplit: 6, activeCell:"F7" }];
+
+      const buf  = await wb.xlsx.writeBuffer();
+      const blob = new Blob([buf as ArrayBuffer], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href = url;
+      a.download = `Jadwal_Petugas_KamarBedah_${BULAN_NAMA_ID[month]}_${year}.xlsx`;
       document.body.appendChild(a); a.click();
       document.body.removeChild(a); URL.revokeObjectURL(url);
       showToast("✅ File Excel berhasil diunduh!", "#2E7D32");
-    } catch(e:any){ showToast("⚠ Gagal export Excel: "+(e?.message||"error"), "#D62828"); }
+    } catch(e:any) {
+      showToast("⚠ Gagal export Excel: " + (e?.message||"error"), "#D62828");
+    }
   };
 
-  /* ─── Sync to Supabase ───────────────────────────────────────────── */
+  /* ─── Sync to Supabase (manual, dengan feedback) ─────────────────── */
   const syncToCloud = async () => {
     setSyncing(true);
-    const payload = {
-      updated_at: new Date().toISOString(),
-      data: {
-        year, month, nurses,
-        jadwal: nurses.map((_,ni) => grid[ni].slice(0,daysInMonth).join(",")).join("|"),
-        holidays: holidays.slice(0,daysInMonth).join(","),
-        generatedAt: fNow(),
-      }
-    };
-    const res = await upsertOneToSupa("kb_roster_gen", payload);
+    await syncToCloudSilent(grid, nurses, holidays, month, year, true);
     setSyncing(false);
-    if(res.ok) showToast("✅ Roster tersinkron ke Supabase!", "#2E7D32");
-    else showToast("⚠ Gagal sync: "+(res.error||"error"), "#D62828");
   };
 
-  /* ─── Backup to Dropbox ──────────────────────────────────────────── */
+  /* ─── Backup to Dropbox (Excel, manual) ─────────────────────────── */
   const backupToDropbox = async () => {
     setSyncingDbx(true);
     try {
-      // 1. Build Excel workbook
-      const wb = new ExcelJS.Workbook();
-      const ws = wb.addWorksheet("Roster Perawat");
-      const bulanNama = new Date(year, month, 1).toLocaleString("id-ID",{month:"long",year:"numeric"});
-      ws.mergeCells(1,1,1,6+daysInMonth);
-      const titleCell = ws.getCell(1,1);
-      titleCell.value = `ROSTER PERAWAT — ${HOSPITAL} — ${bulanNama.toUpperCase()}`;
-      titleCell.font = {bold:true,size:12,color:{argb:"FFFFFFFF"}};
-      titleCell.fill = {type:"pattern",pattern:"solid",fgColor:{argb:"FF16685F"}};
-      titleCell.alignment = {horizontal:"center",vertical:"middle"};
-      ws.getRow(1).height = 28;
-      const headers = ["NO","NIK","PK","NAMA","SISA CUTI","TIPE",...Array.from({length:daysInMonth},(_,i)=>String(i+1))];
-      const hRow = ws.getRow(2);
-      headers.forEach((h,ci)=>{
-        const cell=hRow.getCell(ci+1);
-        cell.value=h; cell.font={bold:true,size:10,color:{argb:"FFFFFFFF"}};
+      /* Re-use downloadExcel logic, tapi tulis ke base64 → Dropbox */
+      const wb  = new ExcelJS.Workbook();
+      const ws  = wb.addWorksheet("Roster");
+      const bulanLabel = `${BULAN_NAMA_ID[month]} ${year}`;
+      ws.mergeCells(1,1,1,5+daysInMonth);
+      const tc = ws.getCell(1,1);
+      tc.value = `JADWAL PETUGAS KAMAR BEDAH — ${bulanLabel}`;
+      tc.font  = {bold:true,size:12,color:{argb:"FFFFFFFF"}};
+      tc.fill  = {type:"pattern",pattern:"solid",fgColor:{argb:"FF0284C7"}};
+      tc.alignment = {horizontal:"center",vertical:"middle"};
+      ws.getRow(1).height = 26;
+      const hdrs = ["NO","NIK","PK","SISA CUTI","NAMA",...Array.from({length:daysInMonth},(_,i)=>String(i+1))];
+      const hr = ws.getRow(2);
+      hdrs.forEach((h,ci)=>{
+        const cell=hr.getCell(ci+1); cell.value=h;
+        cell.font={bold:true,size:10,color:{argb:"FFFFFFFF"}};
         cell.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FF234B45"}};
         cell.alignment={horizontal:"center",vertical:"middle"};
         cell.border={top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
       });
-      hRow.height=22;
+      hr.height=20;
       nurses.forEach((n,ni)=>{
         const dr=ws.getRow(3+ni);
-        [ni+1,n.nik,n.pk,n.name,n.sisaCuti,n.tipe].forEach((v,ci)=>{
-          const cell=dr.getCell(ci+1); cell.value=v;
-          cell.alignment={horizontal:"center",vertical:"middle"};
-          cell.border={top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
+        [ni+1,n.nik,n.pk,n.sisaCuti,n.name].forEach((v,ci)=>{
+          const c=dr.getCell(ci+1); c.value=v;
+          c.alignment={horizontal:"center",vertical:"middle"};
+          c.border={top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
         });
-        Array.from({length:daysInMonth},(_,d)=>{
-          const code=newGrid_safe(ni,d);
-          const cell=dr.getCell(7+d); cell.value=code;
-          cell.alignment={horizontal:"center",vertical:"middle"};
-          cell.border={top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
-        });
+        for(let d=0;d<daysInMonth;d++){
+          const c=dr.getCell(6+d); c.value=newGrid_safe(ni,d);
+          c.alignment={horizontal:"center",vertical:"middle"};
+          c.border={top:{style:"thin"},bottom:{style:"thin"},left:{style:"thin"},right:{style:"thin"}};
+        }
         dr.height=18;
       });
-      ws.getColumn(1).width=5; ws.getColumn(2).width=12; ws.getColumn(3).width=8;
-      ws.getColumn(4).width=22; ws.getColumn(5).width=10; ws.getColumn(6).width=8;
-      for(let d=1;d<=daysInMonth;d++) ws.getColumn(6+d).width=4;
-
-      // 2. Upload ke Dropbox via proxy (callDbxProxy langsung dengan base64 ExcelJS buffer)
-      const folder = dbxCfg.path.replace(/[^/]+$/,"");
+      ws.getColumn(1).width=5; ws.getColumn(2).width=12; ws.getColumn(3).width=5;
+      ws.getColumn(4).width=7; ws.getColumn(5).width=22;
+      for(let d=1;d<=daysInMonth;d++) ws.getColumn(5+d).width=4.5;
+      const folder = (dbxCfg?.path||"/kamarbedah/").replace(/[^/]+$/,"");
       const stamp  = `${year}-${String(month+1).padStart(2,"0")}`;
-      const path   = `${folder}Roster_Perawat_${stamp}.xlsx`;
-      const buf = await wb.xlsx.writeBuffer() as unknown as Uint8Array;
-      const CHUNK = 8192; let binary = "";
-      for(let i=0;i<buf.length;i+=CHUNK) binary+=String.fromCharCode(...buf.subarray(i,i+CHUNK));
-      const base64 = btoa(binary);
-      const dbxRes = await callDbxProxy({action:"upload_excel", path, base64});
-      if(dbxRes.ok) showToast("✅ Roster berhasil di-backup ke Dropbox!", "#0061FF");
-      else showToast("⚠ Gagal backup Dropbox: "+dbxRes.msg, "#D62828");
-    } catch(e:any){
-      showToast("⚠ Error backup Dropbox: "+(e?.message||"error"), "#D62828");
+      const path   = `${folder}Jadwal_KamarBedah_${stamp}.xlsx`;
+      const buf    = await wb.xlsx.writeBuffer() as unknown as Uint8Array;
+      const CHUNK=8192; let bin="";
+      for(let i=0;i<buf.length;i+=CHUNK) bin+=String.fromCharCode(...buf.subarray(i,i+CHUNK));
+      const b64 = btoa(bin);
+      const res = await callDbxProxy({action:"upload_excel", path, base64: b64});
+      if(res.ok) showToast("✅ Roster berhasil di-backup ke Dropbox!", "#0061FF");
+      else showToast("⚠ Gagal backup Dropbox: " + res.msg, "#D62828");
+    } catch(e:any) {
+      showToast("⚠ Error backup Dropbox: " + (e?.message||"error"), "#D62828");
     }
     setSyncingDbx(false);
   };
@@ -5633,17 +6131,56 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
     return {...base, background:"#fff", color:"#999"};
   };
 
+  /* ── Label & warna indikator status cloud ── */
+  const cloudStatusUI: Record<string, {label:string; color:string; bg:string}> = {
+    idle:    { label:"● Belum ada perubahan",  color:"#94A3B8", bg:"#F1F5F9" },
+    saving:  { label:"⟳ Menyimpan...",          color:"#0284C7", bg:"#E0F2FE" },
+    ok:      { label:"✓ Tersimpan di cloud",    color:"#16A34A", bg:"#DCFCE7" },
+    error:   { label:"✕ Gagal sync cloud",      color:"#DC2626", bg:"#FEE2E2" },
+    offline: { label:"⚡ Offline — draft lokal", color:"#D97706", bg:"#FEF3C7" },
+  };
+  const csUI = cloudStatusUI[cloudStatus];
+
   return (
     <div style={{paddingBottom:40}}>
       {/* Header */}
       <Row title="🗓 Generator Roster Perawat" right={
-        <div style={{display:"flex",gap:8}}>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           <Btn sm onClick={generateRoster} color="linear-gradient(135deg,#1e3a8a,#0284c7)">⚡ Generate</Btn>
-          <Btn sm onClick={downloadExcel} color="linear-gradient(135deg,#0369a1,#38bdf8)">⬇ Excel</Btn>
-          <Btn sm onClick={syncToCloud} color="linear-gradient(135deg,#1d4ed8,#6366f1)" disabled={syncing}>{syncing?"⏳ Supabase...":"☁ Supabase"}</Btn>
+          <Btn sm onClick={downloadExcel}  color="linear-gradient(135deg,#0369a1,#38bdf8)">⬇ Excel</Btn>
+          <Btn sm onClick={syncToCloud}    color="linear-gradient(135deg,#1d4ed8,#6366f1)" disabled={syncing}>{syncing?"⏳ Supabase...":"☁ Supabase"}</Btn>
           <Btn sm onClick={backupToDropbox} color="linear-gradient(135deg,#0061FF,#38bdf8)" disabled={syncingDbx}>{syncingDbx?"⏳ Dropbox...":"📦 Dropbox"}</Btn>
         </div>
       }/>
+
+      {/* ── FITUR 2: Tombol Simpan Jadwal + Indikator Status Cloud ── */}
+      <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
+        <button
+          onClick={saveJadwal}
+          disabled={savingJadwal}
+          style={{
+            flex:1, minWidth:200, padding:"13px 20px",
+            background: savingJadwal ? "#94A3B8" : "linear-gradient(135deg,#0284c7,#0369a1)",
+            color:"#fff", border:"none", borderRadius:12,
+            fontSize:14, fontWeight:800, cursor: savingJadwal ? "not-allowed" : "pointer",
+            fontFamily:"inherit", boxShadow:"0 4px 14px rgba(2,132,199,.35)",
+            display:"flex", alignItems:"center", justifyContent:"center", gap:8,
+            transition:"all .2s",
+          }}
+        >
+          {savingJadwal
+            ? <><span style={{animation:"spin 1s linear infinite",display:"inline-block"}}>⟳</span> Menyimpan...</>
+            : <>💾 Simpan Jadwal</>
+          }
+        </button>
+        <div style={{
+          background: csUI.bg, color: csUI.color, fontSize:11, fontWeight:700,
+          padding:"8px 12px", borderRadius:10, border:`1px solid ${csUI.color}33`,
+          whiteSpace:"nowrap", flexShrink:0,
+        }}>
+          {csUI.label}
+        </div>
+      </div>
 
       {/* Pilih Bulan / Tahun */}
       <Card style={{marginBottom:12}}>
@@ -5656,6 +6193,24 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
             {yearOptions.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}
           </select>
           <div style={{fontSize:12,color:C.tL}}>→ {daysInMonth} hari</div>
+        </div>
+      </Card>
+
+      {/* ── Pengaturan Footer Excel (PJ SIRS, Pembawa HP, Kepala Instalasi) ── */}
+      <Card style={{marginBottom:12,background:"#F0F9FF",border:"1px solid #BAE6FD"}}>
+        <SH label="📋 Konfigurasi Dokumen" color="#0369A1"/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <LF label="PJ SIRS">
+            <input style={iS} value={pjSirs} onChange={e=>setPjSirs(e.target.value)} placeholder="Nama PJ SIRS"/>
+          </LF>
+          <LF label="Pembawa HP">
+            <input style={iS} value={pembawHP} onChange={e=>setPembawHP(e.target.value)} placeholder="Nama pembawa HP"/>
+          </LF>
+          <div style={{gridColumn:"1 / -1"}}>
+            <LF label="Kepala Instalasi Kamar Bedah">
+              <input style={iS} value={kepInstall} onChange={e=>setKepInstall(e.target.value)} placeholder="cth: drg. Agus Sri G, Sp. BM"/>
+            </LF>
+          </div>
         </div>
       </Card>
 
@@ -5687,7 +6242,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
                 <td colSpan={6} style={{padding:"6px 10px",fontSize:11,fontWeight:700,color:C.g,borderBottom:"1px solid #e0e0e0"}}>Hari Libur ↓</td>
                 {Array.from({length:daysInMonth},(_,d)=>(
                   <td key={d} style={{textAlign:"center",padding:"4px 2px",borderBottom:"1px solid #e0e0e0",minWidth:28}}>
-                    <input type="checkbox" checked={holidays[d]} onChange={e=>setHolidays(h=>h.map((v,i)=>i===d?e.target.checked:v))} style={{cursor:"pointer"}} title={`Hari ke-${d+1} = Hari Libur`}/>
+                    <input type="checkbox" checked={holidays[d]} onChange={e=>updateHoliday(d,e.target.checked)} style={{cursor:"pointer"}} title={`Hari ke-${d+1} = Hari Libur`}/>
                   </td>
                 ))}
               </tr>
@@ -5710,19 +6265,26 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
             </thead>
             <tbody>
               {nurses.map((n,ni)=>(
-                <tr key={n.id} style={{background:ni%2===0?"#fff":"#F8FDFC"}}>
+                <tr key={n.id} style={{background:ni%2===0?"#fff":"#f0f7ff"}}>
                   <td style={{padding:"4px 6px",textAlign:"center",fontWeight:700,fontSize:11,borderRight:"1px solid #f0f0f0",minWidth:32}}>{ni+1}</td>
-                  <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:70}}>
-                    <input value={n.nik} onChange={e=>updateNurse(ni,"nik",e.target.value)} style={{width:"100%",border:"none",background:"transparent",fontSize:10,textAlign:"center",outline:"none"}} placeholder="NIK"/>
+                  {/* NIK = dropdown dengan auto-populate Nama & PK */}
+                  <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:90}}>
+                    <select value={n.nik} onChange={e=>handleNikChange(ni, e.target.value)} style={{width:"100%",border:"none",background:"transparent",fontSize:10,outline:"none",cursor:"pointer"}}>
+                      <option value="">-- NIK --</option>
+                      {MASTER_PERAWAT_LIST.map(m=>(
+                        <option key={m.nik} value={m.nik}>{m.nik}</option>
+                      ))}
+                    </select>
                   </td>
                   <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:50}}>
                     <input value={n.pk} onChange={e=>updateNurse(ni,"pk",e.target.value)} style={{width:"100%",border:"none",background:"transparent",fontSize:10,textAlign:"center",outline:"none"}} placeholder="PK"/>
                   </td>
-                  <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:120}}>
+                  <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:130}}>
                     <input value={n.name} onChange={e=>updateNurse(ni,"name",e.target.value)} style={{width:"100%",border:"none",background:"transparent",fontSize:11,outline:"none"}} placeholder="Nama perawat..."/>
                   </td>
+                  {/* sisaCuti — fixed leading zero bug */}
                   <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:50}}>
-                    <input type="number" value={n.sisaCuti} onChange={e=>updateNurse(ni,"sisaCuti",Number(e.target.value))} style={{width:"100%",border:"none",background:"transparent",fontSize:10,textAlign:"center",outline:"none"}} min={0} max={30}/>
+                    <input type="number" value={n.sisaCuti} onChange={e=>handleSisaCutiChange(ni, e.target.value)} style={{width:"100%",border:"none",background:"transparent",fontSize:10,textAlign:"center",outline:"none"}} min={0} max={30}/>
                   </td>
                   <td style={{padding:"2px 4px",borderRight:"1px solid #f0f0f0",minWidth:70}}>
                     <select value={n.tipe} onChange={e=>updateNurse(ni,"tipe",e.target.value as NurseType)} style={{width:"100%",border:"none",background:"transparent",fontSize:10,outline:"none",cursor:"pointer"}}>
@@ -5735,12 +6297,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
                     const code = newGrid_safe(ni,d);
                     return (
                       <td key={d} style={cellStyle(code)}>
-                        <input
-                          value={code}
-                          onChange={e=>updateCell(ni,d,e.target.value)}
-                          style={{width:26,border:"none",background:"transparent",textAlign:"center",fontSize:10,fontWeight:700,outline:"none",color:"inherit",padding:0}}
-                          maxLength={2}
-                        />
+                        <input value={code} onChange={e=>updateCell(ni,d,e.target.value)} style={{width:26,border:"none",background:"transparent",textAlign:"center",fontSize:10,fontWeight:700,outline:"none",color:"inherit",padding:0}} maxLength={2}/>
                       </td>
                     );
                   })}
@@ -5750,18 +6307,18 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
             {/* Summary footer */}
             <tfoot>
               {[
-                {label:"∑ Pagi (P)",   codes:["P"],   bg:"#E3F2FD", cl:"#1565C0"},
-                {label:"∑ Pagi Siaga (PG)", codes:["PG"], bg:"#BBDEFB", cl:"#1565C0"},
-                {label:"∑ Siang (S)",  codes:["S"],   bg:"#FFF3E0", cl:"#E65100"},
-                {label:"∑ Siang Siaga (SG)", codes:["SG"], bg:"#FFE0B2", cl:"#E65100"},
-                {label:"∑ Libur (L/LG)", codes:["L","LG"], bg:"#F3F3F3", cl:"#5C677D"},
-                {label:"∑ Cuti (T)",   codes:["T"],   bg:"#FFEBEE", cl:"#C62828"},
+                {label:"∑ Pagi (P)",          codes:["P"],       bg:"#E3F2FD", cl:"#1565C0"},
+                {label:"∑ Pagi Siaga (PG)",   codes:["PG"],      bg:"#BBDEFB", cl:"#1565C0"},
+                {label:"∑ Siang (S)",         codes:["S"],        bg:"#FFF3E0", cl:"#E65100"},
+                {label:"∑ Siang Siaga (SG)",  codes:["SG"],       bg:"#FFE0B2", cl:"#E65100"},
+                {label:"∑ Libur (L/LG)",      codes:["L","LG"],   bg:"#F3F3F3", cl:"#5C677D"},
+                {label:"∑ Cuti (T)",          codes:["T"],        bg:"#FFEBEE", cl:"#C62828"},
               ].map(({label,codes,bg,cl})=>(
                 <tr key={label} style={{background:bg}}>
-                  <td colSpan={6} style={{padding:"4px 10px",fontSize:11,fontWeight:700,color:cl,textAlign:"right",borderTop:"2px solid rgba(0,0,0,.08)"}}>{label}</td>
+                  <td colSpan={6} style={{padding:"4px 10px",fontSize:12,fontWeight:800,color:cl,textAlign:"right",borderTop:"2px solid rgba(0,0,0,.12)"}}>{label}</td>
                   {Array.from({length:daysInMonth},(_,d)=>{
                     const cnt = nurses.reduce((c,_,ni)=>codes.includes(newGrid_safe(ni,d))?c+1:c,0);
-                    return <td key={d} style={{textAlign:"center",fontSize:11,fontWeight:700,color:cl,borderTop:"2px solid rgba(0,0,0,.08)",minWidth:28}}>{cnt||""}</td>;
+                    return <td key={d} style={{textAlign:"center",fontSize:12,fontWeight:800,color:cl,borderTop:"2px solid rgba(0,0,0,.12)",minWidth:28}}>{cnt||""}</td>;
                   })}
                 </tr>
               ))}
@@ -5771,10 +6328,26 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
       </Card>
 
       {/* Tombol Tambah Perawat */}
-      <div style={{marginTop:12}}>
+      <div style={{marginTop:12,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
         <Btn sm onClick={addNurse} color={C.g} outline>+ Tambah Perawat</Btn>
-        <span style={{marginLeft:12,fontSize:11,color:C.tL}}>Total: {nurses.length} perawat</span>
+        <span style={{fontSize:11,color:C.tL}}>Total: {nurses.length} perawat</span>
+        <div style={{flex:1}}/>
+        {/* Tombol Simpan di bawah tabel juga (duplikat untuk akses mudah) */}
+        <button
+          onClick={saveJadwal}
+          disabled={savingJadwal}
+          style={{
+            padding:"10px 18px",
+            background: savingJadwal ? "#94A3B8" : "linear-gradient(135deg,#0284c7,#1e3a8a)",
+            color:"#fff", border:"none", borderRadius:10,
+            fontSize:12, fontWeight:700, cursor: savingJadwal ? "not-allowed" : "pointer",
+            fontFamily:"inherit", boxShadow:"0 2px 8px rgba(2,132,199,.3)",
+          }}
+        >
+          {savingJadwal ? "⟳ Menyimpan..." : "💾 Simpan Jadwal"}
+        </button>
       </div>
+      <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
     </div>
   );
 }
@@ -6041,6 +6614,7 @@ export default function App() {
       html,body{margin:0;padding:0;}
       @keyframes kbPulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(201,169,97,.55);}50%{opacity:.85;box-shadow:0 0 0 4px rgba(201,169,97,0);}}
       @keyframes lgFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+      @keyframes redPulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.4;transform:scale(.7);}}
 
       /* ── Mobile default (<640px) ── */
       body{background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
@@ -6891,19 +7465,61 @@ export default function App() {
           {/* Operasi hari ini ringkas */}
           <Card style={{marginBottom:16}}>
             <SH label="📋 Operasi Hari Ini" color={C.i}/>
-            {ops.filter((o:any)=>o.date===todayDate()&&o.status!=="batal").length===0
-              ? <div style={{fontSize:13,color:C.tL,textAlign:"center",padding:"8px 0",fontStyle:"italic"}}>Tidak ada operasi terjadwal hari ini</div>
-              : [...ops.filter((o:any)=>o.date===todayDate()&&o.status!=="batal")].sort((a:any,b:any)=>a.time.localeCompare(b.time)).map((op:any)=>(
-                <div key={op.id} style={{display:"flex",gap:10,alignItems:"center",marginBottom:8,paddingBottom:8,borderBottom:`1px solid ${C.b}`}}>
-                  <div style={{background:op.opType==="cyto"?"#FFCDD2":C.iBg,borderRadius:8,padding:"4px 8px",fontSize:11,fontWeight:700,color:op.opType==="cyto"?"#B71C1C":C.i,flexShrink:0,minWidth:46,textAlign:"center"}}>{op.time}</div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:700,color:C.t,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{maskName(op.patient,privacyMode)}</div>
-                    <div style={{fontSize:11,color:C.tL,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{op.procedure} · {op.room}</div>
+            {(() => {
+              const todayOps = [...ops.filter((o:any)=>o.date===todayDate()&&o.status!=="batal")]
+                .sort((a:any,b:any)=>{
+                  const aDone=a.status==="done", bDone=b.status==="done";
+                  if(!aDone&&bDone) return -1;
+                  if(aDone&&!bDone) return 1;
+                  return a.time.localeCompare(b.time);
+                });
+              if(todayOps.length===0) return (
+                <div style={{fontSize:13,color:C.tL,textAlign:"center",padding:"8px 0",fontStyle:"italic"}}>Tidak ada operasi terjadwal hari ini</div>
+              );
+              return todayOps.map((op:any)=>{
+                const isDone = op.status==="done";
+                const isActive = !isDone && op.status!=="batal";
+                const doUpdate = (newStatus: string) => {
+                  const upd={...op,status:newStatus,updated_at:new Date().toISOString()};
+                  setOps((p:any[])=>p.map((o:any)=>o.id===op.id?upd:o));
+                  upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any[])=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal: ${res?.error||"error"}`,C.d); } });
+                };
+                /* Auto-minimize: pasien selesai */
+                if(isDone) return (
+                  <div key={op.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 10px",marginBottom:5,borderRadius:9,background:"#f1f5f9",opacity:.4}}>
+                    <span style={{fontSize:11}}>✅</span>
+                    <span style={{fontSize:12,color:"#475569",flex:1,textDecoration:"line-through",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{maskName(op.patient,privacyMode)} — {op.time}</span>
+                    <Bdg label="Selesai" color={C.s} bg={C.sBg}/>
                   </div>
-                  <Bdg label={STS[op.status as keyof typeof STS]?.l||"Terjadwal"} color={STS[op.status as keyof typeof STS]?.c||C.i} bg={STS[op.status as keyof typeof STS]?.bg||C.iBg}/>
-                </div>
-              ))
-            }
+                );
+                return (
+                  <div key={op.id} style={{display:"flex",gap:10,alignItems:"center",marginBottom:10,paddingBottom:10,borderBottom:`1px solid ${C.b}`,background:isActive?"#fef2f2":"transparent",borderRadius:10,padding:"8px 10px"}}>
+                    {/* Blinking dot */}
+                    {isActive && <span style={{width:9,height:9,borderRadius:"50%",background:"#ef4444",flexShrink:0,display:"inline-block",animation:"redPulse 1.2s ease-in-out infinite"}}/>}
+                    {/* Waktu badge */}
+                    <div style={{background:op.opType==="cyto"?"#FFCDD2":C.iBg,borderRadius:8,padding:"4px 8px",fontSize:11,fontWeight:700,color:op.opType==="cyto"?"#B71C1C":C.i,flexShrink:0,minWidth:46,textAlign:"center"}}>{op.time}</div>
+                    {/* Info */}
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:700,color:C.t,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{maskName(op.patient,privacyMode)}</div>
+                      <div style={{fontSize:11,color:C.tL,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{op.procedure} · {op.room}</div>
+                    </div>
+                    {/* Tombol aksi inline */}
+                    <div style={{display:"flex",gap:5,flexShrink:0}}>
+                      {op.status==="scheduled" && (
+                        <button onClick={()=>doUpdate("ongoing")} style={{background:"#22c55e",color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(34,197,94,.35)"}}>
+                          ▶ Mulai
+                        </button>
+                      )}
+                      {op.status==="ongoing" && (
+                        <button onClick={()=>doUpdate("done")} style={{background:"#ef4444",color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(239,68,68,.35)"}}>
+                          ✓ Selesai
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              });
+            })()}
           </Card>
 
           {/* Quick Links */}
