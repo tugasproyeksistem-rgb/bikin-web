@@ -5596,6 +5596,11 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
     try { localStorage.setItem(LS_MASTER_KEY, JSON.stringify(nurseMasterList)); } catch { /* ignore */ }
   }, [nurseMasterList]);
 
+  /* FIX TDZ: newGrid_safe dipindah ke sini (sebelum rowSummaries/colSummaries)
+     karena kedua useMemo di bawah memanggilnya saat render pertama — definisi
+     const yang berada di bawah useMemo menyebabkan ReferenceError TDZ. */
+  const newGrid_safe = (ni:number, d:number) => grid[ni]?.[d] ?? "";
+
   /* ── FITUR 3: useMemo — ringkasan individu per baris (Sumbu Kanan) ── */
   const rowSummaries = useMemo(() =>
     nurses.map((_, ni) => {
@@ -6019,7 +6024,6 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
   const countCode = (code: string) => {
     return Array.from({length:daysInMonth},(_,d)=>nurses.reduce((c,_,ni)=>newGrid_safe(ni,d)===code?c+1:c,0));
   };
-  const newGrid_safe = (ni:number, d:number) => grid[ni]?.[d] ?? "";
   const sumRow = (codes: string[]) => (d:number) => nurses.reduce((c,_,ni)=>codes.includes(newGrid_safe(ni,d))?c+1:c,0);
 
   /* ─── FITUR 2 — TOMBOL "SIMPAN JADWAL" ─────────────────────────────── */
