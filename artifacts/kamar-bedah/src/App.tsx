@@ -9,6 +9,7 @@ import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
 import html2canvas from "html2canvas";
 import { createClient, type RealtimeChannel } from "@supabase/supabase-js";
+import { createClient as createTursoClient } from "@libsql/client";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
 
 /* ─── ENV TYPES (FIX #1 — AUDIT CRITICAL #1) ────────────────────────────
@@ -23,6 +24,8 @@ declare global {
   interface ImportMetaEnv {
     readonly VITE_SUPABASE_URL?: string;
     readonly VITE_SUPABASE_ANON_KEY?: string;
+    readonly VITE_TURSO_URL?: string;
+    readonly VITE_TURSO_TOKEN?: string;
   }
   interface ImportMeta {
     readonly env: ImportMetaEnv;
@@ -36,6 +39,88 @@ const CONFIG = {
 };
 const HOSPITAL = CONFIG.HOSPITAL;
 const LOCK_MS  = 10 * 60 * 1000;
+
+/* ─── TURSO AUDIT CLIENT ─────────────────────────────────────────────
+   Driver: @libsql/client (official Turso JS driver).
+   Client di-init sekali di module level — ringan, koneksi di-pool otomatis.
+   Semua tulis audit bersifat FIRE-AND-FORGET (.catch tanpa await) sehingga
+   TIDAK PERNAH memblokir UI rendering apapun di aplikasi utama.
+   ─────────────────────────────────────────────────────────────────── */
+const TURSO_CLIENT = createTursoClient({
+  url:       (import.meta as ImportMeta).env.VITE_TURSO_URL  || "",
+  authToken: (import.meta as ImportMeta).env.VITE_TURSO_TOKEN || "",
+});
+
+/** Inisialisasi tabel audit log (DDL CREATE IF NOT EXISTS) — dipanggil sekali saat modul dimuat */
+(async () => {
+  try {
+    await TURSO_CLIENT.execute(`
+      CREATE TABLE IF NOT EXISTS audit_log_kamar_bedah (
+        id       TEXT PRIMARY KEY,
+        waktu    TEXT NOT NULL,
+        kategori TEXT NOT NULL,
+        operator TEXT NOT NULL,
+        aksi     TEXT NOT NULL,
+        detail   TEXT NOT NULL,
+        metadata TEXT NOT NULL
+      )
+    `);
+  } catch (e) {
+    /* DDL gagal (mis: URL kosong saat dev lokal) — diabaikan senyap */
+    console.warn("[TURSO] DDL init skipped:", e);
+  }
+})();
+
+/** fWIB — format Date ke string WIB: "YYYY-MM-DD HH:MM:SS" */
+function fWIB(d: Date = new Date()): string {
+  const wib = new Date(d.getTime() + 7 * 60 * 60 * 1000);
+  return wib.toISOString().replace("T"," ").slice(0, 19);
+}
+
+/** gHex8 — 16-char hex string sebagai ID audit unik (crypto.randomUUID fallback) */
+function gHex16(): string {
+  try { return crypto.randomUUID().replace(/-/g,"").slice(0,16); }
+  catch { return Math.random().toString(36).slice(2,10) + Math.random().toString(36).slice(2,10); }
+}
+
+/**
+ * AmbilLogMedis — Non-blocking real-time audit logger ke Turso.
+ *
+ * @param kategori  'KEAMANAN' | 'NAVIGASI' | 'DAFTAR_PASIEN' | 'JADWAL_OPERASI' |
+ *                  'ROSTER_STAF' | 'LAPORAN_BACKUP' | 'MANAJEMEN_STAF'
+ * @param operator  'Admin' | 'Perawat' | 'Sistem' | 'Unknown'
+ * @param aksi      Nama tindakan spesifik: 'LOGIN_SUKSES', 'TAMBAH_PASIEN', dll.
+ * @param detail    Deskripsi teks ringkas
+ * @param metadata  Payload JSON forensik (before/after data, optional)
+ *
+ * PENTING: Fungsi ini TIDAK menggunakan await — eksekusi Turso berjalan
+ * asinkronus di background, TIDAK memblokir event loop React.
+ */
+const AmbilLogMedis = (
+  kategori: string,
+  operator: string,
+  aksi:     string,
+  detail:   string,
+  metadata: object = {}
+): void => {
+  /* Guard: jika URL Turso tidak dikonfigurasi, skip tanpa error */
+  if(!(import.meta as ImportMeta).env.VITE_TURSO_URL) return;
+
+  TURSO_CLIENT.execute({
+    sql: `INSERT OR IGNORE INTO audit_log_kamar_bedah
+            (id, waktu, kategori, operator, aksi, detail, metadata)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    args: [
+      gHex16(),
+      fWIB(),
+      kategori,
+      operator,
+      aksi,
+      detail,
+      JSON.stringify(metadata),
+    ],
+  }).catch((err: unknown) => console.error("[TURSO] audit log error:", err));
+};
 
 /* ─── CONSTANTS ─────────────────────────────────────────────────────── */
 const ROOMS = ["Kamar Operasi 1","Kamar Operasi 2","Kamar Operasi 3","Kamar Operasi 4","Kamar Operasi 5"];
@@ -635,17 +720,6 @@ const defaultSupaCfg: SupabaseConfig = { url:"", anonKey:"", autoBackup:true, ba
    — sebuah shared secret terbatas yang HANYA bisa memicu 2 aksi spesifik
    (backup/restore 1 folder) lewat proxy ini, BUKAN kunci akses Dropbox
    penuh. Lihat catatan di vite-env.d.ts / .env.local untuk cara isi nilainya. */
-const SUPA_URL    = (import.meta as any).env?.VITE_SUPABASE_URL as string | undefined;
-const SUPA_ANON   = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY as string | undefined;
-if (!SUPA_URL || !SUPA_ANON) {
-  // eslint-disable-next-line no-console
-  console.error(
-    "[Konfigurasi] VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY belum diset di .env.local. " +
-    "Aplikasi tidak dapat terhubung ke Supabase sampai env var ini dikonfigurasi."
-  );
-}
-const SUPA_CLIENT = createClient(SUPA_URL || "", SUPA_ANON || "");
-
 const DBX_PROXY_SECRET = (import.meta as any).env?.VITE_PROXY_SHARED_SECRET || "";
 const DBX_PROXY_FN     = "dropbox-proxy";
 
@@ -860,10 +934,19 @@ function buildLaporan({greeting,recipients,keterangan,todayOps,tomorrowOps,anest
   const sortedActive = [...active].sort((a:any,b:any)=>a.time.localeCompare(b.time));
   const todayLines = sortedActive.map((o:any, i:number)=>{
     const cytoMark = o.opType==="cyto" ? "⚠️[CYTO]⚠️ " : "";
-    const anest = sanitize(o.anesthesiologist)||"-";
-    const surg  = sanitize(o.surgeon)||"-";
-    const proc  = sanitize(o.procedure);
-    return `_${i+1}. ${o.time} ${cytoMark}${sanitize(o.patient)} - ${proc} - ${surg} (Anest: ${anest})_`;
+    const anest    = sanitize(o.anesthesiologist)||"-";
+    const surg     = sanitize(o.surgeon)||"-";
+    const proc     = sanitize(o.procedure);
+    const asisten  = sanitize(o.assistantNurse)||"-";
+    const instrumen= sanitize(o.circulatingNurse)||"-";
+    const onloop   = sanitize(o.onloopNurse)||"-";
+    const rr       = sanitize(o.rrKatim)||"-";
+    const anestNrs = sanitize(o.anesthesiaNurse)||"-";
+    return [
+      `_${i+1}. ${o.time} ${cytoMark}${sanitize(o.patient)} - ${proc} - ${surg} (Anest: ${anest})_`,
+      `   Asisten: ${asisten} | Instrumen: ${instrumen}`,
+      `   Onloop: ${onloop} | RR/Katim: ${rr} | Pr.Anest: ${anestNrs}`,
+    ].join("\n");
   }).join("\n");
 
   const batalLine = batal.length?`\n_Batal/Tunda: ${batal.map((o:any)=>sanitize(o.patient)+(o.cancelReason?` (${sanitize(o.cancelReason)})`:""  )).join("; ")}_`:"";
@@ -1085,10 +1168,22 @@ function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime}: any) {
     }
     setChecking(true);
     try{
-      if(await verifyPin(pin, pinAdmin)){ setAttempts(0); setLockedUntil(null); onVerify("admin"); return; }
-      if(await verifyPin(pin, pinPerawat)){ setAttempts(0); setLockedUntil(null); onVerify("perawat"); return; }
+      if(await verifyPin(pin, pinAdmin)){
+        setAttempts(0); setLockedUntil(null);
+        AmbilLogMedis("KEAMANAN","Admin","LOGIN_SUKSES","Login Admin berhasil via PIN screen",{role:"admin"});
+        onVerify("admin"); return;
+      }
+      if(await verifyPin(pin, pinPerawat)){
+        setAttempts(0); setLockedUntil(null);
+        AmbilLogMedis("KEAMANAN","Perawat","LOGIN_SUKSES","Login Perawat berhasil via PIN screen",{role:"perawat"});
+        onVerify("perawat"); return;
+      }
       const nextAttempts = attempts + 1;
       setAttempts(nextAttempts);
+      AmbilLogMedis("KEAMANAN","Unknown","LOGIN_GAGAL",
+        `PIN salah — percobaan ke-${nextAttempts}/${PIN_MAX_ATTEMPTS}`,
+        { attempt: nextAttempts, locked: nextAttempts >= PIN_MAX_ATTEMPTS }
+      );
       if(nextAttempts >= PIN_MAX_ATTEMPTS){
         setLockedUntil(Date.now() + PIN_LOCKOUT_MS);
         setErr(`Terlalu banyak percobaan gagal. Coba lagi dalam ${Math.ceil(PIN_LOCKOUT_MS/1000)} detik.`);
@@ -1267,15 +1362,19 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
         const hasAlg=op.allergy&&op.allergy!=="Tidak Ada", isBatal=op.status==="batal";
         const isDone   = op.status==="done";
         const isToday  = op.date===todayStr;
+        const isTomorrow = op.date === tmrwDate();
         const isActive = isToday && !isDone && !isBatal; // blinking dot condition
 
-        /* ── Auto-minimize: pasien selesai hari ini ── */
+        /* ── Auto-minimize: pasien selesai hari ini — tampilkan mini card TAPI tetap ada tombol Edit ── */
         if(isDone && isToday) return (
-          <div key={op.id} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 14px",marginBottom:6,borderRadius:10,background:"#f1f5f9",border:"1px solid #e2e8f0",opacity:.45,transition:"opacity .3s"}}>
-            <span style={{fontSize:11,color:"#94a3b8",fontWeight:700,flexShrink:0}}>✅</span>
-            <span style={{fontSize:12,color:"#475569",flex:1,textDecoration:"line-through",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{maskName(op.patient,privacyMode)} — {op.time} — {op.procedure}</span>
-            <Bdg label="Selesai" color={C.s} bg={C.sBg}/>
-          </div>
+          <Card key={op.id} style={{opacity:.75,transition:"opacity .3s",marginBottom:6}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:11,color:C.s,fontWeight:700,flexShrink:0}}>✅</span>
+              <span style={{fontSize:12,color:"#475569",flex:1,textDecoration:"line-through",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{maskName(op.patient,privacyMode)} — {op.time} — {op.procedure}</span>
+              <Bdg label="Selesai" color={C.s} bg={C.sBg}/>
+              <Btn sm outline color={C.p} onClick={()=>startEditOp(op)}>✏ Edit</Btn>
+            </div>
+          </Card>
         );
 
         return (
@@ -1283,14 +1382,15 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
             hi={op.opType==="cyto"&&!isBatal?"#F44336":hasAlg&&!isBatal?C.dL:undefined}
             style={{
               opacity:isBatal?.72:1,
-              background:isActive?"#fef2f2":undefined,
-              border:isActive?"1.5px solid #fca5a5":undefined,
+              background:isActive?"#fef2f2":(isTomorrow&&!isBatal&&!isDone)?"#F3E8FF":undefined,
+              border:isActive?"1.5px solid #fca5a5":(isTomorrow&&!isBatal&&!isDone)?"1.5px solid #D8B4FE":undefined,
               transition:"all .3s"
             }}
           >
             {/* ── Alert banners ── */}
             {op.opType==="cyto"&&!isBatal && <div style={{background:"#FFCDD2",borderRadius:8,padding:"6px 12px",marginBottom:8,fontSize:12,fontWeight:700,color:"#B71C1C"}}>⚠️ CYTO / EMERGENCY — SEGERA DITANGANI</div>}
             {hasAlg&&op.opType!=="cyto"&&!isBatal && <div style={{background:C.dBg,borderRadius:8,padding:"5px 12px",marginBottom:8,fontSize:12,fontWeight:700,color:C.d}}>⚠ ALERGI: {op.allergy}</div>}
+            {isTomorrow&&!isBatal&&!isDone && <div style={{background:"#EDE9FE",borderRadius:8,padding:"5px 12px",marginBottom:8,fontSize:12,fontWeight:700,color:"#6B21A8",display:"flex",alignItems:"center",gap:6}}>📅 OPERASI BESOK (H+1) — Siapkan persiapan sebelum shift selesai</div>}
             {isBatal && <div style={{background:C.dBg,borderRadius:8,padding:"5px 12px",marginBottom:8,fontSize:12,fontWeight:700,color:C.d}}>✕ {op.cancelReason?"BATAL: "+op.cancelReason:"BATAL/DITUNDA"}</div>}
 
             {/* ── Header row: nama + badge + Mulai/Selesai di kanan ── */}
@@ -1301,7 +1401,7 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
                   {isActive && (
                     <span style={{width:10,height:10,borderRadius:"50%",background:"#ef4444",flexShrink:0,display:"inline-block",animation:"redPulse 1.2s ease-in-out infinite"}}/>
                   )}
-                  <div style={{fontSize:15,fontWeight:800,color:C.t,textDecoration:isBatal?"line-through":"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{maskName(op.patient,privacyMode)||"—"}</div>
+                  <div style={{fontSize:15,fontWeight:800,color:(isTomorrow&&!isBatal&&!isDone)?"#6B21A8":C.t,textDecoration:isBatal?"line-through":"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{maskName(op.patient,privacyMode)||"—"}</div>
                 </div>
                 <div style={{fontSize:12,color:C.tL}}>{op.age?op.age+"th  ":""}{op.rm?"RM "+maskRM(op.rm,privacyMode)+"  ":""}{op.bloodType}</div>
               </div>
@@ -1317,6 +1417,8 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
                     <button onClick={()=>{
                       const upd={...op,status:"ongoing",updated_at:new Date().toISOString()};
                       setOps((p:any)=>p.map((o:any)=>o.id===op.id?upd:o));
+                      AmbilLogMedis("JADWAL_OPERASI","Admin","MULAI_OPERASI",
+                        `Operasi dimulai: ${op.patient||"-"} — ${op.procedure||"-"}`,{id:op.id,patient:op.patient,room:op.room});
                       upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal: ${res?.error||"error"}`,C.d); } });
                     }} style={{background:"#22c55e",color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(34,197,94,.4)"}}>
                       ▶ Mulai
@@ -1326,6 +1428,8 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
                     <button onClick={()=>{
                       const upd={...op,status:"done",updated_at:new Date().toISOString()};
                       setOps((p:any)=>p.map((o:any)=>o.id===op.id?upd:o));
+                      AmbilLogMedis("JADWAL_OPERASI","Admin","SELESAI_OPERASI",
+                        `Operasi selesai: ${op.patient||"-"} — ${op.procedure||"-"}`,{id:op.id,patient:op.patient,room:op.room});
                       upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal: ${res?.error||"error"}`,C.d); } });
                     }} style={{background:"#ef4444",color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(239,68,68,.4)"}}>
                       ✓ Selesai
@@ -1381,6 +1485,8 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
               {isBatal && <Btn sm outline color={C.g} onClick={()=>{
                 const upd={...op,status:"scheduled",cancelReason:"",updated_at:new Date().toISOString()};
                 setOps((p:any)=>p.map((o:any)=>o.id===op.id?upd:o));
+                AmbilLogMedis("JADWAL_OPERASI","Admin","AKTIFKAN_OPERASI",
+                  `Operasi diaktifkan kembali: ${op.patient||"-"}`,{id:op.id,patient:op.patient});
                 upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal: ${res?.error||"error"}`,C.d); } });
               }}>Aktifkan</Btn>}
               <Btn sm outline color={C.d} onClick={()=>setDelC(op.id)}>Hapus</Btn>
@@ -1393,6 +1499,9 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
                   const upd={...op,status:"batal",cancelReason:sanitize(cR),updated_at:new Date().toISOString()};
                   setOps((p:any)=>p.map((o:any)=>o.id===op.id?upd:o));
                   setCId(null);setCR("");showToast("Operasi ditandai batal",C.w);
+                  AmbilLogMedis("JADWAL_OPERASI","Admin","BATAL_OPERASI",
+                    `Operasi dibatalkan: ${op.patient||"-"} — alasan: ${cR||"-"}`,
+                    {id:op.id,patient:op.patient,cancelReason:cR});
                   upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal: ${res?.error||"error"}`,C.d); } });
                 }}>Konfirmasi Batal</Btn><Btn full outline color={C.g} onClick={()=>setCId(null)}>Tutup</Btn></div>
               </div>
@@ -1689,7 +1798,21 @@ function ViewLaporan({ops,staff,roster,showToast,role,privacyMode}: ViewLaporanP
   const [preview,setPreview] = useState("");
   const [foc,setFoc]         = useState<string|null>(null);
   const todayOps = ops.filter((o:any)=>o.date===todayDate());
-  const tmrwOps  = ops.filter((o:any)=>o.date===tmrwDate());
+  /* ── Poin ④: Filter besok — Sabtu tarik Minggu + Senin sekaligus ── */
+  const _todayObj   = new Date();
+  const _isSaturday = _todayObj.getDay() === 6;
+  const _besokStr   = tmrwDate();
+  const _lusaObj    = new Date(_todayObj);
+  _lusaObj.setDate(_lusaObj.getDate() + 2);
+  const _lusaStr    = `${_lusaObj.getFullYear()}-${String(_lusaObj.getMonth()+1).padStart(2,"0")}-${String(_lusaObj.getDate()).padStart(2,"0")}`;
+  const tmrwOps = ops
+    .filter((o:any)=>{
+      if(o.status==="batal") return false;
+      return _isSaturday
+        ? (o.date===_besokStr || o.date===_lusaStr)
+        : o.date===_besokStr;
+    })
+    .sort((a:any,b:any)=> a.date!==b.date ? a.date.localeCompare(b.date) : a.time.localeCompare(b.time));
   const rTmrw    = roster.find((r:any)=>r.date===todayDate());
   const tActive  = todayOps.filter((o:any)=>o.status!=="batal");
   const tBatal   = todayOps.filter((o:any)=>o.status==="batal");
@@ -2290,8 +2413,11 @@ function ViewStaf({staff,setStaff,roster,setRoster,showToast,upsertOneToSupa,del
     if(!validate()) return;
     if(editing){
       const updated={...editing,...form, updated_at: new Date().toISOString()};
-      /* Optimistic update untuk edit (data sudah ada di DB, resiko rendah) */
       setStaff((p:any[])=>p.map((s:any)=>s.id===editing.id?updated:s));
+      AmbilLogMedis("MANAJEMEN_STAF","Admin","UBAH_STAF",
+        `Edit data staf: ${updated.name||"-"} (${updated.type||"-"})`,
+        { before: editing, after: updated }
+      );
       upsertOneToSupa?.("kb_staf",updated).then((res:{ok:boolean;error?:string})=>{
         if(!res?.ok){
           setStaff((p:any[])=>p.map((s:any)=>s.id===editing.id?editing:s));
@@ -2300,7 +2426,10 @@ function ViewStaf({staff,setStaff,roster,setRoster,showToast,upsertOneToSupa,del
       });
     } else {
       const newStaf={id:gId(),...form, updated_at: new Date().toISOString()};
-      /* DB-first untuk data baru */
+      AmbilLogMedis("MANAJEMEN_STAF","Admin","TAMBAH_STAF",
+        `Tambah staf baru: ${newStaf.name||"-"} (${newStaf.type||"-"})`,
+        { ...newStaf }
+      );
       upsertOneToSupa?.("kb_staf",newStaf).then((res:{ok:boolean;error?:string})=>{
         if(!res?.ok){
           showToast(`⚠ Gagal menyimpan staf: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
@@ -2523,6 +2652,10 @@ function ViewStaf({staff,setStaff,roster,setRoster,showToast,upsertOneToSupa,del
                       const res = await deleteFromSupa?.("kb_staf",s.id);
                       if(!res?.ok){ showToast(`⚠ Gagal menghapus staf: ${res?.error||"kesalahan tidak diketahui"}`,C.d); return; }
                       setStaff((p:any[])=>p.filter((x:any)=>x.id!==s.id));
+                      AmbilLogMedis("MANAJEMEN_STAF","Admin","HAPUS_STAF",
+                        `Hapus staf: ${s.name||"-"} (${s.type||"-"})`,
+                        { deleted: { id: s.id, name: s.name, type: s.type } }
+                      );
                       showToast("✓ Staf dihapus & tersinkron",C.d);
                     }}>Hapus</Btn>
                   </div>
@@ -5311,6 +5444,17 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
    di-hardcode di source: hardcode membuat rotasi key sulit, membuat key
    bocor ke setiap fork/clone repo, dan menyamarkan kebutuhan RLS yang benar.
    ─────────────────────────────────────────────────────────────────── */
+const SUPA_URL    = (import.meta as any).env?.VITE_SUPABASE_URL as string | undefined;
+const SUPA_ANON   = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY as string | undefined;
+if (!SUPA_URL || !SUPA_ANON) {
+  // eslint-disable-next-line no-console
+  console.error(
+    "[Konfigurasi] VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY belum diset di .env.local. " +
+    "Aplikasi tidak dapat terhubung ke Supabase sampai env var ini dikonfigurasi."
+  );
+}
+const SUPA_CLIENT = createClient(SUPA_URL || "", SUPA_ANON || "");
+
 /* ─── DROPBOX: token DIHAPUS dari sini sepenuhnya — lihat DBX_PROXY_SECRET
    di atas. Token asli sekarang hanya hidup sbg secret server-side di
    Supabase Edge Function "dropbox-proxy" (Deno.env.get("DROPBOX_ACCESS_TOKEN")). */
@@ -5435,7 +5579,6 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
   const [nurses, setNurses]     = useState<RosterNurse[]>(defaultNurses);
   // grid[nurseIdx][dayIdx] = kode shift string
   const [grid, setGrid]         = useState<string[][]>(() => defaultNurses().map(()=>Array(31).fill("")));
-  const newGrid_safe = (ni:number, d:number) => grid[ni]?.[d] ?? "";
   const [holidays, setHolidays] = useState<boolean[]>(()=>Array(31).fill(false));
   const [syncing, setSyncing]   = useState(false);
   const [syncingDbx, setSyncingDbx] = useState(false);
@@ -5446,6 +5589,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
   const [nurseMasterList, setNurseMasterList] = useState<NurseMaster[]>(loadMasterFromLS);
   const [masterForm, setMasterForm] = useState({ nik:"", name:"", pk:"III" });
   const [masterFormErr, setMasterFormErr] = useState("");
+  const [masterSaving, setMasterSaving]   = useState(false);
 
   /* Persist nurseMasterList ke localStorage setiap kali berubah */
   useEffect(() => {
@@ -5620,22 +5764,54 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
     });
   };
 
-  /* ── FITUR 1: CRUD Master Perawat ── */
-  const addToMaster = () => {
+  /* ── FITUR 1: CRUD Master Perawat + Supabase sync ── */
+  const addToMaster = async () => {
     const nik  = masterForm.nik.trim();
     const name = masterForm.name.trim();
     const pk   = masterForm.pk.trim();
-    if(!nik)  return setMasterFormErr("NIK tidak boleh kosong.");
-    if(!name) return setMasterFormErr("Nama tidak boleh kosong.");
+    if(!nik)  { setMasterFormErr("NIK tidak boleh kosong."); return; }
+    if(!name) { setMasterFormErr("Nama tidak boleh kosong."); return; }
     if(nurseMasterList.some(m => m.nik === nik))
-      return setMasterFormErr(`NIK ${nik} sudah ada di database.`);
-    setNurseMasterList(p => [...p, { id: gId(), nik, name, pk }]);
+      { setMasterFormErr(`NIK ${nik} sudah ada di database.`); return; }
+    const newEntry: NurseMaster = { id: gId(), nik, name, pk };
+    const updated = [...nurseMasterList, newEntry];
+    setNurseMasterList(updated);
     setMasterForm({ nik:"", name:"", pk:"III" });
     setMasterFormErr("");
+    setMasterSaving(true);
+    /* Simpan ke Supabase */
+    try {
+      const res = await upsertOneToSupa("kb_roster_gen", {
+        id: "master_perawat",
+        updated_at: new Date().toISOString(),
+        nurses: JSON.stringify(updated),
+        jadwal: "", holidays: "", year: 0, month: 0,
+        generatedAt: fNow(), pjSirs, pembawHP, kepInstall,
+      });
+      if(res.ok){
+        showToast(`✅ "${name}" (NIK: ${nik}) disimpan ke Supabase!`, "#2E7D32");
+      } else {
+        showToast(`✅ "${name}" disimpan lokal. Supabase: ${res.error||"gagal sync"}`, "#E65100");
+      }
+    } catch {
+      showToast(`✅ "${name}" disimpan lokal — Supabase tidak terjangkau.`, "#E65100");
+    }
+    setMasterSaving(false);
   };
 
-  const removeFromMaster = (id: string) => {
-    setNurseMasterList(p => p.filter(m => m.id !== id));
+  const removeFromMaster = async (id: string) => {
+    const target = nurseMasterList.find(m => m.id === id);
+    const updated = nurseMasterList.filter(m => m.id !== id);
+    setNurseMasterList(updated);
+    try {
+      await upsertOneToSupa("kb_roster_gen", {
+        id: "master_perawat", updated_at: new Date().toISOString(),
+        nurses: JSON.stringify(updated),
+        jadwal: "", holidays: "", year: 0, month: 0,
+        generatedAt: fNow(), pjSirs, pembawHP, kepInstall,
+      });
+    } catch { /* silent — LS sudah update via useEffect */ }
+    if(target) showToast(`🗑 Perawat "${target.name}" dihapus dari database master.`, "#5C677D");
   };
 
   // BUG FIX #2: Handler sisa cuti — tidak ada leading zero
@@ -5665,207 +5841,185 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
     });
   };
 
-  /* ─── CORE ENGINE (REFACTORED) ───────────────────────────────────── */
+  /* ─── CORE ENGINE v2 — Pola Roster Realistis & Variatif ─────────────
+     Referensi: foto jadwal RS Panti Rini April 2026.
+     Prinsip:
+     A) Setiap perawat punya pola "blok shift" yang dirotasi acak tiap Generate.
+        Blok = urutan P/PG atau S/SG yang bergantian, diselingi L/LG.
+     B) Hari Minggu/Libur: tepat 4 orang LG, sisanya L. Merata 2–3x/orang/bulan.
+     C) Karu selalu P (tidak pernah SG/LG). Perawat PROFESI/CUTI → beset manual.
+     D) Constraint: 2 S/SG berturut → hari berikutnya P/PG.
+     E) PG/SG maks 2–3x/minggu per perawat.
+     F) Hasil acak setiap kali Generate ditekan (Fisher-Yates pada template pilihan).
+  ─────────────────────────────────────────────────────────────────── */
   const generateRoster = () => {
-    const newGrid = grid.map(row => [...row]); // Deep copy — jaga beset manual
+    const newGrid = grid.map(row => [...row]);
     const warns: string[] = [];
+    const dim = daysInMonth;
 
-    /* ── TRACKER FREKUENSI (Aturan 4) ──────────────────────────────────
-       Dua objek counter per-perawat (index) untuk membatasi jumlah siaga.
-       Keduanya dihitung ulang dari nol setiap kali Generate ditekan. ── */
-    // Monthly counter: berapa kali tiap perawat mendapat LG dalam bulan ini
-    const lgMonthCount:  number[] = Array(nurses.length).fill(0);
-    // Weekly counter: { nurseIdx → count dalam 7 hari terakhir }
-    // Kita track per-7-hari berjalan: window dimulai dari hari ke-(d-6) hingga d.
-    // Untuk efisiensi, kita simpan array harian dan hitung sliding window saat needed.
-    const pgsgDailyLog:  Array<boolean[]> = nurses.map(()=>Array(daysInMonth).fill(false));
+    /* ── Konstanta ── */
+    const LG_PER_DAY     = 4;   // tepat 4 orang LG per hari libur
+    const MAX_LG_MONTH   = 3;   // maks 3x LG per orang per bulan (min 2)
+    const MIN_LG_MONTH   = 2;   // target minimum LG per orang
+    const MAX_PGSG_WEEK  = 3;   // maks PG/SG dalam 7 hari berjalan
 
-    /* Helper: hitung jumlah PG/SG perawat ni dalam window 7 hari [d-6..d-1]
-       (hari d sendiri belum diassign saat pengecekan). */
-    const pgsgCountInWindow = (ni: number, d: number): number => {
-      let count = 0;
-      for(let w = Math.max(0, d-6); w < d; w++){
-        if(pgsgDailyLog[ni][w]) count++;
-      }
-      return count;
+    /* ── Tracker bulanan ── */
+    const lgCount   = Array(nurses.length).fill(0);  // LG per bulan
+    const pgsgLog   = nurses.map(() => Array(dim).fill(false)); // PG/SG per hari
+
+    const pgsgInWindow = (ni: number, d: number) => {
+      let c = 0;
+      for(let w = Math.max(0, d-6); w < d; w++) if(pgsgLog[ni][w]) c++;
+      return c;
     };
 
-    /* ── Limit konstanta ── */
-    const MAX_PGSG_PER_WEEK = 3;  // bisa dinaikkan ke 4 jika diperlukan
-    const MAX_LG_PER_MONTH  = 2;  // bisa dinaikkan ke 3 jika diperlukan
-    // Kuota LG per hari libur: wajar 2–3 orang
-    const LG_QUOTA_PER_HOLIDAY = Math.min(3, Math.max(2, Math.floor(nurses.length / 4)));
+    /* ── Hitung jumlah hari libur dalam bulan → untuk target LG merata ── */
+    const holidayDays: number[] = [];
+    for(let d=0; d<dim; d++){
+      if(new Date(year,month,d+1).getDay()===0 || holidays[d]) holidayDays.push(d);
+    }
+    /* Target LG per orang: floor(holidayDays * LG_PER_DAY / nonKaruCount) clamped MIN..MAX */
+    const nonKaruCount = Math.max(1, nurses.filter(n=>n.tipe!=="karu").length);
+    const rawTarget    = Math.round(holidayDays.length * LG_PER_DAY / nonKaruCount);
+    const lgTarget     = Math.min(MAX_LG_MONTH, Math.max(MIN_LG_MONTH, rawTarget));
 
-    /* ── LOOP UTAMA PER HARI ────────────────────────────────────────── */
-    for(let d = 0; d < daysInMonth; d++){
+    /* ── PASS 1: Hari Libur/Minggu — LG 4 orang, merata ── */
+    /* Urutkan perawat non-Karu: yang LG-count paling sedikit diprioritaskan */
+    for(const d of holidayDays){
+      const karuIdxs    = nurses.map((_,i)=>i).filter(i=>nurses[i].tipe==="karu");
+      const nonKaruIdxs = fisherYates(nurses.map((_,i)=>i).filter(i=>nurses[i].tipe!=="karu"));
 
-      /* ── Langkah 1: Identifikasi perawat & status beset manual ─────
-         Perawat dengan cell tidak kosong → "locked" (sudah di-beset).
-         Hanya perawat dengan cell kosong yang masuk array "available". */
-      const available: number[] = [];
-      nurses.forEach((_, ni) => {
-        const cell = newGrid[ni][d];
-        if(cell === "") available.push(ni);
-        // Jika sudah ter-assign PG/SG dari beset manual, log ke tracker
-        if(cell === "PG" || cell === "SG") pgsgDailyLog[ni][d] = true;
-        if(cell === "LG") lgMonthCount[ni]++;
+      /* Locked cell: jangan timpa beset manual */
+      const locked = new Set(nurses.map((_,i)=>i).filter(i=>newGrid[i][d]!==""));
+      const availNonKaru = nonKaruIdxs.filter(i=>!locked.has(i));
+      const availKaru    = karuIdxs.filter(i=>!locked.has(i));
+
+      /* Prioritaskan yang LG count masih di bawah lgTarget, lalu di bawah MAX */
+      const wantLG    = availNonKaru.filter(i=>lgCount[i]<lgTarget).sort((a,b)=>lgCount[a]-lgCount[b]);
+      const canLG     = availNonKaru.filter(i=>lgCount[i]>=lgTarget && lgCount[i]<MAX_LG_MONTH);
+      const lgPool    = [...wantLG, ...canLG];
+
+      const lgAssigned: number[] = [];
+      for(const ni of lgPool){
+        if(lgAssigned.length >= LG_PER_DAY) break;
+        lgAssigned.push(ni);
+        newGrid[ni][d] = "LG";
+        lgCount[ni]++;
+      }
+      /* Sisa non-karu yang tidak terpilih LG → L */
+      availNonKaru.filter(i=>!lgAssigned.includes(i)).forEach(i=>{ newGrid[i][d]="L"; });
+      availKaru.forEach(i=>{ newGrid[i][d]="L"; }); // Karu selalu L di hari libur
+
+      if(lgAssigned.length < LG_PER_DAY){
+        warns.push(`⚠️ Hari ke-${d+1} (Libur): hanya ${lgAssigned.length} LG tersedia (target ${LG_PER_DAY}).`);
+      }
+    }
+
+    /* ── PASS 2: Hari Kerja — template rotasi per perawat ──────────────
+       Prinsip dari foto:
+       • Urutan BARIS perawat di tabel TIDAK berubah (tetap 1-10).
+       • Setiap perawat punya template pola 7-hari sendiri + offset acak.
+       • Template dipilih & offset di-acak sekali di awal, sebelum loop hari.
+       • Constraint 2S berturut → P tetap berlaku (override template).
+    ─────────────────────────────────────────────────────────────────── */
+    const WEEKLY_TEMPLATES = [
+      ["P","P","S","S","P","S","P"],
+      ["S","S","P","P","S","P","S"],
+      ["P","S","P","S","P","P","S"],
+      ["S","P","S","P","S","S","P"],
+      ["P","P","P","S","S","P","S"],
+      ["S","S","S","P","P","S","P"],
+      ["P","S","S","P","P","S","P"],
+      ["S","P","P","S","S","P","S"],
+    ];
+
+    /* Assign template & offset SEKALI per perawat — tidak berubah selama loop hari */
+    const nurseTemplate: number[] = nurses.map((_,i) =>
+      nurses[i].tipe==="karu" ? -1 : Math.floor(Math.random() * WEEKLY_TEMPLATES.length)
+    );
+    const nurseOffset: number[] = nurses.map((_,i) =>
+      nurses[i].tipe==="karu" ? 0 : Math.floor(Math.random() * 7)
+    );
+
+    for(let d=0; d<dim; d++){
+      const isLibur = new Date(year,month,d+1).getDay()===0 || holidays[d];
+      if(isLibur) continue;
+
+      const locked = new Set(nurses.map((_,i)=>i).filter(i=>newGrid[i][d]!==""));
+      nurses.forEach((_,i)=>{
+        if(locked.has(i) && (newGrid[i][d]==="PG"||newGrid[i][d]==="SG")) pgsgLog[i][d]=true;
       });
 
-      /* ── Langkah 2: Aturan 2 — Hari Minggu / Libur Nasional ────────
-         Cek apakah hari ini Minggu (getDay()===0) ATAU ditandai libur. */
-      const isSunday  = new Date(year, month, d+1).getDay() === 0;
-      const isHoliday = holidays[d] === true;
+      /* Karu selalu P */
+      nurses.forEach((_,i)=>{ if(nurses[i].tipe==="karu" && !locked.has(i)) newGrid[i][d]="P"; });
 
-      if(isSunday || isHoliday){
-        // Pisahkan Karu dari available (Karu tidak boleh LG — Aturan 3)
-        const karuAvail = available.filter(ni => nurses[ni].tipe === "karu");
-        const nonKaruAvail = fisherYates(available.filter(ni => nurses[ni].tipe !== "karu"));
+      /* Non-Karu: baca dari template → apply constraint → pilih siaga */
+      nurses.forEach((_,ni)=>{
+        if(nurses[ni].tipe==="karu" || locked.has(ni)) return;
 
-        // Kandidat LG: non-Karu yang belum mencapai limit bulanan
-        const lgCandidates = nonKaruAvail.filter(ni => lgMonthCount[ni] < MAX_LG_PER_MONTH);
-        const lgForced     = nonKaruAvail.filter(ni => lgMonthCount[ni] >= MAX_LG_PER_MONTH);
+        const tmpl        = WEEKLY_TEMPLATES[nurseTemplate[ni]];
+        const dayInCycle  = (d + nurseOffset[ni]) % 7;
+        let   baseShift   = tmpl[dayInCycle]; // "P" atau "S"
 
-        // Ambil maks LG_QUOTA_PER_HOLIDAY perawat untuk LG
-        const lgAssigned = lgCandidates.slice(0, LG_QUOTA_PER_HOLIDAY);
-        lgAssigned.forEach(ni => {
-          newGrid[ni][d] = SHIFT_CODES.LIBUR_SIAGA;
-          lgMonthCount[ni]++;
-        });
-
-        // Sisa non-Karu → L
-        const restNonKaru = [...lgCandidates.slice(LG_QUOTA_PER_HOLIDAY), ...lgForced];
-        restNonKaru.forEach(ni => { newGrid[ni][d] = SHIFT_CODES.LIBUR; });
-
-        // Karu selalu L (tidak boleh LG)
-        karuAvail.forEach(ni => { newGrid[ni][d] = SHIFT_CODES.LIBUR; });
-
-        // Warning jika semua kandidat LG sudah over-limit sehingga kuota LG tidak terpenuhi
-        if(lgAssigned.length < LG_QUOTA_PER_HOLIDAY && lgCandidates.length < LG_QUOTA_PER_HOLIDAY){
-          warns.push(`⚠️ Hari ke-${d+1} (Libur): Semua perawat sudah mencapai limit LG bulanan. LG dikurangi menjadi ${lgAssigned.length} orang.`);
+        /* Constraint: 2 S/SG berturut → paksa P */
+        if(d>=2){
+          const p1=newGrid[ni][d-1], p2=newGrid[ni][d-2];
+          if((p1==="S"||p1==="SG") && (p2==="S"||p2==="SG")) baseShift="P";
         }
-        continue; // skip langkah 3-6 untuk hari ini
-      }
 
-      /* ── Langkah 3: Dynamic Load Balancing ─────────────────────────
-         Hitung total aktif (exclude yang sudah T/L/LG dari beset). */
-      const preFilledActive = nurses.reduce((cnt, _, ni) => {
-        const c = newGrid[ni][d];
-        return (c==="P"||c==="PG"||c==="S"||c==="SG") ? cnt+1 : cnt;
-      }, 0);
-      const totalActive = preFilledActive + available.length;
-      let quotaPagi  = Math.ceil(totalActive / 2);
-      let quotaSiang = Math.floor(totalActive / 2);
-
-      // Kurangi kuota dari yang sudah di-beset (P/PG/S/SG)
-      nurses.forEach((_, ni) => {
-        const c = newGrid[ni][d];
-        if(c==="P"||c==="PG") quotaPagi  = Math.max(0, quotaPagi  - 1);
-        if(c==="S"||c==="SG") quotaSiang = Math.max(0, quotaSiang - 1);
-      });
-
-      /* ── Langkah 4: Aturan 3 — Karu wajib Pagi, bebas dari siaga ───
-         Karu dicari berdasarkan properti .tipe === "karu", bukan indeks. */
-      const karuInAvail = available.filter(ni => nurses[ni].tipe === "karu");
-      karuInAvail.forEach(ni => {
-        newGrid[ni][d] = SHIFT_CODES.PAGI; // Karu selalu P, tidak pernah PG
-        quotaPagi = Math.max(0, quotaPagi - 1);
-      });
-      // Hapus Karu dari pool available sebelum distribusi siaga
-      const nonKaruAvailable = fisherYates(available.filter(ni => nurses[ni].tipe !== "karu"));
-
-      /* ── Langkah 4.5: Constraint Sequence — 2 Siang berturut → wajib Pagi ──
-         Cek riwayat 2 hari sebelumnya per perawat. Jika d-1 dan d-2 keduanya
-         S atau SG (dan hari ini sel masih tersedia), perawat WAJIB masuk pagi. */
-      const forcedToPagi = new Set<number>();
-      if(d >= 2){
-        nonKaruAvailable.forEach(ni => {
-          const prev1 = newGrid[ni][d-1];
-          const prev2 = newGrid[ni][d-2];
-          const wasSiang1 = prev1==="S" || prev1==="SG";
-          const wasSiang2 = prev2==="S" || prev2==="SG";
-          if(wasSiang1 && wasSiang2) forcedToPagi.add(ni);
-        });
-      }
-
-      /* Pisahkan forced-pagi dari pool sebelum distribusi senioritas */
-      const forcedPagiArr = nonKaruAvailable.filter(ni => forcedToPagi.has(ni));
-      const freePool      = nonKaruAvailable.filter(ni => !forcedToPagi.has(ni));
-      const avSeniors     = fisherYates(freePool.filter(ni => nurses[ni].tipe==="senior"));
-      const avJuniors     = fisherYates(freePool.filter(ni => nurses[ni].tipe==="junior"));
-
-      /* ── Langkah 5: Distribusi Siaga & Shift — Aturan 1 & 4 ──────── */
-      const pagiList:  number[] = [...forcedPagiArr]; // forced-pagi masuk duluan
-      const siangList: number[] = [];
-
-      // Distribusi senior best-effort ke pagi & siang (dari freePool)
-      if(avSeniors.length >= 4){
-        pagiList.push(...avSeniors.slice(0, 2));
-        siangList.push(...avSeniors.slice(2, 4));
-        avSeniors.slice(4).forEach((ni, i) => (i % 2 === 0 ? pagiList : siangList).push(ni));
-      } else {
-        const half = Math.ceil(avSeniors.length / 2);
-        pagiList.push(...avSeniors.slice(0, half));
-        siangList.push(...avSeniors.slice(half));
-      }
-
-      // Isi sisa kuota dengan junior
-      avJuniors.forEach(ni => {
-        if(pagiList.length < quotaPagi) pagiList.push(ni);
-        else if(siangList.length < quotaSiang) siangList.push(ni);
-        else newGrid[ni][d] = SHIFT_CODES.LIBUR; // kelebihan staf → L
-      });
-
-      /* Assign kode shift — cek limit PG/SG mingguan sebelum assign (Aturan 4) */
-      let pgAssigned = 0;
-      pagiList.forEach(ni => {
-        const canPG = pgAssigned < 2
-          && quotaPagi > 2
-          && pgsgCountInWindow(ni, d) < MAX_PGSG_PER_WEEK;
-        if(canPG){
-          newGrid[ni][d] = SHIFT_CODES.PAGI_SIAGA;
-          pgsgDailyLog[ni][d] = true;
-          pgAssigned++;
+        /* Pilih siaga ~30% jika limit mingguan belum tercapai */
+        const canSiaga = pgsgInWindow(ni,d) < MAX_PGSG_WEEK;
+        if(baseShift==="P"){
+          if(canSiaga && Math.random()<0.30){ newGrid[ni][d]="PG"; pgsgLog[ni][d]=true; }
+          else newGrid[ni][d]="P";
         } else {
-          newGrid[ni][d] = SHIFT_CODES.PAGI;
+          if(canSiaga && Math.random()<0.30){ newGrid[ni][d]="SG"; pgsgLog[ni][d]=true; }
+          else newGrid[ni][d]="S";
         }
       });
 
-      let sgAssigned = 0;
-      siangList.forEach(ni => {
-        const canSG = sgAssigned < 2
-          && quotaSiang > 2
-          && pgsgCountInWindow(ni, d) < MAX_PGSG_PER_WEEK;
-        if(canSG){
-          newGrid[ni][d] = SHIFT_CODES.SIANG_SIAGA;
-          pgsgDailyLog[ni][d] = true;
-          sgAssigned++;
-        } else {
-          newGrid[ni][d] = SHIFT_CODES.SIANG;
-        }
-      });
-
-      /* ── Langkah 6: Soft Warning jika formasi darurat ───────────────
-         Jika >= 2 perawat Cuti/Libur di hari kerja, tampilkan notifikasi. */
-      const cutiCount = nurses.filter((_, ni) => {
-        const c = newGrid[ni][d]; return c==="T" || c==="L";
-      }).length;
-      if(cutiCount >= 2){
-        const pagiCount  = pagiList.length  + karuInAvail.length;
-        const siangCount = siangList.length;
-        warns.push(`⚠️ Hari ke-${d+1}: ${cutiCount} perawat cuti/libur. Formasi darurat diterapkan (Pagi: ${pagiCount}, Siang: ${siangCount}).`);
+      /* Warning formasi darurat */
+      const cutiHariIni = nurses.filter((_,i)=>newGrid[i][d]==="T"||newGrid[i][d]==="L").length;
+      const pagiHariIni = nurses.filter((_,i)=>newGrid[i][d]==="P"||newGrid[i][d]==="PG").length;
+      const siangHariIni= nurses.filter((_,i)=>newGrid[i][d]==="S"||newGrid[i][d]==="SG").length;
+      if(cutiHariIni>=3){
+        warns.push(`⚠️ Hari ke-${d+1}: ${cutiHariIni} cuti/libur. Pagi: ${pagiHariIni}, Siang: ${siangHariIni}.`);
       }
-    } // ── end for loop hari ──
+    }
+
+
+    /* ── PASS 3: Audit LG — jika ada non-Karu yang LG < MIN, coba tambahkan
+       di hari libur yang LG-nya masih < LG_PER_DAY ── */
+    const underLG = nurses.map((_,i)=>i).filter(i=>nurses[i].tipe!=="karu" && lgCount[i]<MIN_LG_MONTH);
+    if(underLG.length>0){
+      for(const d of holidayDays){
+        const lgToday = nurses.filter((_,i)=>newGrid[i][d]==="LG").length;
+        if(lgToday >= LG_PER_DAY+1) continue; // sudah penuh (toleransi +1 max 5)
+        for(const ni of underLG){
+          if(lgCount[ni]>=MIN_LG_MONTH) continue;
+          if(newGrid[ni][d]==="L"){ // ganti L → LG
+            newGrid[ni][d]="LG"; lgCount[ni]++;
+            if(nurses.filter((_,i)=>newGrid[i][d]==="LG").length>=LG_PER_DAY) break;
+          }
+        }
+      }
+    }
 
     setGrid(newGrid);
     setWarnings(warns);
-    warns.forEach(w => showToast(w, "#E07800"));
-    showToast("✅ Roster berhasil di-generate!", "#2E7D32");
+    if(warns.length>0) warns.slice(0,3).forEach(w=>showToast(w,"#E07800"));
+    AmbilLogMedis("ROSTER_STAF","Admin","GENERATE_ROSTER",
+      `Roster di-generate: ${BULAN_NAMA_ID[month]} ${year} — ${nurses.length} perawat`,
+      { month, year, nurseCount: nurses.length, warns: warns.length }
+    );
+    showToast(`✅ Roster berhasil di-generate! LG: ${lgCount.map((c,i)=>nurses[i]?.name?`${nurses[i].name.split(" ")[0]}:${c}`:"").filter(Boolean).join(", ")}`, "#2E7D32");
   };
 
   /* ─── Live counter per kolom ──────────────────────────────────────── */
   const countCode = (code: string) => {
     return Array.from({length:daysInMonth},(_,d)=>nurses.reduce((c,_,ni)=>newGrid_safe(ni,d)===code?c+1:c,0));
   };
+  const newGrid_safe = (ni:number, d:number) => grid[ni]?.[d] ?? "";
   const sumRow = (codes: string[]) => (d:number) => nurses.reduce((c,_,ni)=>codes.includes(newGrid_safe(ni,d))?c+1:c,0);
 
   /* ─── FITUR 2 — TOMBOL "SIMPAN JADWAL" ─────────────────────────────── */
@@ -6123,6 +6277,10 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
       document.body.appendChild(a); a.click();
       document.body.removeChild(a); URL.revokeObjectURL(url);
       showToast("✅ File Excel berhasil diunduh!", "#2E7D32");
+      AmbilLogMedis("LAPORAN_BACKUP","Admin","DOWNLOAD_EXCEL_ROSTER",
+        `Excel Roster diunduh: ${BULAN_NAMA_ID[month]} ${year}`,
+        { month, year, nurses: nurses.length }
+      );
     } catch(e:any) {
       showToast("⚠ Gagal export Excel: " + (e?.message||"error"), "#D62828");
     }
@@ -6180,7 +6338,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
       const folder = (dbxCfg?.path||"/kamarbedah/").replace(/[^/]+$/,"");
       const stamp  = `${year}-${String(month+1).padStart(2,"0")}`;
       const path   = `${folder}Jadwal_KamarBedah_${stamp}.xlsx`;
-      const buf    = await wb.xlsx.writeBuffer() as unknown as Uint8Array;
+      const buf    = await wb.xlsx.writeBuffer() as Uint8Array;
       const CHUNK=8192; let bin="";
       for(let i=0;i<buf.length;i+=CHUNK) bin+=String.fromCharCode(...buf.subarray(i,i+CHUNK));
       const b64 = btoa(bin);
@@ -6241,7 +6399,12 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
           FITUR 1 — CARD KELOLA DATA MASTER PERAWAT
          ══════════════════════════════════════════════════════════════════ */}
       <Card style={{marginBottom:12,background:"#F0FDF4",border:"1px solid #BBF7D0"}}>
-        <SH label="📁 Kelola Data Master Perawat" color="#15803D"/>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+          <SH label="📁 Kelola Data Master Perawat" color="#15803D"/>
+          <span style={{fontSize:10,fontWeight:700,background:"#DCFCE7",color:"#15803D",padding:"3px 8px",borderRadius:6,border:"1px solid #BBF7D0",whiteSpace:"nowrap"}}>
+            💾 localStorage + ☁ Supabase
+          </span>
+        </div>
 
         {/* Form Tambah */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 120px auto",gap:8,alignItems:"end",marginBottom:12}}>
@@ -6256,8 +6419,8 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
               {["I","II","III","IV"].map(v=><option key={v} value={v}>PK {v}</option>)}
             </select>
           </LF>
-          <button onClick={addToMaster} style={{padding:"11px 16px",background:"linear-gradient(135deg,#16a34a,#15803d)",color:"#fff",border:"none",borderRadius:10,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",flexShrink:0}}>
-            + Tambah
+          <button onClick={addToMaster} disabled={masterSaving} style={{padding:"11px 16px",background:masterSaving?"#94A3B8":"linear-gradient(135deg,#16a34a,#15803d)",color:"#fff",border:"none",borderRadius:10,fontSize:12,fontWeight:700,cursor:masterSaving?"not-allowed":"pointer",fontFamily:"inherit",whiteSpace:"nowrap",flexShrink:0,transition:"all .2s"}}>
+            {masterSaving ? "⟳ Menyimpan..." : "+ Tambah"}
           </button>
         </div>
         {masterFormErr && <div style={{fontSize:11,color:"#DC2626",marginBottom:8,marginTop:-4}}>⚠ {masterFormErr}</div>}
@@ -7192,6 +7355,13 @@ export default function App() {
   },[ops, archive, notifs, lemburPegawai, lemburData, monitoringEntries, monitoringCfg, staff, roster]);
 
   const handlePinVerify = (newRole: "admin"|"perawat", newAdminPin?: string, newPerawatPin?: string) => {
+    /* ── TURSO LOG: LOGIN_SUKSES ── */
+    AmbilLogMedis(
+      "KEAMANAN", newRole==="admin"?"Admin":"Perawat",
+      "LOGIN_SUKSES",
+      `Login berhasil sebagai ${newRole} pada ${fWIB()}`,
+      { role: newRole, isFirstSetup: !!(newAdminPin && newPerawatPin) }
+    );
     if(newAdminPin && newPerawatPin){
       setPinFromCloud(true); // setelah setup, tandai sebagai sudah ada PIN
       // FIX AUDIT #4: jangan simpan PIN plaintext — hash dengan PBKDF2 dulu,
@@ -7228,6 +7398,7 @@ export default function App() {
      React.memo pada komponen anak (jika diterapkan nanti) benar2 efektif. */
   const handleSupaBackup = useCallback(async () => {
     setSupaBU(true); setSupaStatus(null);
+    AmbilLogMedis("LAPORAN_BACKUP","Sistem","BACKUP_SUPABASE_MULAI","Backup manual ke Supabase dimulai",{});
     try{
       const twoYearsAgo = new Date(); twoYearsAgo.setFullYear(twoYearsAgo.getFullYear()-2);
       await SUPA_CLIENT.from("kamar_bedah_backup").delete().lt("created_at", twoYearsAgo.toISOString());
@@ -7235,8 +7406,14 @@ export default function App() {
     const data = {exportedAt:fNow(), ...latestDataRef.current};
     const res = await supabaseBackup(supaCfg, data, SUPA_CLIENT);
     setSupaStatus(res);
-    if(res.ok) { setSupaCfg((p:any)=>({...p,lastBackup:fNow()})); showToast("✓ Backup Supabase berhasil","#3ECF8E"); }
-    else { showToast(res.msg,C.d); }
+    if(res.ok) {
+      setSupaCfg((p:any)=>({...p,lastBackup:fNow()}));
+      showToast("✓ Backup Supabase berhasil","#3ECF8E");
+      AmbilLogMedis("LAPORAN_BACKUP","Sistem","BACKUP_SUPABASE_SUKSES","Backup Supabase berhasil",{waktu:fNow()});
+    } else {
+      showToast(res.msg,C.d);
+      AmbilLogMedis("LAPORAN_BACKUP","Sistem","BACKUP_SUPABASE_GAGAL",`Backup Supabase gagal: ${res.msg}`,{error:res.msg});
+    }
     setSupaBU(false);
   }, [supaCfg]);
 
@@ -7318,12 +7495,19 @@ export default function App() {
 
   const handleDropboxBackup = useCallback(async () => {
     setDbxBacking(true); setDbxStatus(null);
+    AmbilLogMedis("LAPORAN_BACKUP","Sistem","BACKUP_DROPBOX_MULAI","Backup manual ke Dropbox dimulai",{path:dbxCfg.path});
     const {ops:o, archive:ar, notifs:nf, lemburPegawai:lp, lemburData:ld, monitoringEntries:me, monitoringCfg:mc} = latestDataRef.current;
     const data = {ops:o, archive:ar, notifs:nf, lemburPegawai:lp, lemburData:ld, monitoringEntries:me, monitoringCfg:mc};
     const res = await dropboxUpload(dbxCfg, data);
     setDbxStatus(res);
-    if(res.ok) { setDbxCfg(p=>({...p,lastBackup:fNow()})); showToast("✓ Backup Dropbox berhasil","#0061FF"); }
-    else { showToast(res.msg, C.d); }
+    if(res.ok) {
+      setDbxCfg(p=>({...p,lastBackup:fNow()}));
+      showToast("✓ Backup Dropbox berhasil","#0061FF");
+      AmbilLogMedis("LAPORAN_BACKUP","Sistem","BACKUP_DROPBOX_SUKSES","Backup Dropbox berhasil",{path:dbxCfg.path,waktu:fNow()});
+    } else {
+      showToast(res.msg, C.d);
+      AmbilLogMedis("LAPORAN_BACKUP","Sistem","BACKUP_DROPBOX_GAGAL",`Backup Dropbox gagal: ${res.msg}`,{error:res.msg});
+    }
     setDbxBacking(false);
   }, [dbxCfg]);
 
@@ -7428,6 +7612,18 @@ export default function App() {
       const updatedOp = {...editingOp,...clean, updated_at: new Date().toISOString()};
       setOps(p=>p.map(o=>o.id===editingOp.id ? updatedOp : o));
       logAudit("Edit",clean);
+      /* ── TURSO LOG: UBAH_PASIEN ── */
+      AmbilLogMedis("DAFTAR_PASIEN", role==="admin"?"Admin":"Perawat", "UBAH_PASIEN",
+        `Edit data pasien: ${clean.patient||"-"} (ID: ${editingOp.id})`,
+        { before: editingOp, after: updatedOp }
+      );
+      /* ── TURSO LOG: CYTO ── */
+      if(updatedOp.opType==="cyto" && editingOp.opType!=="cyto"){
+        AmbilLogMedis("DAFTAR_PASIEN", role==="admin"?"Admin":"Perawat", "UBAH_STATUS_CYTO",
+          `EMERGENCY CYTO DETECTED: NRM ${clean.rm||"-"} — Pasien: ${clean.patient||"-"}`,
+          { ...updatedOp }
+        );
+      }
       upsertOneToSupa("kb_operasi", updatedOp).then((res:any)=>{
         if(!res?.ok) {
           setOps(p=>p.map(o=>o.id===editingOp.id ? editingOp : o));
@@ -7439,6 +7635,18 @@ export default function App() {
     } else {
       const newOp={...clean,id:gId(),status:"scheduled",reminders:[],requests:[],createdAt:fNow(),updated_at:new Date().toISOString()} as Operation;
       logAudit("Tambah",clean);
+      /* ── TURSO LOG: TAMBAH_PASIEN ── */
+      AmbilLogMedis("DAFTAR_PASIEN", role==="admin"?"Admin":"Perawat", "TAMBAH_PASIEN",
+        `Tambah pasien baru: ${clean.patient||"-"} (RM: ${clean.rm||"-"})`,
+        { ...newOp }
+      );
+      /* ── TURSO LOG: CYTO pada tambah baru ── */
+      if(newOp.opType==="cyto"){
+        AmbilLogMedis("DAFTAR_PASIEN", role==="admin"?"Admin":"Perawat", "UBAH_STATUS_CYTO",
+          `EMERGENCY CYTO DETECTED: NRM ${newOp.rm||"-"} — Pasien: ${newOp.patient||"-"}`,
+          { ...newOp }
+        );
+      }
       upsertOneToSupa("kb_operasi", newOp).then((res:any)=>{
         if(!res?.ok) {
           showToast(`⚠ Gagal menyimpan ke Supabase: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
@@ -7458,6 +7666,11 @@ export default function App() {
     /* Optimistic remove lokal */
     setOps(p=>p.filter(o=>o.id!==id));
     if(op) logAudit("Hapus",op);
+    /* ── TURSO LOG: HAPUS_PASIEN ── */
+    if(op) AmbilLogMedis("DAFTAR_PASIEN", role==="admin"?"Admin":"Perawat", "HAPUS_PASIEN",
+      `Hapus data operasi: ${op.patient||"-"} (ID: ${id})`,
+      { deleted: op }
+    );
     /* DB delete — postgres_changes propagasi ke device lain */
     const res = await deleteFromSupa("kb_operasi", id);
     if(!res?.ok) {
@@ -7522,9 +7735,14 @@ export default function App() {
   const handleTabChange = useCallback((k: string) => {
     if(k === "roster_gen" && role !== "admin"){
       showToast("⚠️ Akses Ditolak: Fitur ini memerlukan hak akses Admin.", C.d);
+      AmbilLogMedis("KEAMANAN", role==="admin"?"Admin":"Perawat", "AKSES_DITOLAK",
+        `Akses ditolak ke tab roster_gen (role: ${role})`, { tab: k, role });
       setTab("home");
       return;
     }
+    /* ── TURSO LOG: PINDAH_TAB ── */
+    AmbilLogMedis("NAVIGASI", role==="admin"?"Admin":"Perawat", "PINDAH_TAB",
+      `Berpindah ke tab: ${k}`, { tab: k, role });
     setTab(k);
   }, [role, showToast]);
   /* Handler untuk event button — membaca key dari data-tab attribute.
@@ -7534,9 +7752,13 @@ export default function App() {
     if(!k) return;
     if(k === "roster_gen" && role !== "admin"){
       showToast("⚠️ Akses Ditolak: Fitur ini memerlukan hak akses Admin.", C.d);
+      AmbilLogMedis("KEAMANAN", role==="admin"?"Admin":"Perawat", "AKSES_DITOLAK",
+        `Akses ditolak ke tab roster_gen via bottom nav (role: ${role})`, { tab: k, role });
       setTab("home");
       return;
     }
+    AmbilLogMedis("NAVIGASI", role==="admin"?"Admin":"Perawat", "PINDAH_TAB",
+      `Berpindah ke tab: ${k} (via bottom nav)`, { tab: k, role, source: "bottom_nav" });
     setTab(k);
   }, [role, showToast]);
   const TABS = useMemo(() => ALL_TABS.filter(t => t.roles.includes(role)), [role]);
