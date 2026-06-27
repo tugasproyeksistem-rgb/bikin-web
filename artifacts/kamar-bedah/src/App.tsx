@@ -1798,13 +1798,24 @@ function ViewLaporan({ops,staff,roster,showToast,role,privacyMode}: ViewLaporanP
   const [preview,setPreview] = useState("");
   const [foc,setFoc]         = useState<string|null>(null);
   const todayOps = ops.filter((o:any)=>o.date===todayDate());
-  /* ── Poin ④: Filter besok — Sabtu tarik Minggu + Senin sekaligus ── */
+  /* ── Poin ④: Manajemen tanggal anti-overwrite (khusus Hari Sabtu) ──
+     Saat hari ini Sabtu, Minggu (H+1) dan Senin (H+2) WAJIB diinstansiasi
+     sebagai dua objek Date terpisah di memori — TIDAK boleh mutasi setDate
+     beruntun pada satu referensi objek yang sama (mencegah data leakage
+     antar hari). Setiap objek dikonversi ke string YYYY-MM-DD memakai
+     waktu LOKAL (toLocalISODate — bukan .toISOString() yang berbasis UTC),
+     supaya tanggal tidak bergeser mundur. */
   const _todayObj   = new Date();
   const _isSaturday = _todayObj.getDay() === 6;
+  /* Objek tanggal Minggu (H+1) — instansiasi independen, bukan turunan _todayObj yang dimutasi */
+  const _mingguObj  = new Date(_todayObj.getFullYear(), _todayObj.getMonth(), _todayObj.getDate() + 1);
+  const _mingguStr  = toLocalISODate(_mingguObj);
+  /* Objek tanggal Senin (H+2) — instansiasi independen kedua, terpisah dari objek Minggu */
+  const _seninObj   = new Date(_todayObj.getFullYear(), _todayObj.getMonth(), _todayObj.getDate() + 2);
+  const _seninStr   = toLocalISODate(_seninObj);
+  /* _besokStr/_lusaStr dipertahankan untuk kompatibilitas dengan tmrwOps (hari non-Sabtu) */
   const _besokStr   = tmrwDate();
-  const _lusaObj    = new Date(_todayObj);
-  _lusaObj.setDate(_lusaObj.getDate() + 2);
-  const _lusaStr    = `${_lusaObj.getFullYear()}-${String(_lusaObj.getMonth()+1).padStart(2,"0")}-${String(_lusaObj.getDate()).padStart(2,"0")}`;
+  const _lusaStr    = _seninStr;
   const tmrwOps = ops
     .filter((o:any)=>{
       if(o.status==="batal") return false;
@@ -1813,6 +1824,13 @@ function ViewLaporan({ops,staff,roster,showToast,role,privacyMode}: ViewLaporanP
         : o.date===_besokStr;
     })
     .sort((a:any,b:any)=> a.date!==b.date ? a.date.localeCompare(b.date) : a.time.localeCompare(b.time));
+  /* ── Render terpisah khusus Sabtu: filter ketat per-hari, tidak digabung ── */
+  const mingguOps = _isSaturday
+    ? ops.filter((o:any)=>o.status!=="batal" && o.date===_mingguStr).sort((a:any,b:any)=>a.time.localeCompare(b.time))
+    : [];
+  const seninOps = _isSaturday
+    ? ops.filter((o:any)=>o.status!=="batal" && o.date===_seninStr).sort((a:any,b:any)=>a.time.localeCompare(b.time))
+    : [];
   const rTmrw    = roster.find((r:any)=>r.date===todayDate());
   const tActive  = todayOps.filter((o:any)=>o.status!=="batal");
   const tBatal   = todayOps.filter((o:any)=>o.status==="batal");
@@ -1908,22 +1926,73 @@ function ViewLaporan({ops,staff,roster,showToast,role,privacyMode}: ViewLaporanP
       </Card>
       <Card style={{background:"#EDE7F6",border:"1px solid #D1C4E9"}}>
         <SH label="④ Rencana Operasi Besok (H-1)" color="#512DA8"/>
-        {tmrwOps.length===0 ? <div style={{fontSize:13,color:C.tL,textAlign:"center",padding:"6px 0"}}>Belum ada rencana operasi besok</div>
-          : <>
-            <div style={{fontSize:12,color:"#512DA8",marginBottom:10}}>Total <b>{tmrwOps.length}</b> · Pagi (&lt;14.00): <b>{tmrwOps.filter((o:any)=>o.time<"14:00").length}</b> · Sore (≥14.00): <b>{tmrwOps.filter((o:any)=>o.time>="14:00").length}</b></div>
-            {tmrwOps.sort((a:any,b:any)=>a.time.localeCompare(b.time)).map((op:any,i:number)=>(
-              <div key={op.id} style={{display:"flex",gap:10,marginBottom:8,paddingBottom:8,borderBottom:i<tmrwOps.length-1?"1px solid #D1C4E9":"none"}}>
-                <div style={{background:"#D1C4E9",borderRadius:8,padding:"5px 9px",fontSize:12,fontWeight:700,color:"#512DA8",flexShrink:0,minWidth:52,textAlign:"center"}}>{op.time}</div>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:13,fontWeight:700,color:C.t}}>{maskName(op.patient,privacyMode)}{op.age?`, ${op.age}th`:""}</div>
-                  <div style={{fontSize:12,color:C.tL}}>{op.procedure}</div>
-                  <div style={{fontSize:11,color:C.tL}}>{op.surgeon} / {op.anesthesiologist||"—"}</div>
+        {!_isSaturday ? (
+          /* ── Mode normal (bukan Sabtu): satu blok seperti biasa ── */
+          tmrwOps.length===0 ? <div style={{fontSize:13,color:C.tL,textAlign:"center",padding:"6px 0"}}>Belum ada rencana operasi besok</div>
+            : <>
+              <div style={{fontSize:12,color:"#512DA8",marginBottom:10}}>Total <b>{tmrwOps.length}</b> · Pagi (&lt;14.00): <b>{tmrwOps.filter((o:any)=>o.time<"14:00").length}</b> · Sore (≥14.00): <b>{tmrwOps.filter((o:any)=>o.time>="14:00").length}</b></div>
+              {tmrwOps.sort((a:any,b:any)=>a.time.localeCompare(b.time)).map((op:any,i:number)=>(
+                <div key={op.id} style={{display:"flex",gap:10,marginBottom:8,paddingBottom:8,borderBottom:i<tmrwOps.length-1?"1px solid #D1C4E9":"none"}}>
+                  <div style={{background:"#D1C4E9",borderRadius:8,padding:"5px 9px",fontSize:12,fontWeight:700,color:"#512DA8",flexShrink:0,minWidth:52,textAlign:"center"}}>{op.time}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,fontWeight:700,color:C.t}}>{maskName(op.patient,privacyMode)}{op.age?`, ${op.age}th`:""}</div>
+                    <div style={{fontSize:12,color:C.tL}}>{op.procedure}</div>
+                    <div style={{fontSize:11,color:C.tL}}>{op.surgeon} / {op.anesthesiologist||"—"}</div>
+                  </div>
+                  <Bdg label={OT[op.opType as keyof typeof OT||"elektif"]?.label} color={OT[op.opType as keyof typeof OT||"elektif"]?.c||C.i} bg={OT[op.opType as keyof typeof OT||"elektif"]?.bg||C.iBg}/>
                 </div>
-                <Bdg label={OT[op.opType as keyof typeof OT||"elektif"]?.label} color={OT[op.opType as keyof typeof OT||"elektif"]?.c||C.i} bg={OT[op.opType as keyof typeof OT||"elektif"]?.bg||C.iBg}/>
-              </div>
-            ))}
+              ))}
+            </>
+        ) : (
+          /* ── Mode Sabtu: Minggu & Senin DIRENDER TERPISAH, masing-masing
+               dengan filter tanggal lokal sendiri — tidak saling menimpa.
+               Minggu: kalau memang ada jadwal, tetap ditampilkan apa adanya;
+               statis "Tidak ada acara operasi" hanya jika benar-benar kosong. ── */
+          <>
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#512DA8",textTransform:"uppercase",letterSpacing:.4,marginBottom:8}}>Rencana Hari Minggu ({fDMY(_mingguStr)})</div>
+              {mingguOps.length===0 ? (
+                <div style={{fontSize:13,color:C.tL,textAlign:"center",padding:"6px 0",fontStyle:"italic"}}>Tidak ada acara operasi</div>
+              ) : (
+                <>
+                  <div style={{fontSize:12,color:"#512DA8",marginBottom:10}}>Total <b>{mingguOps.length}</b> · Pagi (&lt;14.00): <b>{mingguOps.filter((o:any)=>o.time<"14:00").length}</b> · Sore (≥14.00): <b>{mingguOps.filter((o:any)=>o.time>="14:00").length}</b></div>
+                  {mingguOps.map((op:any,i:number)=>(
+                    <div key={op.id} style={{display:"flex",gap:10,marginBottom:8,paddingBottom:8,borderBottom:i<mingguOps.length-1?"1px solid #D1C4E9":"none"}}>
+                      <div style={{background:"#D1C4E9",borderRadius:8,padding:"5px 9px",fontSize:12,fontWeight:700,color:"#512DA8",flexShrink:0,minWidth:52,textAlign:"center"}}>{op.time}</div>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:13,fontWeight:700,color:C.t}}>{maskName(op.patient,privacyMode)}{op.age?`, ${op.age}th`:""}</div>
+                        <div style={{fontSize:12,color:C.tL}}>{op.procedure}</div>
+                        <div style={{fontSize:11,color:C.tL}}>{op.surgeon} / {op.anesthesiologist||"—"}</div>
+                      </div>
+                      <Bdg label={OT[op.opType as keyof typeof OT||"elektif"]?.label} color={OT[op.opType as keyof typeof OT||"elektif"]?.c||C.i} bg={OT[op.opType as keyof typeof OT||"elektif"]?.bg||C.iBg}/>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+            <div style={{borderTop:"1px dashed #D1C4E9",paddingTop:12}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#512DA8",textTransform:"uppercase",letterSpacing:.4,marginBottom:8}}>Rencana Hari Senin ({fDMY(_seninStr)})</div>
+              {seninOps.length===0 ? (
+                <div style={{fontSize:13,color:C.tL,textAlign:"center",padding:"6px 0",fontStyle:"italic"}}>Belum ada rencana operasi Hari Senin</div>
+              ) : (
+                <>
+                  <div style={{fontSize:12,color:"#512DA8",marginBottom:10}}>Total <b>{seninOps.length}</b> · Pagi (&lt;14.00): <b>{seninOps.filter((o:any)=>o.time<"14:00").length}</b> · Sore (≥14.00): <b>{seninOps.filter((o:any)=>o.time>="14:00").length}</b></div>
+                  {seninOps.map((op:any,i:number)=>(
+                    <div key={op.id} style={{display:"flex",gap:10,marginBottom:8,paddingBottom:8,borderBottom:i<seninOps.length-1?"1px solid #D1C4E9":"none"}}>
+                      <div style={{background:"#D1C4E9",borderRadius:8,padding:"5px 9px",fontSize:12,fontWeight:700,color:"#512DA8",flexShrink:0,minWidth:52,textAlign:"center"}}>{op.time}</div>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:13,fontWeight:700,color:C.t}}>{maskName(op.patient,privacyMode)}{op.age?`, ${op.age}th`:""}</div>
+                        <div style={{fontSize:12,color:C.tL}}>{op.procedure}</div>
+                        <div style={{fontSize:11,color:C.tL}}>{op.surgeon} / {op.anesthesiologist||"—"}</div>
+                      </div>
+                      <Bdg label={OT[op.opType as keyof typeof OT||"elektif"]?.label} color={OT[op.opType as keyof typeof OT||"elektif"]?.c||C.i} bg={OT[op.opType as keyof typeof OT||"elektif"]?.bg||C.iBg}/>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
           </>
-        }
+        )}
       </Card>
       {/* ⑤ Siaga Dokter Anestesi — 2 kolom fixed */}
       <Card>
@@ -4823,7 +4892,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
 
         /* ── Tabel data tabular ── */
         const headerRow = sheet.addRow(["Tanggal", "Jam", "Suhu (°C)", "Kelembaban (%)", "Status", "Petugas"]);
-        headerRow.eachCell(cell => {
+        headerRow.eachCell((cell: ExcelJS.Cell) => {
           cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
           cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + MC.pri.replace("#", "") } };
           cell.alignment = { horizontal: "center" };
@@ -5498,13 +5567,20 @@ const MASTER_PERAWAT_LIST: Array<{nik:string; name:string; pk:string}> = [
 const SHIFT_CODES = { PAGI:"P", PAGI_SIAGA:"PG", SIANG:"S", SIANG_SIAGA:"SG", LIBUR:"L", LIBUR_SIAGA:"LG", CUTI:"T" } as const;
 type NurseType = "karu"|"senior"|"junior";
 interface RosterNurse { id: string; nik: string; pk: string; name: string; sisaCuti: number; tipe: NurseType; }
-interface RosterGenProps { showToast: ShowToastFn; upsertOneToSupa: UpsertOneFn; dbxCfg: DropboxConfig; }
+interface RosterGenProps { showToast: ShowToastFn; upsertOneToSupa: UpsertOneFn; deleteFromSupa: DeleteFromSupaFn; dbxCfg: DropboxConfig; }
 
-/* ── Master Perawat — interface & LS key (terpisah dari RosterNurse) ── */
+/* ── Master Perawat — interface (terpisah dari RosterNurse) ──
+   FIX (Audit Sentralisasi DB): localStorage DIHAPUS TOTAL sebagai sumber
+   data. Tabel Supabase "kb_roster_master" kini menjadi satu-satunya
+   sumber kebenaran (1 row per perawat: id, data jsonb, updated_at),
+   konsisten dengan pola tabel kb_* lain di file ini (kb_operasi,
+   kb_staf, dst). SEED_MASTER hanya dipakai sekali untuk mengisi
+   tabel Supabase bila tabel masih kosong (first-run), bukan sebagai
+   fallback offline. */
 interface NurseMaster { id: string; nik: string; name: string; pk: string; }
-const LS_MASTER_KEY = "rostergen_master_v1";
+const KB_ROSTER_MASTER_TABLE = "kb_roster_master";
 
-/* ── Seed awal: data RS Panti Rini (hanya dipakai saat LS kosong) ── */
+/* ── Seed awal: data RS Panti Rini (hanya dipakai utk first-run seed Supabase) ── */
 const SEED_MASTER: NurseMaster[] = [
   { id:"m1",  nik:"201010056", name:"Jaka R",        pk:"III" },
   { id:"m2",  nik:"199720045", name:"Eka S",          pk:"III" },
@@ -5517,15 +5593,6 @@ const SEED_MASTER: NurseMaster[] = [
   { id:"m9",  nik:"201205089", name:"Budi S",         pk:"I"   },
   { id:"m10", nik:"200001055", name:"Ratna K",        pk:"III" },
 ];
-
-/** loadMasterFromLS: baca dari localStorage, fallback ke SEED jika kosong */
-function loadMasterFromLS(): NurseMaster[] {
-  try {
-    const raw = localStorage.getItem(LS_MASTER_KEY);
-    if(raw) { const parsed = JSON.parse(raw); if(Array.isArray(parsed) && parsed.length>0) return parsed; }
-  } catch { /* ignore */ }
-  return SEED_MASTER;
-}
 
 /* ── Nama-nama bulan Indonesia (dipakai di header Excel & label UI) ── */
 const BULAN_NAMA_ID = ["JANUARI","FEBRUARI","MARET","APRIL","MEI","JUNI","JULI","AGUSTUS","SEPTEMBER","OKTOBER","NOVEMBER","DESEMBER"];
@@ -5554,7 +5621,7 @@ function fisherYates<T>(arr: T[]): T[] {
   return a;
 }
 
-function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenProps) {
+function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCfg }: RosterGenProps) {
   const today = new Date();
   const [month, setMonth] = useState(today.getMonth());
   const [year,  setYear]  = useState(today.getFullYear());
@@ -5585,16 +5652,48 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
   const [savingJadwal, setSavingJadwal] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
 
-  /* ── FITUR 1: State Master Perawat (persisten via localStorage) ── */
-  const [nurseMasterList, setNurseMasterList] = useState<NurseMaster[]>(loadMasterFromLS);
+  /* ── FITUR 1: State Master Perawat — SEPENUHNYA dari Supabase ──
+     FIX (Audit Sentralisasi DB): localStorage dihapus total. Saat mount,
+     fetch seluruh baris tabel kb_roster_master. Jika tabel masih kosong
+     (deployment baru), seed sekali dengan SEED_MASTER lalu upload ke
+     Supabase — setelah itu Supabase menjadi satu-satunya sumber data,
+     sama seperti modul kb_operasi/kb_staf/dst. */
+  const [nurseMasterList, setNurseMasterList] = useState<NurseMaster[]>([]);
   const [masterForm, setMasterForm] = useState({ nik:"", name:"", pk:"III" });
   const [masterFormErr, setMasterFormErr] = useState("");
   const [masterSaving, setMasterSaving]   = useState(false);
+  const [masterLoading, setMasterLoading] = useState(true);
 
-  /* Persist nurseMasterList ke localStorage setiap kali berubah */
+  /* Fetch master perawat dari Supabase sekali saat komponen mount */
   useEffect(() => {
-    try { localStorage.setItem(LS_MASTER_KEY, JSON.stringify(nurseMasterList)); } catch { /* ignore */ }
-  }, [nurseMasterList]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await SUPA_CLIENT.from(KB_ROSTER_MASTER_TABLE).select("data").order("updated_at",{ascending:true});
+        if(cancelled) return;
+        if(!error && data?.length){
+          setNurseMasterList(data.map((x:any)=>x.data));
+        } else if(!error && data?.length===0){
+          /* Tabel kosong (first-run) → seed sekali dari SEED_MASTER */
+          setNurseMasterList(SEED_MASTER);
+          const ts = new Date().toISOString();
+          await SUPA_CLIENT.from(KB_ROSTER_MASTER_TABLE).upsert(
+            SEED_MASTER.map(m=>({ id:m.id, data:{...m, updated_at:ts}, updated_at:ts })),
+            {onConflict:"id"}
+          );
+        } else if(error){
+          console.warn("[kb_roster_master] fetch error:", formatSupaError(error));
+          showToast("⚠ Gagal memuat data master dari Supabase", "#DC2626");
+        }
+      } catch(e) {
+        if(!cancelled) showToast("⚠ Koneksi ke Supabase gagal saat memuat data master", "#DC2626");
+      } finally {
+        if(!cancelled) setMasterLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* FIX TDZ: newGrid_safe dipindah ke sini (sebelum rowSummaries/colSummaries)
      karena kedua useMemo di bawah memanggilnya saat render pertama — definisi
@@ -5769,7 +5868,10 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
     });
   };
 
-  /* ── FITUR 1: CRUD Master Perawat + Supabase sync ── */
+  /* ── FITUR 1: CRUD Master Perawat — sentralisasi penuh ke Supabase ──
+     Setiap perawat = 1 row di tabel kb_roster_master (id, data, updated_at),
+     memakai upsertOneToSupa/deleteFromSupa yang sudah ada — pola yang sama
+     dipakai modul kb_staf, kb_operasi, dst. Tidak ada lagi localStorage. */
   const addToMaster = async () => {
     const nik  = masterForm.nik.trim();
     const name = masterForm.name.trim();
@@ -5779,44 +5881,37 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
     if(nurseMasterList.some(m => m.nik === nik))
       { setMasterFormErr(`NIK ${nik} sudah ada di database.`); return; }
     const newEntry: NurseMaster = { id: gId(), nik, name, pk };
-    const updated = [...nurseMasterList, newEntry];
-    setNurseMasterList(updated);
-    setMasterForm({ nik:"", name:"", pk:"III" });
     setMasterFormErr("");
     setMasterSaving(true);
-    /* Simpan ke Supabase */
     try {
-      const res = await upsertOneToSupa("kb_roster_gen", {
-        id: "master_perawat",
-        updated_at: new Date().toISOString(),
-        nurses: JSON.stringify(updated),
-        jadwal: "", holidays: "", year: 0, month: 0,
-        generatedAt: fNow(), pjSirs, pembawHP, kepInstall,
-      });
+      const res = await upsertOneToSupa(KB_ROSTER_MASTER_TABLE, {...newEntry});
       if(res.ok){
+        setNurseMasterList(p => [...p, newEntry]);
+        setMasterForm({ nik:"", name:"", pk:"III" });
         showToast(`✅ "${name}" (NIK: ${nik}) disimpan ke Supabase!`, "#2E7D32");
       } else {
-        showToast(`✅ "${name}" disimpan lokal. Supabase: ${res.error||"gagal sync"}`, "#E65100");
+        showToast(`✗ Gagal menyimpan ke Supabase: ${res.error||"unknown error"}`, "#DC2626");
       }
-    } catch {
-      showToast(`✅ "${name}" disimpan lokal — Supabase tidak terjangkau.`, "#E65100");
+    } catch(e:any) {
+      showToast(`✗ Koneksi ke Supabase gagal: ${e?.message||"unknown error"}`, "#DC2626");
     }
     setMasterSaving(false);
   };
 
   const removeFromMaster = async (id: string) => {
     const target = nurseMasterList.find(m => m.id === id);
-    const updated = nurseMasterList.filter(m => m.id !== id);
-    setNurseMasterList(updated);
+    if(!target) return;
     try {
-      await upsertOneToSupa("kb_roster_gen", {
-        id: "master_perawat", updated_at: new Date().toISOString(),
-        nurses: JSON.stringify(updated),
-        jadwal: "", holidays: "", year: 0, month: 0,
-        generatedAt: fNow(), pjSirs, pembawHP, kepInstall,
-      });
-    } catch { /* silent — LS sudah update via useEffect */ }
-    if(target) showToast(`🗑 Perawat "${target.name}" dihapus dari database master.`, "#5C677D");
+      const res = await deleteFromSupa(KB_ROSTER_MASTER_TABLE, id);
+      if(res.ok){
+        setNurseMasterList(p => p.filter(m => m.id !== id));
+        showToast(`🗑 Perawat "${target.name}" dihapus dari database master.`, "#5C677D");
+      } else {
+        showToast(`✗ Gagal menghapus dari Supabase: ${res.error||"unknown error"}`, "#DC2626");
+      }
+    } catch(e:any) {
+      showToast(`✗ Koneksi ke Supabase gagal: ${e?.message||"unknown error"}`, "#DC2626");
+    }
   };
 
   // BUG FIX #2: Handler sisa cuti — tidak ada leading zero
@@ -6342,7 +6437,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
       const folder = (dbxCfg?.path||"/kamarbedah/").replace(/[^/]+$/,"");
       const stamp  = `${year}-${String(month+1).padStart(2,"0")}`;
       const path   = `${folder}Jadwal_KamarBedah_${stamp}.xlsx`;
-      const buf    = await wb.xlsx.writeBuffer() as Uint8Array;
+      const buf    = await wb.xlsx.writeBuffer() as unknown as Uint8Array;
       const CHUNK=8192; let bin="";
       for(let i=0;i<buf.length;i+=CHUNK) bin+=String.fromCharCode(...buf.subarray(i,i+CHUNK));
       const b64 = btoa(bin);
@@ -6406,7 +6501,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
           <SH label="📁 Kelola Data Master Perawat" color="#15803D"/>
           <span style={{fontSize:10,fontWeight:700,background:"#DCFCE7",color:"#15803D",padding:"3px 8px",borderRadius:6,border:"1px solid #BBF7D0",whiteSpace:"nowrap"}}>
-            💾 localStorage + ☁ Supabase
+            ☁ Supabase (real-time)
           </span>
         </div>
 
@@ -6430,7 +6525,9 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
         {masterFormErr && <div style={{fontSize:11,color:"#DC2626",marginBottom:8,marginTop:-4}}>⚠ {masterFormErr}</div>}
 
         {/* Tabel Master */}
-        {nurseMasterList.length > 0 && (
+        {masterLoading ? (
+          <div style={{fontSize:12,color:C.tL,textAlign:"center",padding:"10px 0"}}>⟳ Memuat data master dari Supabase...</div>
+        ) : nurseMasterList.length > 0 ? (
           <div style={{overflowX:"auto"}}>
             <table style={{borderCollapse:"collapse",width:"100%",fontSize:11}}>
               <thead>
@@ -6456,6 +6553,8 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, dbxCfg }: RosterGenPr
             </table>
             <div style={{fontSize:11,color:C.tL,marginTop:6}}>Total: {nurseMasterList.length} perawat tersimpan di database master.</div>
           </div>
+        ) : (
+          <div style={{fontSize:12,color:C.tL,textAlign:"center",padding:"10px 0"}}>Belum ada data master perawat. Tambahkan lewat form di atas.</div>
         )}
       </Card>
 
@@ -7739,7 +7838,7 @@ export default function App() {
   const handleTabChange = useCallback((k: string) => {
     if(k === "roster_gen" && role !== "admin"){
       showToast("⚠️ Akses Ditolak: Fitur ini memerlukan hak akses Admin.", C.d);
-      AmbilLogMedis("KEAMANAN", role==="admin"?"Admin":"Perawat", "AKSES_DITOLAK",
+      AmbilLogMedis("KEAMANAN", "Perawat", "AKSES_DITOLAK",
         `Akses ditolak ke tab roster_gen (role: ${role})`, { tab: k, role });
       setTab("home");
       return;
@@ -7756,7 +7855,7 @@ export default function App() {
     if(!k) return;
     if(k === "roster_gen" && role !== "admin"){
       showToast("⚠️ Akses Ditolak: Fitur ini memerlukan hak akses Admin.", C.d);
-      AmbilLogMedis("KEAMANAN", role==="admin"?"Admin":"Perawat", "AKSES_DITOLAK",
+      AmbilLogMedis("KEAMANAN", "Perawat", "AKSES_DITOLAK",
         `Akses ditolak ke tab roster_gen via bottom nav (role: ${role})`, { tab: k, role });
       setTab("home");
       return;
@@ -7901,7 +8000,7 @@ export default function App() {
       {tab==="staf"       && <ViewStaf staff={staff} setStaff={setStaff} roster={roster} setRoster={setRoster} showToast={showToast} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} upsertBulkToSupa={upsertBulkToSupa}/>}
       {tab==="lembur"     && <ViewLembur lemburPegawai={lemburPegawai} setLemburPegawai={setLemburPegawai} lemburData={lemburData} setLemburData={setLemburData} showToast={showToast} supaCfg={supaCfg} dbxCfg={dbxCfg} role={role} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa}/>}
       {tab==="monitoring" && <ViewMonitoring monitoringEntries={monitoringEntries} setMonitoringEntries={setMonitoringEntries} monitoringCfg={monitoringCfg} setMonitoringCfg={setMonitoringCfg} showToast={showToast} supaCfg={supaCfg} dbxCfg={dbxCfg} role={role} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa}/>}
-      {tab==="roster_gen" && role==="admin" && <ViewRosterGenerator showToast={showToast} upsertOneToSupa={upsertOneToSupa} dbxCfg={dbxCfg}/>}
+      {tab==="roster_gen" && role==="admin" && <ViewRosterGenerator showToast={showToast} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg}/>}
       {tab==="arsip"      && <ViewArsip
         data={{ops, archive, notifs, lemburData, lemburPegawai, monitoringEntries, monitoringCfg}}
         setOps={setOps}
