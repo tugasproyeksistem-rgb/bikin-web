@@ -1,8 +1,6 @@
 name = "sistem-informasi-kamar-bedah"
 compatibility_date = "2026-06-20"
+pages_build_output_dir = "dist/public"
 
-[assets]
-directory = "./dist/public"
-
-[vars]
-VITE_PROXY_SHARED_SECRET = "ae197b7288ca7c08e3a2846315453f727481a18352fe554df3fdcbdf36b982ca"
+[ai]
+binding = "AI"
