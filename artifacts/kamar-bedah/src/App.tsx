@@ -2020,7 +2020,7 @@ function ScanFormulir({onResults, showToast}: ScanFormulirProps) {
       // Dikirim ke route /api/ocr-scan di Worker yang sama (Cloudflare
       // Workers AI, model vision) — gratis s.d. 10.000 Neuron/hari,
       // tidak ada API key eksternal, tidak ada Supabase Edge Function.
-      const res = await withTimeout(runWorkerOcrScan(file), 30000, "OCR scan formulir");
+      const res = await withTimeout(runWorkerOcrScan(file), 60000, "OCR scan formulir");
       if(!res.ok || !res.data || res.data.length===0){
         showToast(res.msg || "Tidak ada data yang berhasil dibaca dari gambar", C.d);
         return;
