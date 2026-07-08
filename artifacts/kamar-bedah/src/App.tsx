@@ -185,6 +185,7 @@ export interface Operation {
   reminders?: string[];
   requests?: { id: string; text: string; time: string }[];
   cancelReason?: string;
+  needsReview?: boolean;
 }
 
 export interface StaffMember {
@@ -2228,7 +2229,7 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,staff,setTab,temp
         showToast={showToast}
         onResults={(results)=>{
           if(results.length===1) applyOcrResult(results[0]);
-          else setOcrCandidates(results);
+          else autoSaveOcrBatch(results);
         }}
       />
       {ocrCandidates.length>0 && (
@@ -3839,13 +3840,14 @@ function ViewArsip(props: ViewArsipProps) {
           {ops.map((op:any)=>{
             const sc=STS[op.status as keyof typeof STS]||STS.scheduled, ot=OT[op.opType as keyof typeof OT||"elektif"];
             return (
-              <Card key={op.id} style={{padding:"12px 16px",marginBottom:6}}>
+              <Card key={op.id} style={{padding:"12px 16px",marginBottom:6, ...(op.needsReview?{border:"2px solid #3B82F6",background:"#EFF6FF"}:{})}}>
                 <div style={{fontSize:13,fontWeight:700,color:C.t}}>{op.patient||"—"}</div>
                 <div style={{fontSize:12,color:C.tL}}>{op.procedure} · {fD(op.date)} {op.time} WIB</div>
                 <div style={{marginTop:6,display:"flex",gap:5,flexWrap:"wrap"}}>
                   <Bdg label={sc.l} color={sc.c} bg={sc.bg}/>
                   <Bdg label={ot&&ot.label||"Elektif"} color={ot&&ot.c||C.i} bg={ot&&ot.bg||C.iBg}/>
                   {op.allergy&&op.allergy!=="Tidak Ada"&&<Bdg label="Alergi" color={C.d} bg={C.dBg}/>}
+                  {op.needsReview&&<Bdg label="🔍 Perlu Review (dari OCR)" color="#3B82F6" bg="#DBEAFE"/>}
                 </div>
               </Card>
             );
@@ -9078,6 +9080,71 @@ export default function App() {
      catatan lengkap di ViewDaftarProps & ViewDaftar untuk penjelasan bug
      race condition yang diperbaiki. */
   const [pendingEditOp, setPendingEditOp] = useState<Operation|null>(null);
+  /* ── AUTO-SAVE MULTI-PASIEN DARI OCR ──────────────────────────────────
+     Dipanggil saat 1 scan formulir menghasilkan ≥2 kandidat pasien.
+     BERBEDA dari saveOpFn: TIDAK memvalidasi field wajib (nama/tanggal/dsb
+     boleh kosong) karena tujuannya supaya perawat tidak perlu isi form
+     satu-satu untuk tiap pasien — cukup scan, semua langsung masuk daftar,
+     lalu perawat TINGGAL EDIT baris yang kurang lengkap. Setiap baris
+     ditandai needsReview:true supaya tampil dengan border biru di daftar,
+     mengingatkan perawat untuk mengecek/melengkapi datanya. */
+  const autoSaveOcrBatch = useCallback((results: OcrExtractResult[]) => {
+    const newOps: Operation[] = results.map((r) => ({
+      id: gId(),
+      patient: sanitize(r.patient || ""),
+      age: r.age || "",
+      ageMonths: r.ageMonths || "",
+      rm: sanitize(r.rm || ""),
+      opType: (r.opType || "elektif") as "elektif" | "semi" | "cyto",
+      status: "scheduled",
+      date: r.date || "",
+      time: r.time || "",
+      room: r.room || "",
+      surgeon: sanitize(r.surgeon || ""),
+      anesthesiologist: sanitize(r.anesthesiologist || ""),
+      procedure: sanitize(r.procedure || ""),
+      diagnosis: sanitize(r.diagnosis || ""),
+      allergy: sanitize(r.allergy || "Tidak Ada"),
+      bloodType: r.bloodType || "",
+      reminders: [],
+      requests: [],
+      createdAt: fNow(),
+      updated_at: new Date().toISOString(),
+      needsReview: true,
+    }));
+
+    newOps.forEach((newOp) => {
+      logAudit("Tambah (OCR batch)", newOp);
+      AmbilLogMedis(
+        "DAFTAR_PASIEN",
+        role === "admin" ? "Admin" : "Perawat",
+        "TAMBAH_PASIEN",
+        `Tambah pasien dari scan OCR (auto-batch): ${newOp.patient || "(nama belum terisi)"} (RM: ${newOp.rm || "-"})`,
+        { ...newOp }
+      );
+      if (newOp.opType === "cyto") {
+        AmbilLogMedis(
+          "DAFTAR_PASIEN",
+          role === "admin" ? "Admin" : "Perawat",
+          "UBAH_STATUS_CYTO",
+          `EMERGENCY CYTO DETECTED (OCR batch): NRM ${newOp.rm || "-"} — Pasien: ${newOp.patient || "-"}`,
+          { ...newOp }
+        );
+      }
+      upsertOneToSupa("kb_operasi", newOp).then((res: any) => {
+        if (!res?.ok) {
+          showToast(`⚠ Gagal menyimpan "${newOp.patient || "(tanpa nama)"}" ke Supabase: ${res?.error || "kesalahan tidak diketahui"}`, C.d);
+        } else {
+          setOps((p) => { if (p.some((o: any) => o.id === newOp.id)) return p; return [...p, newOp]; });
+        }
+      });
+    });
+
+    showToast(`✓ ${newOps.length} pasien otomatis tersimpan — mohon lengkapi & periksa data yang belum lengkap`, C.s);
+    setTab("jadwal");
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[showToast, upsertOneToSupa, logAudit, role]);
+
   const saveOpFn = useCallback(({opForm, editingOp, setOpErrors, setDupWarn, resetOp}: SaveOpFnArgs) => {
     const e: Record<string,string>={};
     if(!opForm.patient||!opForm.patient.trim()) e.patient="Nama pasien wajib";
