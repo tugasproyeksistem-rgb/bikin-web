@@ -1,12 +1,20 @@
-// functions/api/ocr-scan.ts
-// Cloudflare Pages Function — otomatis ter-route ke /api/ocr-scan
-// Env binding "AI" harus sudah ditambahkan di wrangler.toml:
+// src/worker.ts
+// Worker entry untuk project "sistem-informasi-kamar-bedah".
+// Menangani route /api/ocr-scan secara manual, lalu fallback ke static
+// assets (env.ASSETS) untuk semua request lain — sesuai mode "Workers with
+// static assets" yang dipakai project ini (BUKAN Cloudflare Pages).
+//
+// wrangler.toml WAJIB punya:
+//   main = "src/worker.ts"
+//   [assets]
+//   directory = "./dist/public"
+//   binding = "ASSETS"
 //   [ai]
 //   binding = "AI"
-// Tidak perlu API key/token apa pun — binding AI tersedia otomatis saat deploy.
 
-interface Env {
+export interface Env {
   AI: Ai;
+  ASSETS: Fetcher;
 }
 
 const OCR_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
@@ -150,9 +158,6 @@ function extractJsonArrayFromText(text: string): unknown | null {
        mengganti "[" dan "]" yang membungkus pasangan key:value menjadi
        "{" dan "}", tapi biarkan "[" dan "]" terluar (pembungkus array). */
     const inner = candidate.slice(1, -1).trim();
-    // Ganti setiap "[" yang diikuti oleh `"key":` jadi "{", dan setiap
-    // "]" yang didahului oleh nilai (bukan diikuti koma ke elemen array
-    // lain di level yang sama) jadi "}".
     const fixed =
       "[" +
       inner
@@ -167,13 +172,13 @@ function extractJsonArrayFromText(text: string): unknown | null {
   }
 }
 
-// ── Handler utama ─────────────────────────────────────────────────────
+// ── Handler OCR ───────────────────────────────────────────────────────
 
-export const onRequestPost: PagesFunction<Env> = async (context) => {
+async function handleOcrScan(request: Request, env: Env): Promise<Response> {
   try {
-    const body = await context.request
-      .json<{ image_base64?: string; media_type?: string }>()
-      .catch(() => null);
+    const body = (await request.json().catch(() => null)) as
+      | { image_base64?: string; media_type?: string }
+      | null;
 
     if (!body?.image_base64) {
       return Response.json(
@@ -182,8 +187,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       );
     }
 
-    // Batas ukuran wajar sebelum diproses (safety net kedua setelah
-    // kompresi di sisi client). ~6MB base64 encoded.
     const approxBytes = (body.image_base64.length * 3) / 4;
     if (approxBytes > 6 * 1024 * 1024) {
       return Response.json(
@@ -197,7 +200,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
 
     let aiResponse: unknown;
     try {
-      aiResponse = await context.env.AI.run(OCR_MODEL, {
+      aiResponse = await env.AI.run(OCR_MODEL, {
         messages: [
           {
             role: "user",
@@ -208,7 +211,7 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           },
         ],
         max_tokens: 3000,
-      });
+      } as any);
     } catch (aiErr) {
       return Response.json(
         {
@@ -261,9 +264,6 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
       aiResponse &&
       Array.isArray((aiResponse as { response?: unknown }).response)
     ) {
-      // Model langsung mengembalikan array/object JSON (bukan string) —
-      // kasus ini terjadi ketika model taat instruksi tapi API
-      // membungkusnya sebagai structured data, bukan teks mentah.
       parsed = (aiResponse as { response: unknown }).response;
     } else if (Array.isArray(aiResponse)) {
       parsed = aiResponse;
@@ -291,17 +291,32 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     return Response.json(
       {
         ok: false,
-        msg: "Gagal memproses OCR: " + (err instanceof Error ? err.message : "unknown error"),
+        msg:
+          "Gagal memproses OCR: " +
+          (err instanceof Error ? err.message : "unknown error"),
       },
       { status: 500 }
     );
   }
-};
+}
 
-// Tolak method selain POST dengan jelas
-export const onRequestGet: PagesFunction<Env> = async () => {
-  return Response.json(
-    { ok: false, msg: "Gunakan method POST untuk endpoint ini" },
-    { status: 405 }
-  );
+// ── Entry point Worker ───────────────────────────────────────────────
+
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const url = new URL(request.url);
+
+    if (url.pathname === "/api/ocr-scan") {
+      if (request.method === "POST") {
+        return handleOcrScan(request, env);
+      }
+      return Response.json(
+        { ok: false, msg: "Gunakan method POST untuk endpoint ini" },
+        { status: 405 }
+      );
+    }
+
+    // Semua request lain diserve sebagai static asset (SPA React kamu).
+    return env.ASSETS.fetch(request);
+  },
 };

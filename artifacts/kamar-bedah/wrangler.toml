@@ -1,9 +1,10 @@
 name = "sistem-informasi-kamar-bedah"
 compatibility_date = "2026-06-20"
-pages_build_output_dir = "dist/public"
+main = "src/worker.ts"
 
 [assets]
 directory = "./dist/public"
+binding = "ASSETS"
 
 [ai]
 binding = "AI"
