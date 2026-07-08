@@ -279,6 +279,7 @@ export interface ViewDaftarProps {
   pendingEditOp: Operation | null;
   clearPendingEditOp: () => void;
   saveOpFn: (args: SaveOpFnArgs) => void;
+  autoSaveOcrBatch: (results: OcrExtractResult[]) => void;
   staff: StaffMember[];
   setTab: React.Dispatch<React.SetStateAction<string>>;
   templates: Operation[];
@@ -2059,7 +2060,7 @@ function ScanFormulir({onResults, showToast}: ScanFormulirProps) {
    pendingEditOp (prop, lihat FIX AUDIT #24) memungkinkan root App (via
    startEditOp) mengisi form lokal ini — menggantikan mekanisme editOpRef
    lama yang rentan race condition saat ViewDaftar belum/baru mount. */
-function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,staff,setTab,templates,setTemplates,showToast}: ViewDaftarProps) {
+function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,staff,setTab,templates,setTemplates,showToast}: ViewDaftarProps) {
   // ── Form state: lokal di sini, tidak lagi di root App ──
   // FIX AUDIT #24: initial state langsung diisi dari pendingEditOp kalau ada
   // (penting untuk RENDER PERTAMA — tidak perlu menunggu useEffect sama sekali
@@ -9459,7 +9460,7 @@ export default function App() {
         </div>
       )}
       {tab==="jadwal"     && <ViewJadwal ops={ops} setOps={setOps} startEditOp={startEditOp} deleteOp={deleteOp} sendReminder={sendReminder} reqOpId={reqOpId} setReqOpId={setReqOpId} reqText={reqText} setReqText={setReqText} addReq={addReq} delReq={delReq} getPhone={getPhone} setNotifs={setNotifs} showToast={showToast} privacyMode={privacyMode} role={role} upsertOneToSupa={upsertOneToSupa}/>}
-      {tab==="daftar"     && <ViewDaftar pendingEditOp={pendingEditOp} clearPendingEditOp={()=>setPendingEditOp(null)} saveOpFn={saveOpFn} staff={staff} setTab={setTab} templates={templates} setTemplates={setTemplates} showToast={showToast}/>}
+      {tab==="daftar"     && <ViewDaftar pendingEditOp={pendingEditOp} clearPendingEditOp={()=>setPendingEditOp(null)} saveOpFn={saveOpFn} autoSaveOcrBatch={autoSaveOcrBatch} staff={staff} setTab={setTab} templates={templates} setTemplates={setTemplates} showToast={showToast}/>}
       {tab==="laporan"    && <ViewLaporan ops={ops} staff={staff} roster={roster} showToast={showToast} role={role} privacyMode={privacyMode}/>}
       {tab==="wa"         && <ViewKirimWA ops={ops} staff={staff} setNotifs={setNotifs} showToast={showToast}/>}
       {tab==="statistik"  && <ViewStatistik ops={ops} archive={archive}/>}
