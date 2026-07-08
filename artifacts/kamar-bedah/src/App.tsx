@@ -404,9 +404,31 @@ function constantTimeEqual(a: string, b: string): boolean {
   for (let i = 0; i < a.length; i++) result |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return result === 0;
 }
+/* FIX AUDIT #17 (CRITICAL — Timing Side-Channel pada Fallback Legacy):
+   Percabangan `stored.includes(":")` sebelumnya membuat DUA JALUR EKSEKUSI
+   dengan biaya komputasi sangat berbeda: PIN ter-hash menjalankan PBKDF2
+   100k iterasi (lambat, konstan), sementara PIN legacy plaintext langsung
+   dibandingkan tanpa PBKDF2 sama sekali (sangat cepat). Selisih waktu ini
+   BISA DIUKUR dari luar (network timing) untuk menyimpulkan apakah sebuah
+   akun masih pakai PIN plaintext (target termudah) — bahkan tanpa tahu
+   sedikit pun isi PIN-nya. Sekarang KEDUA jalur SELALU menjalankan PBKDF2
+   penuh (walau hasilnya dibuang di jalur legacy), sehingga total waktu
+   eksekusi kedua cabang seragam dan tidak lagi membocorkan format
+   penyimpanan lewat timing. */
 async function verifyPin(pin: string, stored: string | undefined | null): Promise<boolean> {
   if (!stored) return false;
-  if (!stored.includes(":")) return constantTimeEqual(pin, stored); // legacy plaintext fallback (auto-migrasi di pemanggil)
+  const isLegacyPlaintext = !stored.includes(":");
+  /* Selalu derive PBKDF2 (pakai salt acak baru bila legacy) supaya biaya
+     komputasi seragam antara kedua cabang — hasil dummy ini TIDAK dipakai
+     untuk verifikasi legacy, hanya untuk menyamakan waktu eksekusi. */
+  const dummyDeriveForTiming = isLegacyPlaintext ? hashPin(pin) : Promise.resolve("");
+  if (isLegacyPlaintext) {
+    const [legacyMatch] = await Promise.all([
+      Promise.resolve(constantTimeEqual(pin, stored)),
+      dummyDeriveForTiming
+    ]);
+    return legacyMatch; // legacy plaintext fallback (auto-migrasi di pemanggil)
+  }
   const [salt] = stored.split(":");
   const rehashed = await hashPin(pin, salt);
   return constantTimeEqual(rehashed, stored);
@@ -434,6 +456,42 @@ const gId = (): string => {
   return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
 };
 const isValidUUID = (s: any): boolean => typeof s === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+
+/* ─── FIX AUDIT #18 (MEDIUM — CSV/Excel Formula Injection, CWE-1236) ────
+   Field teks bebas dari user (keterangan, keperluan, nama, dsb) yang
+   diawali karakter =, +, -, @, tab, atau CR bisa DIINTERPRETASI SEBAGAI
+   FORMULA oleh Excel/LibreOffice saat file .xlsx dibuka orang lain —
+   berpotensi eksekusi perintah sistem via formula seperti
+   =cmd|'/c calc'!A1 atau kebocoran data via =WEBSERVICE(...).
+   sanitizeCellForExcel membubuhkan apostrof (') di depan sel yang diawali
+   karakter pemicu formula, sehingga Excel selalu memperlakukannya sebagai
+   TEKS MURNI, bukan formula — tanpa mengubah tampilan visual sel bagi
+   pengguna (apostrof depan tidak tampak di Excel). Dipakai khusus pada
+   kolom teks bebas yang diisi manual oleh perawat/admin (keterangan,
+   keperluan lembur, nama/paraf TTD, dll), BUKAN pada kolom angka/tanggal
+   yang sudah terkontrol formatnya. */
+const FORMULA_TRIGGER_CHARS = ["=", "+", "-", "@", "\t", "\r"];
+function sanitizeCellForExcel(value: any): any {
+  if (typeof value !== "string" || value.length === 0) return value;
+  return FORMULA_TRIGGER_CHARS.includes(value[0]) ? `'${value}` : value;
+}
+
+/* ─── FIX AUDIT #25 (MEDIUM — Query Tanpa Timeout, "Freeze" saat Network
+   Hang) ──────────────────────────────────────────────────────────────
+   Tanpa batas waktu eksplisit, sebuah query yang "menggantung" (jaringan
+   RS lambat/overload, BUKAN disconnect total) bisa membuat tombol Simpan/
+   Masuk/Pulang tetap disabled TANPA BATAS WAKTU — bagi perawat terasa
+   seperti aplikasi freeze, tanpa opsi retry. withTimeout() membungkus
+   sebuah Promise dan memaksanya reject setelah durasi tertentu, sehingga
+   UI selalu punya kepastian (sukses ATAU gagal-dengan-pesan-jelas) dalam
+   waktu wajar, bukan menunggu selamanya. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label}: waktu tunggu habis (>${ms/1000}s) — periksa koneksi internet`)), ms);
+    promise.then(v => { clearTimeout(timer); resolve(v); }, e => { clearTimeout(timer); reject(e); });
+  });
+}
+
 /* ensureId: pakai id yang sudah ada selama berupa string non-kosong (kolom `id`
    di tabel kb_* bertipe text, BUKAN uuid — dibuktikan oleh row legacy
    id="lembur_data" yang sudah berjalan). Sengaja TIDAK memaksa format UUID di
@@ -459,7 +517,7 @@ const todayDate = () => toLocalISODate(new Date());
 const tmrwDate  = () => { const d=new Date(); d.setDate(d.getDate()+1); return toLocalISODate(d); };
 const fD        = (d: string) => { if(!d)return"-"; try{ return new Date(d+"T00:00:00").toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long",year:"numeric"}); }catch{ return d; } };
 /* fDMY: format DD / MM / YYYY — dipakai di semua tab untuk display tanggal seragam */
-const fDMY      = (d: string): string => { if(!d)return"—"; try{ const [y,m,day]=d.split("-"); if(!y||!m||!day)return d; return `${day.padStart(2,"0")} / ${m.padStart(2,"0")} / ${y}`; }catch{ return d; } };
+const fDMY      = (d: string): string => { if(!d)return"—"; try{ const [y,m,day]=d.split("-"); if(!y||!m||!day)return d; return `${day.padStart(2,"0")}/${m.padStart(2,"0")}/${y}`; }catch{ return d; } };
 /* fNowMY: tanggal+waktu sekarang, tanggal dalam format DD/MM/YYYY */
 const fNow      = () => { const n=new Date(); const day=String(n.getDate()).padStart(2,"0"); const mo=String(n.getMonth()+1).padStart(2,"0"); const y=n.getFullYear(); const hh=String(n.getHours()).padStart(2,"0"); const mm=String(n.getMinutes()).padStart(2,"0"); return `${day}/${mo}/${y} ${hh}:${mm}`; };
 const fTR       = (t: string) => t?t.replace(":",".") : "";
@@ -769,6 +827,132 @@ async function dropboxUploadExcel(path: string, wb: any): Promise<{ok:boolean;ms
   } catch(e:any){ return {ok:false, msg:"Gagal menyiapkan file Excel: "+(e?.message||"unknown error")}; }
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   FITUR: SCAN FORMULIR OPERASI (Kamera / Screenshot / Galeri) — GRATIS
+   ───────────────────────────────────────────────────────────────────
+   Menggunakan Tesseract.js (OCR open-source, 100% GRATIS, jalan
+   sepenuhnya di BROWSER pasien/perawat — TIDAK ADA API berbayar,
+   TIDAK ADA server call, TIDAK ADA biaya per-scan).
+
+   KONSEKUENSI PENTING (perlu dipahami sebelum pakai):
+   - Tesseract HANYA membaca teks mentah dari gambar — tidak "paham"
+     makna. Pemetaan ke field (nama/diagnosa/tanggal/dll) dilakukan
+     lewat PENCARIAN LABEL/KATA KUNCI (regex) di teks hasil OCR,
+     BUKAN oleh model AI yang mengerti konteks.
+   - Akurasi BAIK untuk teks cetak/ketik dan screenshot digital.
+   - Akurasi RENDAH untuk tulisan tangan — bisa gagal total atau
+     salah baca huruf/angka. confidence selalu "low" untuk kasus ini.
+   - Karena parsing berbasis label, formulir HARUS mengandung kata
+     kunci yang dikenali (mis. "Nama:", "Diagnosa:", "Tgl Operasi:")
+     agar bisa terpetakan — teks bebas tanpa label tidak akan terbaca
+     ke field manapun.
+   - Verifikasi manual oleh perawat WAJIB sebelum simpan (sama seperti
+     sebelumnya) — anggap ini "bantuan starting point", bukan auto-fill
+     yang bisa dipercaya penuh.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════════
+   FITUR: SCAN FORMULIR OPERASI (Kamera / Screenshot / Galeri)
+   ───────────────────────────────────────────────────────────────────
+   Menggunakan CLOUDFLARE WORKERS AI (model vision), dipanggil lewat
+   route BARU di Worker yang SAMA dengan yang men-serve App ini
+   (lihat berkas worker_ocr_route.ts terpisah untuk kode server-nya).
+
+   GRATIS s.d. 10.000 Neuron/hari (reset tiap 00:00 UTC) — tidak perlu
+   API key eksternal apa pun, karena binding `env.AI` sudah otomatis
+   tersedia untuk semua Cloudflare Worker. Tidak ada Supabase Edge
+   Function tambahan; permintaan cukup ke endpoint sendiri, misalnya
+   POST /api/ocr-scan pada domain kamarbedahrsrn.my.id yang sama.
+
+   Foto TIDAK disimpan di mana pun — hanya lewat di memori Worker
+   selama request berlangsung untuk diekstrak datanya, lalu dibuang.
+   Hasil ekstraksi WAJIB diverifikasi manual oleh perawat sebelum
+   disimpan lewat alur saveOpFn yang sudah ada.
+   ═══════════════════════════════════════════════════════════════════ */
+
+const OCR_SCAN_ENDPOINT = "/api/ocr-scan"; // route baru di Worker yang sama — lihat worker_ocr_route.ts
+
+interface OcrExtractResult {
+  patient: string;
+  age: string;
+  ageMonths: string;
+  rm: string;
+  diagnosis: string;
+  procedure: string;
+  opType: "elektif" | "semi" | "cyto" | "";
+  date: string;
+  time: string;
+  surgeon: string;
+  anesthesiologist: string;
+  room: string;
+  allergy: string;
+  bloodType: string;
+  confidence: "high" | "low";
+}
+
+/** Kompresi + resize gambar di client sebelum dikirim ke Worker.
+ *  Mengecilkan payload — penting untuk jaringan RS yang lambat, dan
+ *  mengurangi token/neuron yang dipakai model vision (lebih hemat
+ *  kuota harian). */
+function compressImageToBase64(
+  file: File,
+  maxDim = 1400,
+  quality = 0.8
+): Promise<{ base64: string; mediaType: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Gagal membaca file"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Gagal memuat gambar"));
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          const scale = maxDim / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return reject(new Error("Canvas tidak didukung"));
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL("image/jpeg", quality);
+        const base64 = dataUrl.split(",")[1] || "";
+        resolve({ base64, mediaType: "image/jpeg" });
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Kirim gambar ke route OCR di Worker sendiri (same-origin — tidak
+ *  perlu CORS khusus, tidak perlu API key/secret di client karena
+ *  request ini berjalan di domain yang sama seperti App di-serve). */
+async function runWorkerOcrScan(
+  file: File
+): Promise<{ ok: boolean; data?: OcrExtractResult[]; msg: string }> {
+  try {
+    const { base64, mediaType } = await compressImageToBase64(file);
+    const res = await fetch(OCR_SCAN_ENDPOINT, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ image_base64: base64, media_type: mediaType }),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      return { ok: false, msg: `Server OCR error (${res.status}): ${errText.slice(0, 200)}` };
+    }
+    const json = await res.json();
+    if (!json?.ok) return { ok: false, msg: json?.msg || "Gagal — server mengembalikan respons tidak sukses" };
+    return { ok: true, data: json.data as OcrExtractResult[], msg: json.msg || "✓ Berhasil" };
+  } catch (e: any) {
+    return { ok: false, msg: "Gagal menghubungi server OCR: " + (e?.message || "network error") };
+  }
+}
+
 /* FIX AUDIT #3 (CRITICAL — XSS via downloadAsWord): semua data dinamis
    (judul, header, isi sel) WAJIB di-escape sebelum disisipkan ke string
    HTML. Tanpa ini, data pasien yang mengandung "<script>" atau atribut
@@ -855,10 +1039,12 @@ function msgSurgeon(name: string, ops: any[]) {
     return `${sanitize(o.patient)}${usia?` ${usia}`:""} rencana ${sanitize(o.procedure)}${diag?` ${diag}`:""}`;
   };
   if(s.length>1){
-    const lines = s.map((o,i)=>`${i+1}. ${baris(o)}`).join("\n");
-    return `selamat ${greet} dokter ${N} rencana operasi besok ${shift} , ${tanggal} mulai jam ${jam} dr bius dengan ${anestLabel} ada ${s.length} pasien :\n${lines}\nterima kasih banyak dokter`;
+    const lines = s.map((o,i)=>`${i+1}. ${baris(o)}`).join("\n\n");
+    const biusWord = anestLabel==="Lokal Anestesi" ? "" : "dr bius ";
+    return `selamat ${greet} dokter ${N} rencana operasi besok ${shift} , ${tanggal} mulai jam ${jam} ${biusWord}dengan ${anestLabel} ada ${s.length} pasien :\n${lines}\nterima kasih banyak dokter`;
   }
-  return `selamat ${greet} dokter ${N} rencana operasi besok ${shift} ${tanggal} mulai jam ${jam} bius dengan ${anestLabel} atas nama ${baris(s[0])}\nterima kasih banyak dokter`;
+  const biusWordSingle = anestLabel==="Lokal Anestesi" ? "" : "bius ";
+  return `selamat ${greet} dokter ${N} rencana operasi besok ${shift} ${tanggal} mulai jam ${jam} ${biusWordSingle}dengan ${anestLabel} atas nama ${baris(s[0])}\nterima kasih banyak dokter`;
 }
 /* msgAnest — direfactor sesuai Spesifikasi Teknis & CONTOH OUTPUT LITERAL
    yang diberikan. Signature (name, ops) TIDAK diubah.
@@ -892,12 +1078,12 @@ function msgAnest(name: string, ops: any[]) {
           return `${sanitize(o.patient)}${usia?` ${usia}`:""} rencana ${sanitize(o.procedure)}${diag?` ${diag}`:""}`;
         };
         if(group.length>1){
-          const lines = group.map((o,i)=>`${i+1}. ${baris(o)}`).join("\n");
+          const lines = group.map((o,i)=>`${i+1}. ${baris(o)}`).join("\n\n");
           return `*jam ${jam}* ${surgeonRaw} dan ${anestRaw} ada ${group.length} pasien :\n${lines}`;
         }
         return `*jam ${jam}* ${surgeonRaw} dan ${anestRaw} atas nama ${baris(group[0])}`;
-      }).join("\n");
-    }).join("\n");
+      }).join("\n\n");
+    }).join("\n\n");
   };
 
   const pagi = ops.filter((o:any)=>o.time<"14:00");
@@ -913,7 +1099,7 @@ function msgAnest(name: string, ops: any[]) {
 function msgCyto(op: any) {
   const alg = op.allergy&&op.allergy!=="Tidak Ada" ? `⚠ ALERGI: ${sanitize(op.allergy)}\n` : "";
   const ra  = op.ruangAsal ? `Ruang Asal : ${sanitize(op.ruangAsal)}\n` : "";
-  return `⚠️ LAPORAN ACARA OPERASI CYTO / EMERGENCY ⚠️\n━━━━━━━━━━━━━━━━━━━\nKamar Bedah ${HOSPITAL}\n━━━━━━━━━━━━━━━━━━━\n${fNow()}\n\nMOHON SEGERA KE KAMAR OPERASI\n\n${alg}${ra}Pasien   : ${sanitize(op.patient)}${op.age?` (${op.age} th)`:""}\nRM/Gol   : ${op.rm||"-"} / ${op.bloodType}\nDiagnosa : ${sanitize(op.diagnosis)}\nTindakan : ${sanitize(op.procedure)}\nJam      : ${op.time} WIB — ${op.room}\n\nOperator : ${op.surgeon||"-"}\nAnestesi : ${op.anesthesiologist||"-"}\nAsisten  : ${op.assistantNurse||"-"}\nInstrumen: ${op.circulatingNurse||"-"}\nP.Anest  : ${op.anesthesiaNurse||"-"}\nOnloop   : ${op.onloopNurse||"-"}\nRR/Katim : ${op.rrKatim||"-"}\n━━━━━━━━━━━━━━━━━━━\n⚡ HARAP RESPON SEGERA ⚡\nKamar Bedah ${HOSPITAL}`;
+  return `⚠️ LAPORAN ACARA OPERASI CYTO / EMERGENCY ⚠️\n━━━━━━━━━━━━━━━━━━━\nKamar Bedah ${HOSPITAL}\n━━━━━━━━━━━━━━━━━━━\n${fNow()}\n\nMOHON SEGERA KE KAMAR OPERASI\n\n${alg}${ra}Pasien   : ${sanitize(op.patient)}${op.age?` (${op.age} th)`:""}\nRM/Gol   : ${op.rm||"-"} / ${op.bloodType}\nDiagnosa : ${sanitize(op.diagnosis)}\nTindakan : ${sanitize(op.procedure)}\nJam      : ${op.time} WIB — ${op.room}\n\nOperator : ${op.surgeon||"-"}\nAnestesi : ${op.anesthesiologist||"-"}\nAsisten  : ${op.assistantNurse||"-"}\nInstrumen: ${op.circulatingNurse||"-"}\nOnloop   : ${op.onloopNurse||"-"}\nRR/Katim : ${op.rrKatim||"-"}\n━━━━━━━━━━━━━━━━━━━\n⚡ HARAP RESPON SEGERA ⚡\nKamar Bedah ${HOSPITAL}`;
 }
 /* buildLaporan — direfactor sesuai Spesifikasi Teknis. Signature TIDAK diubah.
    Poin ③ (acara hari ini) & ④ (rencana besok) direstrukturisasi sesuai
@@ -930,29 +1116,56 @@ function buildLaporan({greeting,recipients,keterangan,todayOps,tomorrowOps,anest
   const active = [...todayOps].filter((o:any)=>o.status!=="batal");
   const batal  = todayOps.filter((o:any)=>o.status==="batal");
 
-  /* ── Poin ③: urutan kronologis murni berdasarkan jam operasi (a→z) ── */
+  /* ── Poin ③: direstrukturisasi sesuai format contoh terbaru —
+     dikelompokkan PAGI (<14:00) / SORE (>=14:00) → per jam operasi →
+     per dokter bedah+anestesi (sama persis pola Poin ④), tapi untuk hari
+     ini ditambahkan info perawat (asisten/instrumen/onloop/rr-katim) di
+     akhir tiap baris pasien dalam tanda kurung miring, karena data
+     penugasan perawat hari ini sudah final (bukan rencana seperti besok). */
+  const renderShiftToday = (shiftOps: any[]): string => {
+    if(!shiftOps.length) return "";
+    const byTime: Record<string, any[]> = {};
+    shiftOps.forEach((o:any)=>{ if(!byTime[o.time]) byTime[o.time]=[]; byTime[o.time].push(o); });
+    return Object.keys(byTime).sort((a,b)=>a.localeCompare(b)).map(time=>{
+      const bySurgeon: Record<string, any[]> = {};
+      byTime[time].forEach((o:any)=>{ const k=(o.surgeon||"").trim().toLowerCase(); if(!bySurgeon[k]) bySurgeon[k]=[]; bySurgeon[k].push(o); });
+      return Object.values(bySurgeon).map((group:any[])=>{
+        const surgeonDisplay = sanitize(group[0].surgeon)||"-";
+        const anestDisplay = sanitize(group[0].anesthesiologist)||"-";
+        const jam = fTR(time);
+        const baris = (o:any) => {
+          const usia = usiaOp(o);
+          const diag = sanitize(o.diagnosis||"").trim();
+          const cytoMark = o.opType==="cyto" ? "⚠️[CYTO]⚠️ " : "";
+          const ass = sanitize(o.assistantNurse).trim();
+          const inst = sanitize(o.circulatingNurse).trim();
+          const onloop = sanitize(o.onloopNurse).trim();
+          const rr = sanitize(o.rrKatim).trim();
+          const parts: string[] = [];
+          if(ass) parts.push(`ass:${ass}`);
+          if(inst) parts.push(`inst:${inst}`);
+          if(onloop) parts.push(`onloop:${onloop}`);
+          if(rr) parts.push(`rr/katim:${rr}`);
+          const roles = parts.length ? ` (${parts.join(", ")})` : "";
+          return `_${cytoMark}${sanitize(o.patient)}${usia?` ${usia}`:""} rencana ${sanitize(o.procedure)}${diag?` ${diag}`:""}${roles}_`;
+        };
+        if(group.length>1){
+          const lines = group.map((o,i)=>`${i+1}. ${baris(o)}`).join("\n");
+          return `*jam ${jam}* ${surgeonDisplay} dan ${anestDisplay} ada ${group.length} pasien :\n${lines}`;
+        }
+        return `*jam ${jam}* ${surgeonDisplay} dan ${anestDisplay} atas nama ${baris(group[0])}`;
+      }).join("\n\n");
+    }).join("\n\n");
+  };
   const sortedActive = [...active].sort((a:any,b:any)=>a.time.localeCompare(b.time));
-  const todayLines = sortedActive.map((o:any, i:number)=>{
-    const cytoMark = o.opType==="cyto" ? "⚠️[CYTO]⚠️ " : "";
-    const anest    = sanitize(o.anesthesiologist)||"-";
-    const surg     = sanitize(o.surgeon)||"-";
-    const proc     = sanitize(o.procedure);
-    const asisten  = sanitize(o.assistantNurse)||"-";
-    const instrumen= sanitize(o.circulatingNurse)||"-";
-    const onloop   = sanitize(o.onloopNurse)||"-";
-    const rr       = sanitize(o.rrKatim)||"-";
-    const anestNrs = sanitize(o.anesthesiaNurse)||"-";
-    return [
-      `_${i+1}. ${o.time} ${cytoMark}${sanitize(o.patient)} - ${proc} - ${surg} (Anest: ${anest})_`,
-      `   Asisten: ${asisten} | Instrumen: ${instrumen}`,
-      `   Onloop: ${onloop} | RR/Katim: ${rr} | Pr.Anest: ${anestNrs}`,
-    ].join("\n");
-  }).join("\n");
-
-  const batalLine = batal.length?`\n_Batal/Tunda: ${batal.map((o:any)=>sanitize(o.patient)+(o.cancelReason?` (${sanitize(o.cancelReason)})`:""  )).join("; ")}_`:"";
-  const todaySec = active.length
-    ? `*Hari ini acara operasi ada ${active.length} berjalan lancar*\n${todayLines}${batalLine}`
-    : `_Hari Ini Tidak Ada Acara Operasi_${batalLine}`;
+  const todayPagi = sortedActive.filter((o:any)=>o.time<"14:00");
+  const todaySore = sortedActive.filter((o:any)=>o.time>="14:00");
+  const batalLine = batal.length?`\n\n_Batal/Tunda: ${batal.map((o:any)=>sanitize(o.patient)+(o.cancelReason?` (${sanitize(o.cancelReason)})`:""  )).join("; ")}_`:"";
+  let todaySec = `Acara operasi hari ini ada ${active.length}.\n`;
+  if(todayPagi.length) todaySec += `\n*PAGI*\n${renderShiftToday(todayPagi)}`;
+  if(todaySore.length) todaySec += `\n\n*SORE*\n${renderShiftToday(todaySore)}`;
+  if(!todayPagi.length && !todaySore.length) todaySec += "\n_Hari Ini Tidak Ada Acara Operasi_";
+  todaySec += batalLine;
 
   /* ── Poin ④: split shift Pagi (00:00-13:59) / Sore (14:00-23:59) → group
      by jamOperasi → group by dokter bedah → IF jumlah>1 list bernumor,
@@ -1137,7 +1350,7 @@ class ErrorBoundary extends Component<{children: React.ReactNode},{err:boolean;m
    kendali kode App.tsx ini. */
 const PIN_MAX_ATTEMPTS = 5;
 const PIN_LOCKOUT_MS   = 60_000;
-function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime}: any) {
+function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime,lemburPegawai}: any) {
   const [pin,setPin]   = useState("");
   const [err,setErr]   = useState("");
   const [shake,setShk] = useState(false);
@@ -1151,6 +1364,38 @@ function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime}: any) {
   const [newPerawat,setNewPerawat] = useState("");
   const [cfPerawat,setCfPerawat]   = useState("");
   const [setupErr,setSetupErr]   = useState("");
+  const [quickLembur,setQuickLembur] = useState(false);
+  /* UPDATE TAMPILAN AWAL: dua kartu pilihan (Login biasa / Input Lembur)
+     ditampilkan dulu sebelum field PIN muncul. entryMode null = tampilkan
+     kartu pilihan; "login" atau "lembur" = tampilkan form PIN sesuai mode
+     yang dipilih. quickLembur otomatis disetel sesuai kartu yang diklik. */
+  const [entryMode,setEntryMode] = useState<null|"login"|"lembur">(null);
+  /* OPSI A: step alur lembur — "pilih_pegawai" dulu, baru "pin" */
+  const [lemburStep,setLemburStep] = useState<"pilih_pegawai"|"pin">("pilih_pegawai");
+  const [pegawaiDipilih,setPegawaiDipilih] = useState<string>("");
+  const pinInputRef = useRef<HTMLInputElement>(null);
+
+  const chooseEntry = (mode:"login"|"lembur") => {
+    setEntryMode(mode);
+    setQuickLembur(mode==="lembur");
+    setPin(""); setErr("");
+    if(mode==="login"){
+      setTimeout(()=>pinInputRef.current?.focus(), 50);
+    } else {
+      setLemburStep("pilih_pegawai");
+      /* default ke pegawai pertama kalau ada */
+      setPegawaiDipilih((lemburPegawai||[])[0]?.id||"");
+    }
+  };
+  const backToChoice = () => {
+    setEntryMode(null); setPin(""); setErr("");
+    setLemburStep("pilih_pegawai"); setPegawaiDipilih("");
+  };
+  const lanjutKePIN = () => {
+    if(!pegawaiDipilih){ setErr("Pilih nama pegawai dulu"); return; }
+    setErr(""); setLemburStep("pin");
+    setTimeout(()=>pinInputRef.current?.focus(), 50);
+  };
 
   /* FIX AUDIT #4: PIN sekarang bisa berbentuk hash ("salt:hash") atau
      legacy plaintext (data lama sebelum migrasi). verifyPin menangani
@@ -1170,13 +1415,13 @@ function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime}: any) {
     try{
       if(await verifyPin(pin, pinAdmin)){
         setAttempts(0); setLockedUntil(null);
-        AmbilLogMedis("KEAMANAN","Admin","LOGIN_SUKSES","Login Admin berhasil via PIN screen",{role:"admin"});
-        onVerify("admin"); return;
+        AmbilLogMedis("KEAMANAN","Admin","LOGIN_SUKSES","Login Admin berhasil via PIN screen",{role:"admin", mode: quickLembur?"lembur_only":"penuh"});
+        onVerify("admin", undefined, undefined, quickLembur, quickLembur?pegawaiDipilih:undefined); return;
       }
       if(await verifyPin(pin, pinPerawat)){
         setAttempts(0); setLockedUntil(null);
-        AmbilLogMedis("KEAMANAN","Perawat","LOGIN_SUKSES","Login Perawat berhasil via PIN screen",{role:"perawat"});
-        onVerify("perawat"); return;
+        AmbilLogMedis("KEAMANAN","Perawat","LOGIN_SUKSES","Login Perawat berhasil via PIN screen",{role:"perawat", mode: quickLembur?"lembur_only":"penuh"});
+        onVerify("perawat", undefined, undefined, quickLembur, quickLembur?pegawaiDipilih:undefined); return;
       }
       const nextAttempts = attempts + 1;
       setAttempts(nextAttempts);
@@ -1239,18 +1484,101 @@ function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime}: any) {
           <div style={{fontSize:20,fontWeight:900,color:C.p,letterSpacing:.5,lineHeight:1.2}}>SISTEM KOORDINASI<br/>KAMAR BEDAH</div>
           <div style={{fontSize:11,color:C.tL,marginTop:6}}>{HOSPITAL}</div>
         </div>
-        <div style={{fontSize:13,fontWeight:600,color:C.t,textAlign:"center",marginBottom:10}}>Masukkan PIN Akses</div>
-        <div style={{fontSize:11,color:C.tL,textAlign:"center",marginBottom:10}}>Gunakan PIN Admin atau PIN Perawat</div>
-        <input style={{...iS,textAlign:"center",fontSize:28,letterSpacing:12,height:56,marginBottom:12,borderRadius:12}} type="password" inputMode="numeric" maxLength={6} placeholder="••••" value={pin} disabled={checking||!!(lockedUntil&&Date.now()<lockedUntil)} onChange={e=>setPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&check()}/>
-        {err && <div style={{fontSize:12,color:C.d,textAlign:"center",marginBottom:10}}>⚠ {err}</div>}
-        <Btn full onClick={check} disabled={checking||!!(lockedUntil&&Date.now()<lockedUntil)} style={{marginBottom:12,padding:"13px",fontSize:15}}>{checking?"Memeriksa...":(lockedUntil&&Date.now()<lockedUntil)?"🔒 Terkunci":"Masuk"}</Btn>
-        <div style={{display:"flex",justifyContent:"center"}}>
-          <button onClick={()=>{}} style={{background:"none",border:"none",color:C.tL,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Hubungi Admin jika lupa PIN</button>
-        </div>
-        <div style={{display:"flex",gap:6,marginTop:12,justifyContent:"center"}}>
-          <span style={{background:C.pBg,color:C.p,fontSize:10,padding:"3px 10px",borderRadius:12,fontWeight:700}}>🔐 Admin</span>
-          <span style={{background:C.gBg,color:C.g,fontSize:10,padding:"3px 10px",borderRadius:12,fontWeight:700}}>👤 Perawat</span>
-        </div>
+
+        {entryMode===null ? (
+          /* UPDATE TAMPILAN AWAL: 2 kartu pilihan ditampilkan dulu sebelum PIN.
+             Klik salah satu kartu akan menampilkan form PIN dengan mode yang
+             sesuai (quickLembur otomatis disetel). Tidak ada perubahan pada
+             logika verifikasi PIN/role itu sendiri — murni urutan tampilan. */
+          <>
+            <div style={{fontSize:13,fontWeight:600,color:C.t,textAlign:"center",marginBottom:16}}>Pilih Menu</div>
+            <button
+              type="button"
+              onClick={()=>chooseEntry("login")}
+              style={{
+                width:"100%",display:"flex",alignItems:"center",gap:14,textAlign:"left",
+                background:C.pBg,border:`1.5px solid ${C.p}`,borderRadius:16,
+                padding:"18px 16px",marginBottom:12,cursor:"pointer",fontFamily:"inherit"
+              }}
+            >
+              <span style={{fontSize:28}}>🔐</span>
+              <span>
+                <div style={{fontSize:15,fontWeight:800,color:C.p}}>Masuk / Login</div>
+                <div style={{fontSize:11,color:C.tL,marginTop:2}}>Akses penuh — Admin atau Perawat</div>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={()=>chooseEntry("lembur")}
+              style={{
+                width:"100%",display:"flex",alignItems:"center",gap:14,textAlign:"left",
+                background:"#FFF7E6",border:"1.5px solid #F2A93B",borderRadius:16,
+                padding:"18px 16px",marginBottom:6,cursor:"pointer",fontFamily:"inherit"
+              }}
+            >
+              <span style={{fontSize:28}}>⏰</span>
+              <span>
+                <div style={{fontSize:15,fontWeight:800,color:"#B8740A"}}>Input Lembur</div>
+                <div style={{fontSize:11,color:C.tL,marginTop:2}}>Langsung ke Catat Lembur saja</div>
+              </span>
+            </button>
+          </>
+        ) : entryMode==="lembur" && lemburStep==="pilih_pegawai" ? (
+          /* OPSI A STEP 1: pilih nama pegawai sebelum PIN ditampilkan */
+          <>
+            <button type="button" onClick={backToChoice} style={{display:"flex",alignItems:"center",gap:4,background:"none",border:"none",color:C.tL,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",marginBottom:14,padding:0}}>
+              ← Kembali ke Pilihan Menu
+            </button>
+            <div style={{fontSize:13,fontWeight:700,color:"#B8740A",textAlign:"center",marginBottom:6}}>⏰ Input Lembur</div>
+            <div style={{fontSize:11,color:C.tL,textAlign:"center",marginBottom:14}}>Pilih nama kamu terlebih dahulu</div>
+            {(lemburPegawai||[]).length===0 ? (
+              <div style={{fontSize:12,color:C.d,background:"#FFF3CD",borderRadius:10,padding:"12px 14px",marginBottom:14,textAlign:"center"}}>
+                ⚠ Belum ada data pegawai.<br/>Minta Admin untuk menambahkan data pegawai di tab Staf → Lembur terlebih dahulu.
+              </div>
+            ) : (
+              <>
+                <select
+                  style={{...iS,marginBottom:12,fontSize:14,fontWeight:600,height:48}}
+                  value={pegawaiDipilih}
+                  onChange={e=>setPegawaiDipilih(e.target.value)}
+                >
+                  <option value="">— Pilih nama kamu —</option>
+                  {(lemburPegawai||[]).map((p:any)=>(
+                    <option key={p.id} value={p.id}>{p.name}{p.nik?` — ${p.nik}`:""}</option>
+                  ))}
+                </select>
+                {err && <div style={{fontSize:12,color:C.d,textAlign:"center",marginBottom:10}}>⚠ {err}</div>}
+                <Btn full onClick={lanjutKePIN} style={{padding:"13px",fontSize:15,marginBottom:8}}>Lanjut →</Btn>
+              </>
+            )}
+          </>
+        ) : (
+          /* STEP 2 (lembur) atau mode login: form PIN */
+          <>
+            <button type="button" onClick={entryMode==="lembur"?()=>{setLemburStep("pilih_pegawai");setErr("");}:backToChoice} style={{display:"flex",alignItems:"center",gap:4,background:"none",border:"none",color:C.tL,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",marginBottom:14,padding:0}}>
+              ← {entryMode==="lembur"?"Kembali Pilih Nama":"Kembali ke Pilihan Menu"}
+            </button>
+            {entryMode==="lembur" && pegawaiDipilih && (
+              <div style={{background:"#FFF7E6",border:"1px solid #F2A93B",borderRadius:10,padding:"8px 14px",marginBottom:12,fontSize:13,fontWeight:700,color:"#B8740A",textAlign:"center"}}>
+                👤 {(lemburPegawai||[]).find((p:any)=>p.id===pegawaiDipilih)?.name||pegawaiDipilih}
+              </div>
+            )}
+            <div style={{fontSize:13,fontWeight:700,color:entryMode==="lembur"?"#B8740A":C.p,textAlign:"center",marginBottom:6}}>
+              {entryMode==="lembur" ? "⏰ Masukkan PIN" : "🔐 Masukkan PIN Akses"}
+            </div>
+            <div style={{fontSize:11,color:C.tL,textAlign:"center",marginBottom:10}}>Gunakan PIN Admin atau PIN Perawat</div>
+            <input ref={pinInputRef} style={{...iS,textAlign:"center",fontSize:28,letterSpacing:12,height:56,marginBottom:12,borderRadius:12}} type="password" inputMode="numeric" maxLength={6} placeholder="••••" value={pin} disabled={checking||!!(lockedUntil&&Date.now()<lockedUntil)} onChange={e=>setPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&check()}/>
+            {err && <div style={{fontSize:12,color:C.d,textAlign:"center",marginBottom:10}}>⚠ {err}</div>}
+            <Btn full onClick={check} disabled={checking||!!(lockedUntil&&Date.now()<lockedUntil)} style={{marginBottom:12,padding:"13px",fontSize:15}}>{checking?"Memeriksa...":(lockedUntil&&Date.now()<lockedUntil)?"🔒 Terkunci":"Masuk"}</Btn>
+            <div style={{display:"flex",justifyContent:"center"}}>
+              <button onClick={()=>{}} style={{background:"none",border:"none",color:C.tL,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Hubungi Admin jika lupa PIN</button>
+            </div>
+            <div style={{display:"flex",gap:6,marginTop:12,justifyContent:"center"}}>
+              <span style={{background:C.pBg,color:C.p,fontSize:10,padding:"3px 10px",borderRadius:12,fontWeight:700}}>🔐 Admin</span>
+              <span style={{background:C.gBg,color:C.g,fontSize:10,padding:"3px 10px",borderRadius:12,fontWeight:700}}>👤 Perawat</span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -1311,7 +1639,16 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
   const confirmCyto= () => {
     if(!cytoM)return;
     window.open(`https://wa.me/${cytoM.ph.replace(/[^0-9]/g,"")}?text=${encodeURIComponent(cytoM.msg)}`,"_blank");
-    setNotifs((p:any)=>[{id:gId(),type:"cyto",label:"⚡ WA Cyto → "+cytoM.op.surgeon,patient:cytoM.op.patient,procedure:cytoM.op.procedure,message:cytoM.msg,sentAt:cytoM.ts},...p]);
+    /* FIX AUDIT #24 (CRITICAL — Unbounded Array Growth, Endurance Test):
+       dashboard ini dijalankan 24/7 tanpa refresh (TV monitor kamar bedah).
+       Tanpa cap, array notifs bertambah selamanya setiap kali WA dikirim —
+       ratusan/ribuan entri dalam beberapa hari akan membebani memori
+       browser secara progresif (memory bloat), berisiko tab crash/reload
+       paksa di tengah jam operasi. Dibatasi ke 200 entri TERBARU saja —
+       cukup untuk keperluan log/audit trail jangka pendek di UI, sisanya
+       tetap aman tersimpan permanen di Supabase (bukan hilang, hanya tidak
+       lagi ditampilkan di memori client). */
+    setNotifs((p:any)=>[{id:gId(),type:"cyto",label:"⚡ WA Cyto → "+cytoM.op.surgeon,patient:cytoM.op.patient,procedure:cytoM.op.procedure,message:cytoM.msg,sentAt:cytoM.ts},...p].slice(0,200));
     showToast("✓ WhatsApp dibuka — tekan Kirim di WA","#25D366");
     setCytoM(null);
   };
@@ -1338,10 +1675,10 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
           ))}
           <span style={{marginLeft:"auto",fontSize:12,color:C.tL}}>{sorted.length} jadwal</span>
           <button onClick={()=>{
-            const printDate = prompt("Cetak jadwal tanggal (YYYY-MM-DD, kosongkan untuk semua):");
+            const printDate = prompt("Cetak jadwal tanggal (format YYYY-MM-DD, mis. 2026-06-29 — kosongkan untuk semua):");
             const filtered = printDate ? ops.filter((o:any)=>o.date===printDate) : sorted;
             if(!filtered.length){showToast("Tidak ada jadwal untuk dicetak",C.w);return;}
-            const rows = filtered.map((op:any,i:number)=>`<tr><td>${i+1}</td><td>${op.date} ${op.time}</td><td><b>${op.patient}</b></td><td>${op.procedure}</td><td>${op.room}</td><td>${op.surgeon}</td><td>${op.anesthesiologist||"—"}</td><td style="text-align:center"><span style="background:${STS[op.status as keyof typeof STS]?.c||C.g};color:#fff;padding:2px 8px;border-radius:10px;font-size:10px">${STS[op.status as keyof typeof STS]?.l||op.status}</span></td></tr>`).join("");
+            const rows = filtered.map((op:any,i:number)=>`<tr><td>${i+1}</td><td>${fDMY(op.date)} ${op.time}</td><td><b>${op.patient}</b></td><td>${op.procedure}</td><td>${op.room}</td><td>${op.surgeon}</td><td>${op.anesthesiologist||"—"}</td><td style="text-align:center"><span style="background:${STS[op.status as keyof typeof STS]?.c||C.g};color:#fff;padding:2px 8px;border-radius:10px;font-size:10px">${STS[op.status as keyof typeof STS]?.l||op.status}</span></td></tr>`).join("");
             const w=window.open("","_blank","width=900,height=700")!;
             w.document.write(`<!DOCTYPE html><html><head><title>Jadwal Operasi ${printDate||"Semua"} — ${HOSPITAL}</title><style>body{font-family:Arial,sans-serif;font-size:12px;margin:20px}h2{color:#16685F;margin-bottom:4px}p{color:#555;margin-bottom:12px}table{width:100%;border-collapse:collapse}th{background:#16685F;color:#fff;padding:7px 10px;text-align:left;font-size:11px}td{padding:6px 10px;border-bottom:1px solid #e0e0e0;vertical-align:top}tr:nth-child(even)td{background:#f5f5f5}@media print{button{display:none}}</style></head><body><h2>🏥 Jadwal Operasi — ${HOSPITAL}</h2><p>${printDate?`Tanggal: ${printDate}`:"Semua jadwal"} · Dicetak: ${fNow()}</p><button onclick="window.print()" style="margin-bottom:12px;background:#16685F;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px">🖨 Cetak / Simpan PDF</button><table><thead><tr><th>#</th><th>Tanggal/Jam</th><th>Pasien</th><th>Tindakan</th><th>Kamar</th><th>Dr. Bedah</th><th>Dr. Anestesi</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
             w.document.close();
@@ -1545,7 +1882,7 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
                       <div>
                         <div style={{fontSize:13,fontWeight:700,color:C.t}}>{maskName(op.patient,privacyMode)}</div>
                         <div style={{fontSize:12,color:C.tL,marginTop:2}}>{op.procedure} · {op.room}</div>
-                        <div style={{fontSize:11,color:C.tL,marginTop:2}}>{op.date} · {op.time} WIB · {op.surgeon}</div>
+                        <div style={{fontSize:11,color:C.tL,marginTop:2}}>{fDMY(op.date)} · {op.time} WIB · {op.surgeon}</div>
                       </div>
                       <span style={{background:sc.c,color:"#fff",fontSize:10,padding:"3px 9px",borderRadius:10,fontWeight:700,whiteSpace:"nowrap"}}>{sc.l}</span>
                     </div>
@@ -1578,6 +1915,137 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ─── DATE TEXT INPUT ────────────────────────────────────────────────── */
+/* Menggantikan <input type="date"> di semua tab.
+   Alasan: browser Windows dengan locale US menampilkan type="date" dalam
+   format MM/DD/YYYY — tidak bisa diubah via CSS/atribut HTML.
+   Komponen ini pakai type="text" + auto-insert slash sehingga format
+   DD/MM/YYYY selalu konsisten di semua OS/browser.
+   Nilai internal tetap YYYY-MM-DD (kompatibel DB & perbandingan string). */
+function DateTxt({value,onChange,style,...rest}: {value:string;onChange:(v:string)=>void;style?:React.CSSProperties;[k:string]:any}) {
+  const [raw,setRaw] = useState(()=>value?fDMY(value):"");
+  const prevVal = useRef(value);
+  const pickerRef = useRef<HTMLInputElement>(null);
+  useEffect(()=>{
+    if(value!==prevVal.current){
+      prevVal.current=value;
+      setRaw(value?fDMY(value):"");
+    }
+  },[value]);
+  const handleChange=(e:React.ChangeEvent<HTMLInputElement>)=>{
+    let v=e.target.value.replace(/[^0-9/]/g,"");
+    /* auto-insert slash setelah DD dan MM */
+    if(v.length===2&&raw.length===1&&!v.includes("/")) v+="/";
+    if(v.length===5&&raw.length===4&&v.split("/").length===2) v+="/";
+    if(v.length>10) v=v.slice(0,10);
+    setRaw(v);
+    if(v.length===10){const iso=toISODateStrict(v);if(iso)onChange(iso);}
+    else if(v==="")onChange("");
+  };
+  /* Buka dropdown kalender native browser. <input type="date"> disembunyikan
+     (opacity 0, menumpuk di atas tombol 📅) sehingga tidak menampilkan
+     format MM/DD/YYYY yang jadi masalah — kalender ini hanya dipakai untuk
+     MEMILIH tanggal lewat dropdown, bukan untuk menampilkan teksnya. */
+  const openPicker = () => {
+    const el = pickerRef.current;
+    if(!el) return;
+    if(typeof (el as any).showPicker === "function"){
+      try{ (el as any).showPicker(); return; }catch{ /* fallback di bawah */ }
+    }
+    el.focus();
+    el.click();
+  };
+  const handlePickerChange=(e:React.ChangeEvent<HTMLInputElement>)=>{
+    const iso = e.target.value;
+    if(iso){
+      setRaw(fDMY(iso));
+      onChange(iso);
+    }
+  };
+  return (
+    <div style={{position:"relative",display:"inline-block",width:style?.width||"100%"}}>
+      <input
+        {...rest}
+        type="text"
+        inputMode="numeric"
+        value={raw}
+        onChange={handleChange}
+        placeholder="DD/MM/YYYY"
+        maxLength={10}
+        style={{...style,width:"100%",paddingRight:30,boxSizing:"border-box"}}
+      />
+      <input
+        ref={pickerRef}
+        type="date"
+        value={value||""}
+        onChange={handlePickerChange}
+        tabIndex={-1}
+        aria-hidden="true"
+        style={{position:"absolute",right:2,top:"50%",transform:"translateY(-50%)",width:24,height:24,opacity:0,cursor:"pointer"}}
+      />
+      <button
+        type="button"
+        onClick={openPicker}
+        tabIndex={-1}
+        aria-label="Buka kalender"
+        style={{position:"absolute",right:4,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",padding:4,lineHeight:0,color:"#666",pointerEvents:"none"}}
+      >📅</button>
+    </div>
+  );
+}
+
+/* ─── SCAN FORMULIR OPERASI (Kamera / Screenshot / Galeri) ──────────────
+   Komponen tombol yang dipakai di dalam ViewDaftar. Mengirim foto ke
+   Edge Function "ocr-proxy", menerima array hasil ekstraksi (bisa >1
+   entri jika 1 screenshot berisi banyak pasien), lalu meneruskan ke
+   callback onResults milik ViewDaftar untuk auto-fill form. ────────── */
+interface ScanFormulirProps {
+  onResults: (results: OcrExtractResult[]) => void;
+  showToast: ShowToastFn;
+}
+function ScanFormulir({onResults, showToast}: ScanFormulirProps) {
+  const [loading, setLoading] = useState(false);
+  const cameraInputRef  = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFile = useCallback(async (file: File | undefined) => {
+    if(!file) return;
+    if(!file.type.startsWith("image/")){ showToast("File harus berupa gambar (foto/screenshot)",C.d); return; }
+    setLoading(true);
+    try{
+      // Dikirim ke route /api/ocr-scan di Worker yang sama (Cloudflare
+      // Workers AI, model vision) — gratis s.d. 10.000 Neuron/hari,
+      // tidak ada API key eksternal, tidak ada Supabase Edge Function.
+      const res = await withTimeout(runWorkerOcrScan(file), 30000, "OCR scan formulir");
+      if(!res.ok || !res.data || res.data.length===0){
+        showToast(res.msg || "Tidak ada data yang berhasil dibaca dari gambar", C.d);
+        return;
+      }
+      onResults(res.data);
+      AmbilLogMedis("DAFTAR_PASIEN","Perawat","OCR_SCAN_FORMULIR",`Scan formulir berhasil — ${res.data.length} entri terbaca (Cloudflare Workers AI)`,{jumlahEntri:res.data.length});
+      showToast(`✓ ${res.data.length} data terbaca — mohon periksa sebelum simpan`, C.s);
+    }catch(e:any){
+      showToast("Gagal memproses gambar: "+(e?.message||"unknown error"), C.d);
+    }finally{
+      setLoading(false);
+      if(cameraInputRef.current) cameraInputRef.current.value = "";
+      if(galleryInputRef.current) galleryInputRef.current.value = "";
+    }
+  },[onResults, showToast]);
+
+  return (
+    <div style={{marginBottom:14}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+        <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={(ev)=>handleFile(ev.target.files?.[0])}/>
+        <input ref={galleryInputRef} type="file" accept="image/*" style={{display:"none"}} onChange={(ev)=>handleFile(ev.target.files?.[0])}/>
+        <Btn outline disabled={loading} onClick={()=>cameraInputRef.current?.click()}>{loading?"⏳ Memproses…":"📷 Ambil Foto"}</Btn>
+        <Btn outline disabled={loading} onClick={()=>galleryInputRef.current?.click()}>{loading?"⏳ Memproses…":"🖼️ Upload Screenshot/Galeri"}</Btn>
+      </div>
+      {loading && <div style={{fontSize:11,color:C.tL,marginTop:6}}>Mengirim & membaca gambar via Cloudflare Workers AI — mohon tunggu beberapa detik…</div>}
     </div>
   );
 }
@@ -1627,7 +2095,95 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,staff,setTab,temp
   const set  = (k: string,v: any) => { setOpForm((p: any)=>({...p,[k]:v})); setOpErrors((p: any)=>({...p,[k]:undefined})); };
   const setR = (k: string,v: any) => { setOpForm((p: any)=>({...p,[k]:v})); setOpErrors((p: any)=>({...p,[k]:undefined})); };
   const e = opErrors;
-  const iStyle = (k: string): React.CSSProperties => ({...iS, borderColor:e[k]?C.d:foc===k?C.p:C.b, boxShadow:foc===k?`0 0 0 3px ${C.p}22`:e[k]?`0 0 0 3px ${C.d}22`:"none"});
+
+  // ── Scan Formulir (OCR): state kandidat hasil scan + field yang ter-auto-fill ──
+  // ocrFilledFields dipakai untuk menandai border kuning/merah pada field yang
+  // terisi otomatis dari scan, supaya perawat tahu field mana yang wajib dicek
+  // ulang sebelum menyimpan. Field ditandai "kritis" (merah) khusus utk RM &
+  // tanggal karena kesalahan baca di dua field ini paling berisiko.
+  const [ocrCandidates, setOcrCandidates] = useState<OcrExtractResult[]>([]);
+  const [ocrFilledFields, setOcrFilledFields] = useState<Set<string>>(new Set());
+  const OCR_CRITICAL_FIELDS = new Set(["rm","date"]);
+
+  const applyOcrResult = (r: OcrExtractResult) => {
+    const filled = new Set<string>();
+    let dateWasInvalid = false;
+    setOpForm((prev: any) => {
+      const next = {...prev};
+      if(r.patient)         { next.patient = r.patient; filled.add("patient"); }
+      // FIX BUG: umur tidak divalidasi range sebelum ini — OCR salah baca
+      // (mis. "999" atau "-5") bisa lolos langsung ke form. Sekarang di-clamp
+      // ke range yang sama dengan batas input HTML form (0-150 th, 0-11 bln).
+      if(r.age){
+        const ageNum = Number(r.age);
+        if(!isNaN(ageNum) && ageNum>=0 && ageNum<=150){ next.age = String(ageNum); filled.add("age"); }
+      }
+      if(r.ageMonths){
+        const moNum = Number(r.ageMonths);
+        if(!isNaN(moNum) && moNum>=0 && moNum<=11){ next.ageMonths = String(moNum); filled.add("ageMonths"); }
+      }
+      if(r.rm)              { next.rm = r.rm; filled.add("rm"); }
+      if(r.diagnosis)       { next.diagnosis = r.diagnosis; filled.add("diagnosis"); }
+      if(r.procedure)       { next.procedure = r.procedure; filled.add("procedure"); }
+      if(r.opType)          { next.opType = r.opType; filled.add("opType"); }
+      // FIX BUG: field "Kamar Operasi" adalah dropdown dengan opsi tetap
+      // (ROOMS = ["Kamar Operasi 1"..."5"]). Teks bebas hasil OCR (mis.
+      // "OK 2" atau "Ruang Bedah 2") tidak akan cocok dengan opsi manapun
+      // kalau ditaruh mentah — <select> akan tampak kosong/tidak terpilih
+      // secara visual walau state sebenarnya berisi string yang salah.
+      // Di sini kita cocokkan angka kamar yang disebut OCR ke opsi ROOMS
+      // yang valid; kalau tidak ada angka yang cocok, field dibiarkan
+      // kosong (tidak diisi) daripada menyimpan nilai yang tidak valid.
+      if(r.room){
+        const roomNumMatch = r.room.match(/\d+/);
+        const matchedRoom = roomNumMatch ? ROOMS.find(rm2 => rm2.includes(roomNumMatch[0])) : undefined;
+        if(matchedRoom){ next.room = matchedRoom; filled.add("room"); }
+      }
+      // FIX BUG (CRITICAL): tanggal SEBELUMNYA masuk mentah dari OCR tanpa
+      // lewat toISODateStrict() — validator yang sama dipakai DateTxt di
+      // seluruh app. Tanpa ini, tanggal salah-baca (overflow kalender,
+      // format DD/MM tertukar, dll) bisa lolos ke form tanpa peringatan
+      // untuk field yang paling kritis (jadwal operasi). Sekarang: kalau
+      // tidak valid, field DIKOSONGKAN dan diberi tanda merah agar perawat
+      // WAJIB isi manual — tidak dibiarkan menyimpan tanggal yang salah.
+      if(r.date){
+        const validIso = toISODateStrict(r.date);
+        if(validIso){ next.date = validIso; filled.add("date"); }
+        else { next.date = ""; dateWasInvalid = true; }
+      }
+      if(r.time){
+        // Validasi format jam HH:MM sebelum dipakai
+        if(/^([01]\d|2[0-3]):([0-5]\d)$/.test(r.time)){ next.time = r.time; filled.add("time"); }
+      }
+      if(r.surgeon)         { next.surgeon = r.surgeon; filled.add("surgeon"); }
+      if(r.anesthesiologist){ next.anesthesiologist = r.anesthesiologist; filled.add("anesthesiologist"); }
+      if(r.allergy)         { next.allergy = r.allergy; filled.add("allergy"); }
+      // FIX BUG: "Golongan Darah" juga dropdown dengan opsi tetap (BT).
+      // Hasil OCR yang tidak persis cocok (mis. "O" tanpa tanda +/-)
+      // akan membuat <select> tampak kosong walau state berisi nilai
+      // yang tidak valid. Di sini kita cocokkan ke opsi BT yang persis,
+      // dan biarkan kosong (bukan default) kalau tidak ada yang cocok.
+      if(r.bloodType){
+        const matchedBt = BT.find(bt => bt.toUpperCase() === r.bloodType.toUpperCase());
+        if(matchedBt){ next.bloodType = matchedBt; filled.add("bloodType"); }
+      }
+      return next;
+    });
+    setOcrFilledFields(filled);
+    setOcrCandidates([]);
+    setOpErrors({});
+    if(dateWasInvalid){
+      showToast("⚠ Tanggal hasil scan tidak valid — mohon isi tanggal secara manual", C.d);
+    }
+  };
+
+  const iStyle = (k: string): React.CSSProperties => {
+    if(ocrFilledFields.has(k) && !e[k]){
+      const critical = OCR_CRITICAL_FIELDS.has(k);
+      return {...iS, borderColor: critical?C.d:"#F59E0B", background: critical?"#FEF2F2":"#FFFBEB", boxShadow: foc===k?`0 0 0 3px ${critical?C.d:"#F59E0B"}22`:"none"};
+    }
+    return {...iS, borderColor:e[k]?C.d:foc===k?C.p:C.b, boxShadow:foc===k?`0 0 0 3px ${C.p}22`:e[k]?`0 0 0 3px ${C.d}22`:"none"};
+  };
   const onFoc = (k: string) => () => setFoc(k);
   const onBlr = () => setFoc(null);
 
@@ -1668,6 +2224,32 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,staff,setTab,temp
           <Btn full outline color={C.p} onClick={saveAsTemplate} style={{marginTop:8}}>💾 Simpan Form Ini sebagai Template</Btn>
         </Card>
       )}
+      <ScanFormulir
+        showToast={showToast}
+        onResults={(results)=>{
+          if(results.length===1) applyOcrResult(results[0]);
+          else setOcrCandidates(results);
+        }}
+      />
+      {ocrCandidates.length>0 && (
+        <Card style={{marginBottom:14,background:"#FFFBEB",border:"1px solid #FDE68A"}}>
+          <SH label={`${ocrCandidates.length} data ditemukan — pilih salah satu`}/>
+          {ocrCandidates.some(c=>c.confidence==="low") && <div style={{fontSize:12,color:C.d,marginBottom:8,fontWeight:600}}>⚠ Sebagian data mungkin kurang akurat (tulisan tangan) — periksa teliti sebelum memilih.</div>}
+          {ocrCandidates.map((c,i)=>(
+            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:i<ocrCandidates.length-1?"1px solid #FDE68A":"none",gap:8}}>
+              <div style={{minWidth:0}}>
+                <div style={{fontWeight:700,fontSize:13,color:C.t}}>{c.patient || "(nama tidak terbaca)"}</div>
+                <div style={{fontSize:11,color:C.tL}}>
+                  {c.procedure || "-"} · {c.date || "-"} {c.time || ""}
+                  {c.confidence==="low" && <span style={{color:C.d,marginLeft:6}}>⚠ perlu dicek</span>}
+                </div>
+              </div>
+              <Btn sm onClick={()=>applyOcrResult(c)}>Pilih</Btn>
+            </div>
+          ))}
+          <Btn full outline color={C.tL} onClick={()=>setOcrCandidates([])} style={{marginTop:8}}>Batalkan</Btn>
+        </Card>
+      )}
       {dupWarning && <div style={{background:C.wBg,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:13,color:C.w,fontWeight:600,border:`1.5px solid ${C.w}`}}>⚠ Duplikasi: pasien, tanggal & jam yang sama sudah terdaftar.</div>}
       <Card>
         <SH label="① Jenis Operasi & Tindakan"/>
@@ -1684,7 +2266,7 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,staff,setTab,temp
         <LF label="Diagnosa Medis" req err={e.diagnosis}><input style={iStyle("diagnosis")} placeholder="Cth: Hernia Inguinalis Dextra, Appendicitis Akut" value={opForm.diagnosis} onChange={(ev:any)=>set("diagnosis",ev.target.value)} onFocus={onFoc("diagnosis")} onBlur={onBlr} autoComplete="off" spellCheck={false}/></LF>
         <LF label="Nama Tindakan / Prosedur" req err={e.procedure}><input style={iStyle("procedure")} placeholder="Cth: Hernioraphy Open, Laparoscopic Cholecystectomy" value={opForm.procedure} onChange={(ev:any)=>set("procedure",ev.target.value)} onFocus={onFoc("procedure")} onBlur={onBlr} autoComplete="off" spellCheck={false}/></LF>
         <div style={{display:"flex",gap:12}}>
-          <div style={{flex:1}}><LF label="Tanggal" req><input style={iStyle("date")} type="date" value={opForm.date} onChange={(ev:any)=>setR("date",ev.target.value)}/></LF>{e.date&&<div style={{fontSize:11,color:C.d,marginTop:-8,marginBottom:8}}>⚠ {e.date}</div>}</div>
+          <div style={{flex:1}}><LF label="Tanggal" req><DateTxt style={iStyle("date")} value={opForm.date||""} onChange={(v:string)=>setR("date",v)}/></LF>{e.date&&<div style={{fontSize:11,color:C.d,marginTop:-8,marginBottom:8}}>⚠ {e.date}</div>}</div>
           <div style={{flex:1}}><LF label="Jam Mulai" req><input style={iStyle("time")} type="time" value={opForm.time} onChange={(ev:any)=>setR("time",ev.target.value)}/></LF>{e.time&&<div style={{fontSize:11,color:C.d,marginTop:-8,marginBottom:8}}>⚠ {e.time}</div>}</div>
         </div>
         <SF label="Kamar Operasi" options={ROOMS} value={opForm.room} onChange={(ev:any)=>setR("room",ev.target.value)}/>
@@ -2067,7 +2649,8 @@ function ViewKirimWA({ops,staff,setNotifs,showToast}: ViewKirimWAProps) {
   const tmrwOps  = ops.filter((o:any)=>o.date===tmrwDate()&&o.status!=="batal");
   const sendWA   = (ph: string | null,msg: string,name: string,lbl: string) => {
     if(ph) window.open(`https://wa.me/${ph.replace(/[^0-9]/g,"")}?text=${encodeURIComponent(msg)}`,"_blank");
-    setNotifs((p:any)=>[{id:gId(),type:"wa_direct",label:lbl,patient:name,procedure:"Jadwal H-1",message:msg,sentAt:fNow()},...p]);
+    /* FIX AUDIT #24: sama seperti di ViewJadwal — cap 200 entri terbaru. */
+    setNotifs((p:any)=>[{id:gId(),type:"wa_direct",label:lbl,patient:name,procedure:"Jadwal H-1",message:msg,sentAt:fNow()},...p].slice(0,200));
     showToast("✓ WhatsApp dibuka — tekan Kirim di WA","#25D366");
   };
   const surgeons = [...new Set(tmrwOps.map((o:any)=>o.surgeon))].filter(Boolean);
@@ -2746,7 +3329,7 @@ function ImportExcel({ops, setOps, showToast, upsertBulkToSupa}: any) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const COLS: {label:string;key:string;required?:boolean}[] = [
-    {label:"Tanggal (YYYY-MM-DD)",key:"date",required:true},
+    {label:"Tanggal (DD/MM/YYYY atau YYYY-MM-DD)",key:"date",required:true},
     {label:"Jam (HH:MM)",key:"time",required:true},
     {label:"Nama Pasien",key:"patient",required:true},
     {label:"Tindakan/Prosedur",key:"procedure",required:true},
@@ -2768,6 +3351,11 @@ function ImportExcel({ops, setOps, showToast, upsertBulkToSupa}: any) {
   const handleFile = (file: File) => {
     setFileName(file.name);
     const reader = new FileReader();
+    /* FIX AUDIT #28 (LOW — FileReader tanpa onerror): tanpa ini, kalau file
+       gagal dibaca di level OS/browser (bukan gagal parse Excel), tidak ada
+       feedback ke user sama sekali — UI terlihat "menggantung" tanpa
+       penjelasan. */
+    reader.onerror = () => { setFileName(""); showToast("Gagal membaca file — coba pilih file lain", C.d); };
     reader.onload = (e) => {
       try {
         const wb = XLSX.read(new Uint8Array(e.target!.result as ArrayBuffer), {type:"array", cellDates:true});
@@ -2873,7 +3461,7 @@ function ImportExcel({ops, setOps, showToast, upsertBulkToSupa}: any) {
             <div style={{overflowX:"auto",marginBottom:12}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
                 <thead><tr style={{background:C.pBg}}>{["Tanggal","Jam","Pasien","Tindakan","Kamar","Dokter"].map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",color:C.p,fontWeight:700,borderBottom:`2px solid ${C.p}33`}}>{h}</th>)}</tr></thead>
-                <tbody>{rows.slice(0,10).map((r,i)=><tr key={i} style={{borderBottom:`1px solid ${C.b}`}}><td style={{padding:"5px 10px"}}>{r.date}</td><td style={{padding:"5px 10px"}}>{r.time}</td><td style={{padding:"5px 10px",fontWeight:600}}>{r.patient}</td><td style={{padding:"5px 10px"}}>{r.procedure}</td><td style={{padding:"5px 10px"}}>{r.room}</td><td style={{padding:"5px 10px"}}>{r.surgeon}</td></tr>)}</tbody>
+                <tbody>{rows.slice(0,10).map((r,i)=><tr key={i} style={{borderBottom:`1px solid ${C.b}`}}><td style={{padding:"5px 10px"}}>{fDMY(r.date)}</td><td style={{padding:"5px 10px"}}>{r.time}</td><td style={{padding:"5px 10px",fontWeight:600}}>{r.patient}</td><td style={{padding:"5px 10px"}}>{r.procedure}</td><td style={{padding:"5px 10px"}}>{r.room}</td><td style={{padding:"5px 10px"}}>{r.surgeon}</td></tr>)}</tbody>
               </table>
               {rows.length>10&&<div style={{fontSize:11,color:C.tL,marginTop:6,textAlign:"center"}}>...dan {rows.length-10} baris lainnya</div>}
             </div>
@@ -2982,7 +3570,7 @@ function ViewArsip(props: ViewArsipProps) {
           return true;
         }).forEach(k=>{
           const rec = lemburData[k];
-          (rec.entries||[]).forEach((e:any)=>rows.push([p.name,p.nik||"",k.replace(p.id+"_",""),e.tanggalAwal||"",e.tanggalAkhir||"",e.jamMasuk||"",e.jamKeluar||"",e.keperluanLembur||"",e.keterangan||""]));
+          (rec.entries||[]).forEach((e:any)=>rows.push([sanitizeCellForExcel(p.name),p.nik||"",k.replace(p.id+"_",""),e.tanggalAwal||"",e.tanggalAkhir||"",e.jamMasuk||"",e.jamKeluar||"",sanitizeCellForExcel(e.keperluanLembur||""),sanitizeCellForExcel(e.keterangan||"")]));
         });
       });
       if(!rows.length){showToast("Tidak ada data lembur untuk periode ini",C.w);return;}
@@ -3686,17 +4274,83 @@ const BULAN_ID = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agus
 const nowYM = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
 const ymLabel = (ym:string) => { const [y,m]=ym.split("-"); return `${BULAN_ID[parseInt(m)-1]} ${y}`; };
 
-function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData, showToast, supaCfg, dbxCfg, role, upsertOneToSupa, deleteFromSupa}: any) {
+function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData, showToast, supaCfg, dbxCfg, role, upsertOneToSupa, deleteFromSupa, autoSelPeg, onAutoSelPegUsed}: any) {
   const [sub, setSub]         = useState<"catat"|"rekap"|"pegawai">("catat");
-  const [selPeg, setSelPeg]   = useState<string>("");
+  const [selPeg, setSelPeg]   = useState<string>(autoSelPeg||"");
   const [selYM,  setSelYM]    = useState(nowYM());
   const [editRow, setEditRow] = useState<string|null>(null);
   const [rowForm, setRowForm] = useState<any>({});
+  /* REVISI: tandai sesi ini berasal dari login cepat "⏰ Input Lembur" (bukan
+     dari klik manual "✚ Tambah Baris Lembur" di tab Lembur biasa). Dipakai
+     untuk menyederhanakan tampilan form: HANYA tombol selfie+GPS yang
+     tampil, tanpa field tanggal/jam/keperluan/keterangan/TTD/Simpan/Batal —
+     karena semua sudah otomatis terekam & tersimpan begitu proses selesai. */
+  const [quickLemburMode, setQuickLemburMode] = useState(false);
+  /* Jam berjalan khusus tampilan mode sederhana (Masuk/Pulang) ala contoh
+     aplikasi absensi resmi — update tiap detik hanya saat mode ini aktif. */
+  const [quickNow, setQuickNow] = useState(() => new Date());
+  useEffect(() => {
+    if (!quickLemburMode) return undefined;
+    const t = setInterval(() => setQuickNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, [quickLemburMode]);
+  /* OPSI A: saat ViewLembur pertama mount dengan autoSelPeg dari PinScreen,
+     auto-set selPeg dan reset autoSelPeg di root agar tidak terpicu lagi
+     kalau user navigasi ke tab lain lalu kembali ke tab Lembur.
+     ALUR OTOMATIS: sekaligus auto-buka form baris baru dan set flag
+     autoTriggerSelfie agar selfie langsung terpicu tanpa klik tombol. */
+  useEffect(()=>{
+    if(autoSelPeg){
+      setSelPeg(autoSelPeg);
+      if(onAutoSelPegUsed) onAutoSelPegUsed();
+      /* REVISI: mode tampilan sederhana (2 tombol besar Masuk/Pulang) —
+         tidak lagi auto-buka form/auto-trigger selfie seperti sebelumnya.
+         Perawat sendiri yang klik "Masuk" atau "Pulang" sesuai kebutuhan. */
+      setQuickLemburMode(true);
+    }
+  },[autoSelPeg]);
+  const [isLoadingSelfie, setIsLoadingSelfie] = useState(false);
+  /* FIX BUG #3 + FIX AUDIT #20 (double-submit race — digeneralisasi):
+     ref sinkron ini SEKARANG dijadikan guard umum di dalam writeLemburKey()
+     itu sendiri (bukan hanya di handler Masuk/Pulang), sehingga SEMUA jalur
+     penulisan (tombol "✓ Simpan" manual, Hapus, simpan TTD, import Excel,
+     maupun Masuk/Pulang) sama-sama terlindungi dari klik ganda cepat tanpa
+     perlu menduplikasi guard di setiap handler satu-satu. Dicek SEBELUM
+     await apa pun — beda dengan state `isLoadingSelfie` yang baru efektif
+     ke prop `disabled` setelah 1 render cycle. */
+  const isSubmittingAbsenRef = useRef(false);
+  /* ALUR OTOMATIS: setelah login via "⏰ Input Lembur", ViewLembur otomatis
+     membuka form baru DAN langsung trigger selfie tanpa user perlu klik apapun.
+  /* FALLBACK MANUAL: ditampilkan kalau GPS/kamera tidak aktif/ditolak,
+     agar user tetap bisa isi jam keluar & tanggal secara manual */
+  const [showManualKeluar, setShowManualKeluar] = useState(false);
   const [kepRuang, setKepRuang]   = useState("");
   const [kepBidang, setKepBidang] = useState("");
   const [pegForm,  setPegForm]    = useState({name:"", nik:""});
   const [rekapYM,  setRekapYM]    = useState(nowYM());
   const fileRef = useRef<HTMLInputElement>(null);
+  /* FIX BUG GPS+SELFIE #2 & #5: simpan stream kamera aktif di ref supaya bisa
+     dimatikan dari luar (tombol Batal / unmount), dan flag mounted untuk
+     mencegah setState dipanggil setelah komponen unmount di tengah proses async */
+  const activeSelfieStreamRef = useRef<MediaStream | null>(null);
+  const isMountedSelfieRef = useRef(true);
+  useEffect(() => {
+    isMountedSelfieRef.current = true;
+    return () => {
+      isMountedSelfieRef.current = false;
+      if (activeSelfieStreamRef.current) {
+        activeSelfieStreamRef.current.getTracks().forEach(track => track.stop());
+        activeSelfieStreamRef.current = null;
+      }
+    };
+  }, []);
+  /* Hentikan kamera secara aman dari mana saja (dipanggil saat Batal ditekan) */
+  const stopActiveSelfieStream = () => {
+    if (activeSelfieStreamRef.current) {
+      activeSelfieStreamRef.current.getTracks().forEach(track => track.stop());
+      activeSelfieStreamRef.current = null;
+    }
+  };
   const [supaLemburBusy, setSupaLemburBusy] = useState(false);
   const [supaLemburYM, setSupaLemburYM] = useState(nowYM());
   const [dbxLemburBusy, setDbxLemburBusy] = useState(false);
@@ -3727,7 +4381,19 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
      bersamaan oleh device lain (key berbeda) tidak akan saling menimpa. ── */
   const writeLemburKey = async (newRecForKey: any): Promise<boolean> => {
     if(!key) return false;
-    const res = await upsertOneToSupa?.("kb_lembur_data", {id:key, ...newRecForKey, updated_at:new Date().toISOString()});
+    let res;
+    try {
+      /* FIX AUDIT #25: timeout 15 detik — cukup toleran untuk jaringan RS
+         yang lambat, tapi tetap memberi kepastian ke UI dalam waktu wajar
+         alih-alih menggantung tanpa batas. */
+      res = await withTimeout(
+        upsertOneToSupa?.("kb_lembur_data", {id:key, ...newRecForKey, updated_at:new Date().toISOString()}) as Promise<any>,
+        15000, "Simpan data lembur"
+      );
+    } catch (e: any) {
+      showToast(`⚠ ${e?.message || "Gagal menyimpan — koneksi bermasalah"}`, C.d);
+      return false;
+    }
     if(!res?.ok){
       showToast(`⚠ Gagal menyimpan ke Supabase: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
       return false;
@@ -3736,43 +4402,472 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     return true;
   };
 
-  const saveEntry = async () => {
-    const jenis = rowForm.jenisEntri || "kerja";
-    if(!rowForm.tanggalAwal){
-      showToast("Tanggal awal lembur wajib diisi",C.d); return;
-    }
-    if(jenis==="kerja" && (!rowForm.jamMasuk||!rowForm.jamKeluar)){
-      showToast("Jam masuk & keluar wajib diisi untuk Kerja Lembur",C.d); return;
-    }
-    if(jenis==="ambil" && (rowForm.jumlahJamAmbil===undefined||rowForm.jumlahJamAmbil===""||Number(rowForm.jumlahJamAmbil)<=0)){
+  /* REVISI: saveEntry sekarang menerima parameter opsional `formOverride`.
+     Dipakai oleh auto-save (login lembur) agar menyimpan data rowForm yang
+     PALING BARU (hasil GPS+selfie) tanpa risiko stale-state, sementara
+     pemakaian normal (tombol "✓ Simpan" manual) tetap jalan seperti biasa
+     dengan memakai rowForm dari state seperti sebelumnya. */
+  const saveEntry = async (formOverride?: any) => {
+    /* FIX AUDIT #20 (MEDIUM — double-submit "✓ Simpan" manual): guard sinkron
+       yang sama dipakai handler Masuk/Pulang, diterapkan juga di sini supaya
+       klik ganda cepat pada tombol Simpan tidak membuat baris terduplikasi. */
+    if (isSubmittingAbsenRef.current) return;
+    isSubmittingAbsenRef.current = true;
+    const src = formOverride || rowForm;
+    const jenis = src.jenisEntri || "kerja";
+    /* UPDATE: Tanggal Awal Lembur & Jam Absen Masuk TIDAK WAJIB diisi saat simpan —
+       boleh kosong dan diisi belakangan (sewaktu-waktu lewat Edit). Baris tetap
+       bisa disimpan sebagai draft. Validasi wajib lama (tanggalAwal, jamMasuk)
+       sengaja dihapus sesuai permintaan; jamKeluar tetap wajib lewat tombol
+       GPS+Selfie HANYA kalau diisi (lihat handleSelfieKeluarOtomatis) — kalau
+       belum diisi, baris kerja tetap bisa disimpan sebagai draft kosong juga. */
+    if(jenis==="ambil" && (src.jumlahJamAmbil===undefined||src.jumlahJamAmbil===""||Number(src.jumlahJamAmbil)<=0)){
+      isSubmittingAbsenRef.current = false;
       showToast("Jumlah jam diambil wajib diisi (lebih dari 0) untuk Pengambilan Lembur",C.d); return;
     }
     /* Normalisasi: pastikan field yang tidak relevan untuk jenis ini tidak menyimpan sisa data lama */
     const cleanForm = jenis==="kerja"
-      ? {...rowForm, jenisEntri:"kerja", jumlahJamAmbil:""}
-      : {...rowForm, jenisEntri:"ambil", jamMasuk:"", jamKeluar:""};
+      ? {...src, jenisEntri:"kerja", jumlahJamAmbil:""}
+      /* UPDATE LEMBUR GPS+SELFIE: bersihkan lokasiKeluar & fotoKeluarUrl jika entri berupa Pengambilan Lembur,
+         karena field ini hanya relevan untuk verifikasi selesai Kerja Lembur */
+      : {...src, jenisEntri:"ambil", jamMasuk:"", jamKeluar:"", lokasiKeluar:"", fotoKeluarUrl:""};
+    /* FIX BUG #7/#8: baca entries & rec TERBARU dari lemburData[key] tepat
+       sebelum menulis (bukan snapshot closure `entries`/`rec` dari awal
+       render) — meminimalkan risiko nomor (`no`) bentrok dan risiko
+       menimpa perubahan device lain yang masuk lewat realtime sesaat
+       sebelum tombol Simpan diklik. */
+    const recNow: any = (key && lemburData[key]) || rec;
+    const entriesNow: any[] = recNow.entries || [];
     const upd = editRow
-      ? entries.map((e:any)=>e.id===editRow?{...e,...cleanForm}:e)
-      : [...entries,{id:gId(),...cleanForm,no:entries.length+1}];
+      ? entriesNow.map((e:any)=>e.id===editRow?{...e,...cleanForm}:e)
+      : [...entriesNow,{id:gId(),...cleanForm,no:entriesNow.length+1}];
     showToast("⟳ Menyimpan...",C.p);
-    const ok = await writeLemburKey({...rec, entries:upd});
+    const ok = await writeLemburKey({...recNow, entries:upd});
+    isSubmittingAbsenRef.current = false;
     if(ok){ setEditRow(null); setRowForm({}); showToast("✓ Baris disimpan & tersinkron",C.s); }
   };
 
+  /* ── UPDATE LEMBUR GPS+SELFIE (BARU DITAMBAHKAN) ──────────────────────
+     Mengunci absen keluar Kerja Lembur secara otomatis: ambil koordinat GPS
+     presisi tinggi, jepret foto selfie via kamera depan, lalu unggah ke
+     Dropbox dan simpan tautan langsungnya. Ini murni fitur tambahan — tidak
+     mengubah/menghapus alur input manual tanggalAwal/jamMasuk yang sudah ada.
+
+     KOMPATIBILITAS LINTAS DEVICE:
+     GPS & kamera browser TIDAK BISA dijamin 100% jalan di semua HP/browser —
+     ini batasan hardware & platform, bukan sesuatu yang bisa "diperbaiki" lewat
+     kode semata. Yang kita bisa lakukan: deteksi sedini mungkin, beri pesan
+     yang jelas, coba beberapa strategi fallback otomatis, dan kalau tetap
+     gagal — pengguna SELALU punya jalan keluar lewat field manual di bawah
+     (lihat bagian "Jika selfie/GPS gagal" di form).
+     1) Cek koneksi HTTPS dulu — geolocation & kamera diblokir browser modern
+        kalau bukan https/localhost, ini penyebab kegagalan paling umum.
+     2) GPS: coba presisi tinggi dulu (timeout pendek), kalau timeout/gagal,
+        otomatis coba ulang dengan presisi rendah (lebih cepat & lebih
+        kompatibel di dalam gedung / device GPS lemah) sebelum benar-benar
+        menyerah.
+     3) Kamera: dukung juga API getUserMedia versi lama (vendor-prefixed),
+        dipakai sebagian browser Android/iOS lawas yang belum punya
+        navigator.mediaDevices standar.
+     4) Capture foto: pakai canvas.toBlob, dengan fallback ke toDataURL untuk
+        browser sangat lama yang belum mendukung toBlob. */
+  const getUserMediaCompat = (constraints: MediaStreamConstraints): Promise<MediaStream> => {
+    if (navigator.mediaDevices?.getUserMedia) {
+      return navigator.mediaDevices.getUserMedia(constraints);
+    }
+    /* Fallback untuk browser lawas (Android WebView lama, dsb.) yang masih
+       memakai API vendor-prefixed, bukan navigator.mediaDevices standar. */
+    const legacyGetUserMedia =
+      (navigator as any).getUserMedia ||
+      (navigator as any).webkitGetUserMedia ||
+      (navigator as any).mozGetUserMedia ||
+      (navigator as any).msGetUserMedia;
+    if (legacyGetUserMedia) {
+      return new Promise((resolve, reject) => {
+        legacyGetUserMedia.call(navigator, constraints, resolve, reject);
+      });
+    }
+    return Promise.reject(new Error("getUserMedia tidak tersedia di browser ini"));
+  };
+
+  const captureBlobCompat = (canvas: HTMLCanvasElement): Promise<Blob | null> => {
+    return new Promise((resolve) => {
+      if (typeof canvas.toBlob === "function") {
+        canvas.toBlob((b) => resolve(b), "image/jpeg", 0.75);
+        return;
+      }
+      /* Fallback untuk browser sangat lama tanpa dukungan canvas.toBlob:
+         pakai toDataURL lalu ubah jadi Blob secara manual. */
+      try {
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.75);
+        const arr = dataUrl.split(",");
+        const bstr = atob(arr[1]);
+        const u8 = new Uint8Array(bstr.length);
+        for (let i = 0; i < bstr.length; i++) u8[i] = bstr.charCodeAt(i);
+        resolve(new Blob([u8], { type: "image/jpeg" }));
+      } catch {
+        resolve(null);
+      }
+    });
+  };
+
+  /* Bungkus getCurrentPosition jadi Promise + retry: presisi tinggi dulu,
+     kalau gagal/timeout otomatis coba lagi dengan presisi rendah. Ini
+     menambah peluang sukses di device/lokasi dengan sinyal GPS lemah
+     (mis. dalam gedung rumah sakit) tanpa perlu campur tangan pengguna. */
+  const getPositionWithFallback = (): Promise<GeolocationPosition> => {
+    return new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(
+        resolve,
+        () => {
+          if (showToast) showToast("⏳ GPS presisi tinggi gagal, mencoba mode hemat (lebih cepat)...", C.p);
+          navigator.geolocation.getCurrentPosition(
+            resolve,
+            reject,
+            { enableHighAccuracy: false, timeout: 8000, maximumAge: 30000 }
+          );
+        },
+        { enableHighAccuracy: true, timeout: 6000 }
+      );
+    });
+  };
+
+  /* Ambil 1 frame selfie dari kamera depan & upload ke Dropbox. Mengembalikan
+     link foto, atau null jika kamera/izin tidak tersedia — TANPA melempar
+     error ke pemanggil, supaya tanggal/jam tetap bisa terkunci walau bagian
+     ini gagal sepenuhnya (lihat handleSelfieKeluarOtomatis di bawah). */
+  const captureSelfieAndUpload = async (): Promise<string | null> => {
+    let stream: MediaStream;
+    try {
+      /* facingMode "user" sebagai preferensi (ideal), bukan syarat mutlak —
+         supaya device tanpa kamera depan tetap bisa pakai kamera yang ada. */
+      stream = await getUserMediaCompat({ video: { facingMode: { ideal: "user" } } });
+    } catch {
+      return null; // kamera nonaktif/izin ditolak/tidak ada — bukan error fatal
+    }
+    if (!isMountedSelfieRef.current) {
+      stream.getTracks().forEach(track => track.stop());
+      return null;
+    }
+    activeSelfieStreamRef.current = stream;
+
+    const video = document.createElement("video");
+    video.srcObject = stream;
+    video.muted = true;
+    video.playsInline = true;
+    (video as any).setAttribute("webkit-playsinline", "true"); // kompatibilitas Safari iOS lama
+
+    /* Tunggu video siap dengan timeout singkat — dipersingkat dari versi
+       sebelumnya supaya proses keseluruhan lebih cepat (sesuai permintaan:
+       "dalam memproses data cepat"). */
+    await new Promise<void>((resolve) => {
+      let done = false;
+      const finish = () => { if (!done) { done = true; resolve(); } };
+      video.onloadedmetadata = () => { video.play().catch(() => {}); setTimeout(finish, 200); };
+      setTimeout(finish, 1500); // fallback keras jika metadata tak kunjung siap
+      video.play().catch(() => {});
+    });
+
+    if (!isMountedSelfieRef.current) {
+      stream.getTracks().forEach(track => track.stop());
+      activeSelfieStreamRef.current = null;
+      return null;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 400;
+    canvas.height = 300;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      stream.getTracks().forEach(track => track.stop());
+      activeSelfieStreamRef.current = null;
+      return null;
+    }
+    try {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    } catch {
+      stream.getTracks().forEach(track => track.stop());
+      activeSelfieStreamRef.current = null;
+      return null;
+    }
+
+    const blob = await captureBlobCompat(canvas);
+    /* Segera matikan hardware kamera setelah frame didapat demi privasi & baterai */
+    stream.getTracks().forEach(track => track.stop());
+    activeSelfieStreamRef.current = null;
+    if (!blob) return null;
+
+    try {
+      const namaFile = `selfie_lembur_${Date.now()}.jpg`;
+      /* UPDATE LEMBUR GPS+SELFIE — PENYESUAIAN KEAMANAN:
+         Upload disalurkan lewat callDbxProxy (token Dropbox aman di server,
+         Supabase Edge Function "dropbox-proxy"), bukan API Dropbox langsung
+         dari browser. ⚠ WAJIB: pastikan Edge Function sudah punya handler
+         action "upload_image" sebelum fitur ini berfungsi di production. */
+      const CHUNK = 8192;
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let binary = "";
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+      }
+      const base64Foto = btoa(binary);
+      const uploadRes = await callDbxProxy({
+        action: "upload_image",
+        path: `/foto_lembur/${namaFile}`,
+        base64: base64Foto,
+        mime: "image/jpeg",
+      });
+      if (!uploadRes.ok) return null;
+      return uploadRes.data?.url || uploadRes.data?.directLink || null;
+    } catch {
+      return null;
+    }
+  };
+
+  /* ── UPDATE: tanggal & jam SELALU tercatat, GPS+kamera bersifat pelengkap ──
+     Sebelumnya jika GPS atau kamera mati/ditolak izinnya, seluruh proses
+     gagal dan tanggal/jam keluar TIDAK tercatat sama sekali (user terjebak
+     harus isi manual). Sekarang:
+     1) Tanggal & jam keluar dikunci LANGSUNG di awal (instan, tidak menunggu
+        apa pun) — ini data yang paling penting dan tidak boleh gagal hanya
+        karena GPS/kamera nonaktif.
+     2) GPS & kamera dijalankan PARALEL (bukan berurutan seperti sebelumnya)
+        supaya proses jauh lebih cepat — hasil keduanya bersifat tambahan
+        (lokasi & foto), dilengkapi kalau berhasil, dilewati kalau tidak.
+     3) Jika GPS/kamera aktif & berhasil → perilaku identik seperti sebelumnya
+        (lokasi & foto ikut terkunci). Jika tidak aktif/ditolak → tanggal &
+        jam tetap tersimpan, hanya lokasi/foto yang kosong. */
+  const handleSelfieKeluarOtomatis = async () => {
+    setIsLoadingSelfie(true);
+    if (showToast) showToast("⏳ Memproses data keluar...", C.p);
+
+    // STEP 1 — instan, selalu berhasil: kunci tanggal & jam sekarang juga,
+    // tanpa menunggu izin GPS/kamera sama sekali.
+    const sekarang = new Date();
+    /* FIX AUDIT #21 (CRITICAL — Pergeseran Tanggal Timezone): sebelumnya
+       memakai toISOString().split("T")[0] yang SELALU dalam UTC, sehingga
+       pukul 00:00–06:59 WIB tercatat sebagai tanggal KEMARIN. Diganti ke
+       toLocalISODate() yang memakai komponen tanggal LOKAL, konsisten
+       dengan seluruh bagian aplikasi lain (lihat definisi & peringatan di
+       baris ~489). */
+    const tglKeluar = toLocalISODate(sekarang);
+    const jamKeluar = sekarang.toTimeString().slice(0, 5);
+    if (isMountedSelfieRef.current) {
+      setRowForm((prev: any) => ({ ...prev, tanggalAkhir: tglKeluar, jamKeluar: jamKeluar }));
+    }
+
+    const secure = typeof window === "undefined" || window.isSecureContext;
+
+    // STEP 2 — GPS & kamera berjalan BERSAMAAN (paralel) untuk mempercepat proses.
+    // Masing-masing menelan error sendiri (catch -> null) sehingga satu gagal
+    // tidak menggagalkan yang lain ataupun tanggal/jam yang sudah terkunci di STEP 1.
+    const gpsPromise: Promise<string | null> = (secure && navigator.geolocation)
+      ? getPositionWithFallback()
+          .then(pos => `Lat: ${pos.coords.latitude.toFixed(5)}, Lon: ${pos.coords.longitude.toFixed(5)}`)
+          .catch(() => null)
+      : Promise.resolve(null);
+
+    const fotoPromise: Promise<string | null> = secure
+      ? captureSelfieAndUpload().catch(() => null)
+      : Promise.resolve(null);
+
+    const [lokasiString, directLink] = await Promise.all([gpsPromise, fotoPromise]);
+
+    if (!isMountedSelfieRef.current) return;
+
+    /* REVISI: bangun objek rowForm final secara eksplisit (bukan hanya lewat
+       setRowForm functional-update) supaya nilai terbarunya bisa langsung
+       dipakai untuk auto-save di bawah tanpa menunggu re-render/stale state. */
+    const rowFormFinal = {
+      ...rowForm,
+      tanggalAkhir: tglKeluar,
+      jamKeluar: jamKeluar,
+      lokasiKeluar: lokasiString || rowForm.lokasiKeluar || "",
+      fotoKeluarUrl: directLink || rowForm.fotoKeluarUrl || ""
+    };
+    setRowForm(rowFormFinal);
+
+    const gpsOk = !!lokasiString, fotoOk = !!directLink;
+
+    if (showToast) {
+      if (gpsOk && fotoOk) {
+        showToast("✓ Parameter Keluar Berhasil Dikunci (Tanggal, Jam, GPS & Foto)!", C.s);
+        setShowManualKeluar(false);
+      } else if (!gpsOk && !fotoOk) {
+        showToast("✓ Tanggal & Jam keluar tercatat. GPS/Kamera tidak aktif — lengkapi manual jika perlu.", C.w);
+        /* FALLBACK: tampilkan input manual agar user bisa lengkapi */
+        setShowManualKeluar(true);
+      } else {
+        showToast(`✓ Tanggal & Jam tercatat${gpsOk ? " + GPS" : ""}${fotoOk ? " + Foto" : ""}. ${!gpsOk ? "GPS" : "Kamera"} tidak tersedia.`, C.w);
+        setShowManualKeluar(false);
+      }
+    }
+    setIsLoadingSelfie(false);
+
+    /* REVISI: LOGIN LEMBUR & TOMBOL MANUAL — auto-save SELALU berjalan.
+       Sebelumnya hanya alur login otomatis yang auto-save; sekarang tombol
+       manual "📷 Klik untuk Selfie & Ambil Jam Keluar" juga langsung
+       menyimpan baris begitu tanggal, jam, GPS & foto selesai diproses —
+       perawat tidak perlu menyentuh apa pun lagi, cukup login dan boleh
+       langsung keluar. */
+    await saveEntry(rowFormFinal);
+  };
+
+  /* ── MODE TAMPILAN SEDERHANA (2 tombol besar: Masuk & Pulang) ─────────
+     Sesuai contoh aplikasi absensi resmi RS Panti Rini: begitu login lewat
+     "⏰ Input Lembur", perawat hanya lihat nama + tanggal/jam + 2 tombol
+     besar. Klik "Masuk" → GPS+selfie+save langsung otomatis (buat baris
+     baru). Klik "Pulang" → GPS+selfie+save langsung otomatis (lengkapi
+     baris kerja lembur milik pegawai ini yang masih terbuka — sudah ada
+     jamMasuk tapi belum ada jamKeluar; kalau tidak ada baris terbuka,
+     buat baris baru berisi jam pulang saja). Kedua tombol bisa diklik
+     kapan saja, tidak saling mengunci satu sama lain. */
+  const captureGpsSelfie = async (): Promise<{lokasi:string; foto:string}> => {
+    const secure = typeof window === "undefined" || window.isSecureContext;
+    const gpsPromise: Promise<string | null> = (secure && navigator.geolocation)
+      ? getPositionWithFallback()
+          .then(pos => `Lat: ${pos.coords.latitude.toFixed(5)}, Lon: ${pos.coords.longitude.toFixed(5)}`)
+          .catch(() => null)
+      : Promise.resolve(null);
+    const fotoPromise: Promise<string | null> = secure
+      ? captureSelfieAndUpload().catch(() => null)
+      : Promise.resolve(null);
+    const [lokasi, foto] = await Promise.all([gpsPromise, fotoPromise]);
+    return { lokasi: lokasi || "", foto: foto || "" };
+  };
+
+  const handleAbsenMasuk = async () => {
+    /* FIX BUG #1 (race selPeg/key null) + FIX BUG #3 (double-submit race):
+       cek DUA guard sinkron sebelum apa pun lain dijalankan. */
+    if (isSubmittingAbsenRef.current) return;
+    if (!key) { showToast("⚠ Data pegawai belum siap, coba lagi sesaat.", C.w); return; }
+    isSubmittingAbsenRef.current = true;
+    setIsLoadingSelfie(true);
+    if (showToast) showToast("⏳ Memproses absen masuk...", C.p);
+    const sekarang = new Date();
+    /* FIX AUDIT #21 (CRITICAL — Pergeseran Tanggal Timezone): pakai
+       toLocalISODate() bukan toISOString(), lihat penjelasan lengkap di
+       definisi toLocalISODate baris ~489. */
+    const tgl = toLocalISODate(sekarang);
+    const jam = sekarang.toTimeString().slice(0, 5);
+    const { lokasi, foto } = await captureGpsSelfie();
+    if (!isMountedSelfieRef.current) { isSubmittingAbsenRef.current = false; return; }
+    /* FIX BUG #4 (nomor duplikat): baca entries TERBARU dari lemburData saat
+       ini (bukan closure lama) tepat sebelum menulis, meminimalkan risiko
+       nomor bentrok akibat penulisan bersamaan dari device/tab lain. */
+    const entriesNow: any[] = (lemburData[key!]?.entries) || entries;
+    const entryBaru = {
+      id: gId(), no: entriesNow.length + 1,
+      jenisEntri: "kerja", tanggalAwal: tgl, tanggalAkhir: "",
+      jamMasuk: jam, jamKeluar: "",
+      lokasiMasuk: lokasi, fotoMasukUrl: foto,
+      lokasiKeluar: "", fotoKeluarUrl: "",
+      jumlahJamAmbil: "", keperluanLembur: "", keterangan: "", ttd: ""
+    };
+    showToast("⟳ Menyimpan absen masuk...", C.p);
+    const ok = await writeLemburKey({ ...(lemburData[key!]||rec), entries: [...entriesNow, entryBaru] });
+    isSubmittingAbsenRef.current = false;
+    /* FIX AUDIT #19 (MEDIUM — setState setelah unmount): guard mounted
+       harus dicek lagi SETELAH await KEDUA (writeLemburKey), bukan hanya
+       setelah await pertama (captureGpsSelfie). Kalau komponen unmount
+       persis saat writeLemburKey masih berjalan, setIsLoadingSelfie/
+       showToast di bawah ini akan mencoba update komponen yang sudah
+       tidak ada — sumber React warning & potensi memory leak. */
+    if (!isMountedSelfieRef.current) return;
+    setIsLoadingSelfie(false);
+    if (ok) {
+      /* FIX BUG #5: kalau GPS & foto GAGAL total, tampilkan warning kuning,
+         bukan toast sukses hijau yang menutupi fakta tidak ada bukti lokasi/foto. */
+      if (!lokasi && !foto) {
+        showToast(`✓ Absen Masuk tercatat pukul ${jam}. ⚠ GPS & Kamera tidak aktif — tanpa bukti lokasi/foto.`, C.w);
+      } else if (!lokasi || !foto) {
+        showToast(`✓ Absen Masuk tercatat pukul ${jam}${lokasi?" + GPS":""}${foto?" + Foto":""}. ⚠ ${!lokasi?"GPS":"Kamera"} tidak aktif.`, C.w);
+      } else {
+        showToast(`✓ Absen Masuk tercatat pukul ${jam} + GPS + Foto`, C.s);
+      }
+    }
+  };
+
+  const handleAbsenPulang = async () => {
+    if (isSubmittingAbsenRef.current) return;
+    if (!key) { showToast("⚠ Data pegawai belum siap, coba lagi sesaat.", C.w); return; }
+    isSubmittingAbsenRef.current = true;
+    setIsLoadingSelfie(true);
+    if (showToast) showToast("⏳ Memproses absen pulang...", C.p);
+    const sekarang = new Date();
+    /* FIX AUDIT #21 (CRITICAL — Pergeseran Tanggal Timezone): sama seperti
+       handleAbsenMasuk — pakai toLocalISODate() bukan toISOString(). */
+    const tgl = toLocalISODate(sekarang);
+    const jam = sekarang.toTimeString().slice(0, 5);
+    const { lokasi, foto } = await captureGpsSelfie();
+    if (!isMountedSelfieRef.current) { isSubmittingAbsenRef.current = false; return; }
+    /* FIX BUG #2 (salah baris lintas tanggal): baca entries TERBARU + filter
+       WAJIB tanggalAwal === tgl (hari ini) saat mencari baris terbuka. Baris
+       "Masuk" dari hari sebelumnya yang lupa di-Pulang-kan TIDAK BOLEH
+       tertimpa oleh absen pulang hari ini — kalau ada, biarkan tetap
+       terbuka (perawat/admin bisa lengkapi manual lewat Edit) dan buat
+       baris baru untuk hari ini. */
+    const entriesNow: any[] = (lemburData[key!]?.entries) || entries;
+    const idxTerbuka = [...entriesNow].reverse().findIndex((e: any) =>
+      e.jenisEntri !== "ambil" && e.jamMasuk && !e.jamKeluar && e.tanggalAwal === tgl
+    );
+    let upd: any[];
+    if (idxTerbuka >= 0) {
+      const realIdx = entriesNow.length - 1 - idxTerbuka;
+      upd = entriesNow.map((e: any, i: number) => i === realIdx
+        ? { ...e, tanggalAkhir: tgl, jamKeluar: jam, lokasiKeluar: lokasi || e.lokasiKeluar || "", fotoKeluarUrl: foto || e.fotoKeluarUrl || "" }
+        : e);
+    } else {
+      upd = [...entriesNow, {
+        id: gId(), no: entriesNow.length + 1,
+        jenisEntri: "kerja", tanggalAwal: tgl, tanggalAkhir: tgl,
+        jamMasuk: "", jamKeluar: jam,
+        lokasiKeluar: lokasi, fotoKeluarUrl: foto,
+        jumlahJamAmbil: "", keperluanLembur: "", keterangan: "", ttd: ""
+      }];
+    }
+    showToast("⟳ Menyimpan absen pulang...", C.p);
+    const ok = await writeLemburKey({ ...(lemburData[key!]||rec), entries: upd });
+    isSubmittingAbsenRef.current = false;
+    /* FIX AUDIT #19: sama seperti handleAbsenMasuk — cek mounted lagi
+       SETELAH await writeLemburKey, bukan hanya setelah captureGpsSelfie. */
+    if (!isMountedSelfieRef.current) return;
+    setIsLoadingSelfie(false);
+    if (ok) {
+      if (!lokasi && !foto) {
+        showToast(`✓ Absen Pulang tercatat pukul ${jam}. ⚠ GPS & Kamera tidak aktif — tanpa bukti lokasi/foto.`, C.w);
+      } else if (!lokasi || !foto) {
+        showToast(`✓ Absen Pulang tercatat pukul ${jam}${lokasi?" + GPS":""}${foto?" + Foto":""}. ⚠ ${!lokasi?"GPS":"Kamera"} tidak aktif.`, C.w);
+      } else {
+        showToast(`✓ Absen Pulang tercatat pukul ${jam} + GPS + Foto`, C.s);
+      }
+    }
+  };
+
   const delEntry = async (id:string) => {
-    const upd = entries.filter((e:any)=>e.id!==id).map((e:any,i:number)=>({...e,no:i+1}));
-    const ok = await writeLemburKey({...rec, entries:upd});
+    /* FIX BUG #8: baca rec/entries terbaru dari lemburData[key], bukan
+       closure lama, sebelum menghapus & menulis ulang. */
+    const recNow: any = (key && lemburData[key]) || rec;
+    const entriesNow: any[] = recNow.entries || [];
+    const upd = entriesNow.filter((e:any)=>e.id!==id).map((e:any,i:number)=>({...e,no:i+1}));
+    const ok = await writeLemburKey({...recNow, entries:upd});
     if(ok) showToast("Baris dihapus & tersinkron");
   };
 
   const saveSigs = async () => {
     if(!key) return;
-    const ok = await writeLemburKey({...rec, kepRuang, kepBidang, savedAt:fNow()});
+    /* FIX BUG #8: pakai rec TERBARU dari lemburData[key] — kalau tidak,
+       menyimpan tanda tangan bisa ikut menimpa `entries` dengan versi lama
+       (closure) walau field yang diubah cuma kepRuang/kepBidang. */
+    const recNow: any = lemburData[key] || rec;
+    const ok = await writeLemburKey({...recNow, kepRuang, kepBidang, savedAt:fNow()});
     if(ok) showToast("✓ Tanda tangan tersimpan & tersinkron",C.s);
   };
 
   const handleImportJadwal = (file:File) => {
     const reader = new FileReader();
+    /* FIX AUDIT #28: sama seperti handleFile di ImportExcel. */
+    reader.onerror = () => { showToast("Gagal membaca file — coba pilih file lain", C.d); };
     reader.onload = async (e) => {
       try {
         const wb = XLSX.read(new Uint8Array(e.target!.result as ArrayBuffer),{type:"array", cellDates:true});
@@ -3785,7 +4880,11 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
         const keluarIdx=header.findIndex(h=>h.includes("keluar")||h.includes("out")||h.includes("pulang"));
         const kepIdx   =header.findIndex(h=>h.includes("keperluan")||h.includes("lembur")||h.includes("pekerjaan"));
         const ketIdx   =header.findIndex(h=>h.includes("keterangan")||h.includes("ket")||h.includes("catatan"));
-        let newEntries: any[] = [...entries];
+        /* FIX BUG #8: mulai dari entries TERBARU (lemburData[key]), bukan
+           closure `entries` lama — mencegah import Excel menimpa absen yang
+           baru masuk lewat realtime sesaat sebelum proses import selesai. */
+        const recNow: any = (key && lemburData[key]) || rec;
+        let newEntries: any[] = [...(recNow.entries || [])];
         for(let i=1;i<data.length;i++){
           const row=data[i] as any[];
           if(!row||row.every((c:any)=>!c)) continue;
@@ -3804,9 +4903,9 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
             ttd:"",
           });
         }
-        const added = newEntries.length-entries.length;
+        const added = newEntries.length-(recNow.entries||[]).length;
         showToast(`⟳ Menyimpan ${added} baris lembur...`,C.p);
-        const ok = await writeLemburKey({...rec, entries:newEntries});
+        const ok = await writeLemburKey({...recNow, entries:newEntries});
         if(ok) showToast(`✓ ${added} baris diimport & tersinkron`,C.s);
       } catch(err){showToast("Gagal membaca file",C.d);}
     };
@@ -3832,8 +4931,11 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     setC(4,0,"NIK / NIP",true);    setC(4,2,`: ${peg.nik||"-"}`);
     setC(5,0,"Bulan",true);         setC(5,2,`: ${ymLabel(selYM)}`);
     setC(6,0,"",false,false);
-    /* Table header */
-    const TH=["No","Tgl Awal Lembur","Tgl Akhir Lembur","Jam Absen Masuk","Jam Absen Keluar","Keperluan Lembur","Keterangan","Tanda Tangan"];
+    /* Table header
+       UPDATE LEMBUR GPS+SELFIE: 2 kolom baru ditambahkan di ujung kanan (Kolom I & J).
+       Kolom A-H (index 0-7) ORISINAL — urutan & isinya tidak berubah sama sekali,
+       sehingga rumus rekap manual/makro Excel yang sudah ada tetap aman. */
+    const TH=["No","Tgl Awal Lembur","Tgl Akhir Lembur","Jam Absen Masuk","Jam Absen Keluar","Keperluan Lembur","Keterangan","Tanda Tangan","Lokasi Keluar (GPS)","Tautan Foto Selfie"];
     TH.forEach((h,i)=>setC(7,i,h,true,true,true,"16685F"));
     /* Table rows */
     entries.forEach((e:any,i:number)=>{
@@ -3842,7 +4944,10 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
       const masukCol  = isAmbil ? "—" : e.jamMasuk;
       const keluarCol = isAmbil ? "—" : e.jamKeluar;
       const kepCol    = isAmbil ? `[PENGAMBILAN -${Number(e.jumlahJamAmbil)||0} jam] ${e.keperluanLembur||""}`.trim() : e.keperluanLembur;
-      [e.no,e.tanggalAwal||e.jadwalDinas||"",e.tanggalAkhir||"",masukCol,keluarCol,kepCol,e.keterangan,e.ttd||""].forEach((v,c)=>setC(r,c,String(v||""),false,c===0||c===3||c===4,true,i%2===0?"F0FFF8":undefined));
+      /* Data lama (sebelum sistem selfie ada) otomatis terisi strip (—) — aman, tidak error */
+      const gpsCol    = e.lokasiKeluar || "—";
+      const selfieCol = e.fotoKeluarUrl || "—";
+      [e.no,e.tanggalAwal||e.jadwalDinas||"",e.tanggalAkhir||"",masukCol,keluarCol,kepCol,e.keterangan,e.ttd||"",gpsCol,selfieCol].forEach((v,c)=>setC(r,c,String(v||""),false,c===0||c===3||c===4,true,i%2===0?"F0FFF8":undefined));
     });
     /* Ringkasan saldo: Didapat / Diambil / Saldo Bersih */
     const totalMinsKerjaX = entries.reduce((s:number,e:any)=>{
@@ -3872,9 +4977,12 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     setC(sigRow+2,4,"Kepala Bidang",false,true);
     setC(sigRow+6,0,kepRuang||"( _________________ )",false,true);
     setC(sigRow+6,4,kepBidang||"( _________________ )",false,true);
-    /* Merges */
+    /* Merges
+       UPDATE LEMBUR GPS+SELFIE: merge judul/header diperlebar sampai Kolom J (index 9)
+       agar tampilan tetap rapi penuh selebar tabel — TIDAK mengubah posisi merge
+       ringkasan saldo & tanda tangan yang tetap di kolom A-H (0-7) seperti semula. */
     ws["!merges"]=[
-      merge(0,0,0,7), merge(1,0,1,7), merge(2,0,2,7),
+      merge(0,0,0,9), merge(1,0,1,9), merge(2,0,2,9),
       merge(3,0,3,1), merge(3,2,3,7),
       merge(4,0,4,1), merge(4,2,4,7),
       merge(5,0,5,1), merge(5,2,5,7),
@@ -3882,8 +4990,8 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
       merge(sigRow+2,0,sigRow+2,3), merge(sigRow+2,4,sigRow+2,7),
       merge(sigRow+6,0,sigRow+6,3), merge(sigRow+6,4,sigRow+6,7),
     ];
-    ws["!cols"]=[{wch:4},{wch:16},{wch:16},{wch:16},{wch:16},{wch:26},{wch:22},{wch:16}];
-    ws["!ref"]=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:sigRow+7,c:7}});
+    ws["!cols"]=[{wch:4},{wch:16},{wch:16},{wch:16},{wch:16},{wch:26},{wch:22},{wch:16},{wch:24},{wch:32}];
+    ws["!ref"]=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:sigRow+7,c:9}});
     const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Lembur");
     XLSX.writeFile(wb,`Lembur_${peg.name.replace(/\s+/g,"_")}_${selYM}.xlsx`);
     showToast("✓ File Excel berhasil diunduh",C.s);
@@ -4013,7 +5121,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
         if(ld[k]){
           found=true;
           const ents:any[]=(ld[k].entries||[]);
-          const rows=ents.map((e:any,i:number)=>[i+1,e.tanggalAwal||"",e.tanggalAkhir||"",e.jamMasuk||"",e.jamKeluar||"",e.keperluanLembur||"",e.keterangan||""]);
+          const rows=ents.map((e:any,i:number)=>[i+1,e.tanggalAwal||"",e.tanggalAkhir||"",e.jamMasuk||"",e.jamKeluar||"",sanitizeCellForExcel(e.keperluanLembur||""),sanitizeCellForExcel(e.keterangan||"")]);
           const ws=XLSX.utils.aoa_to_sheet([["No","Tgl Awal","Tgl Akhir","Jam Masuk","Jam Keluar","Keperluan Lembur","Keterangan"],...rows]);
           ws["!cols"]=[{wch:4},{wch:14},{wch:14},{wch:10},{wch:10},{wch:28},{wch:20}];
           XLSX.utils.book_append_sheet(wb,ws,p.name.slice(0,28));
@@ -4082,6 +5190,50 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     setDbxLemburBusy(false);
   };
 
+  /* ── LAYAR MODE SEDERHANA: hanya nama + tanggal/jam + 2 tombol besar
+     (Masuk & Pulang), sesuai contoh aplikasi absensi resmi RS Panti Rini.
+     Ditampilkan sebagai layar penuh menggantikan seluruh UI tab Lembur
+     biasa (sub-tab, tabel, dsb) selama quickLemburMode aktif. */
+  if (quickLemburMode) {
+    const tglLabel = quickNow.toLocaleDateString("id-ID",{day:"2-digit",month:"2-digit",year:"numeric"}).split("/").join("-");
+    const jamLabel = quickNow.toTimeString().slice(0,5).replace(":",".");
+    return (
+      <div style={{minHeight:"70vh",display:"flex",flexDirection:"column",alignItems:"center",paddingTop:24,paddingBottom:24}}>
+        <div style={{fontSize:15,color:C.tL,marginBottom:2}}>Sistem Koordinasi Kamar Bedah</div>
+        <div style={{fontSize:17,fontWeight:800,color:C.b,marginBottom:14,textAlign:"center"}}>{peg?.name || "Pegawai"}</div>
+        <div style={{fontSize:20,fontWeight:700,color:C.b}}>
+          {tglLabel} <span style={{color:C.tL,fontWeight:500}}>{jamLabel}</span>
+        </div>
+        {isLoadingSelfie && (
+          <div style={{marginTop:16,fontSize:13,color:C.p,fontWeight:600}}>⏳ Memproses GPS &amp; Selfie — mohon tunggu...</div>
+        )}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,width:"100%",maxWidth:420,marginTop:32,padding:"0 16px"}}>
+          <button
+            onClick={handleAbsenMasuk}
+            disabled={isLoadingSelfie || !key}
+            style={{aspectRatio:"1",background:C.p,color:"#fff",border:"none",borderRadius:16,fontSize:22,fontWeight:800,cursor:(isLoadingSelfie||!key)?"default":"pointer",opacity:(isLoadingSelfie||!key)?0.6:1,boxShadow:"0 2px 10px rgba(0,0,0,.12)"}}
+          >
+            Masuk
+          </button>
+          <button
+            onClick={handleAbsenPulang}
+            disabled={isLoadingSelfie || !key}
+            style={{aspectRatio:"1",background:C.p,color:"#fff",border:"none",borderRadius:16,fontSize:22,fontWeight:800,cursor:(isLoadingSelfie||!key)?"default":"pointer",opacity:(isLoadingSelfie||!key)?0.6:1,boxShadow:"0 2px 10px rgba(0,0,0,.12)"}}
+          >
+            Pulang
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={()=>{stopActiveSelfieStream();setIsLoadingSelfie(false);setQuickLemburMode(false);}}
+          style={{marginTop:28,background:"none",border:"none",color:C.tL,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",textDecoration:"underline"}}
+        >
+          Buka tampilan lengkap / edit manual
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div>
       {/* Sub-tabs */}
@@ -4136,16 +5288,21 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                 </div>
               </div>
 
-              {/* Actions */}
-              <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
-                <Btn onClick={()=>{setEditRow(null);setRowForm({jenisEntri:"kerja",tanggalAwal:"",tanggalAkhir:"",jamMasuk:"",jamKeluar:"",jumlahJamAmbil:"",keperluanLembur:"",keterangan:"",ttd:""});}} style={{flex:1}}>✚ Tambah Baris</Btn>
-                <button onClick={()=>fileRef.current?.click()} style={{flex:1,background:C.iBg,border:`1px solid ${C.i}`,borderRadius:10,color:C.i,fontSize:12,fontWeight:700,padding:"10px 14px",cursor:"pointer",fontFamily:"inherit"}}>📥 Import Jadwal dari Excel</button>
-                <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(f)handleImportJadwal(f);e.target.value="";}}/>
-                <Btn onClick={downloadExcel} style={{flex:1,background:"#1565C0",color:"#fff"}}>⬇ Download Excel</Btn>
+              {/* Actions — UPDATE: disederhanakan jadi 1 tombol utama besar +
+                  2 aksi sekunder kecil di bawahnya agar UI tidak crowded.
+                  Import Excel & Download Excel tetap tersedia tapi tidak
+                  mengambil visual weight yang sama dengan aksi utama. */}
+              <div style={{marginBottom:14}}>
+                <Btn full onClick={()=>{stopActiveSelfieStream();setIsLoadingSelfie(false);setShowManualKeluar(false);setEditRow(null);setQuickLemburMode(false);setRowForm({jenisEntri:"kerja",tanggalAwal:"",tanggalAkhir:"",jamMasuk:"",jamKeluar:"",jumlahJamAmbil:"",keperluanLembur:"",keterangan:"",ttd:""});}} style={{marginBottom:8,padding:"14px",fontSize:15,fontWeight:800}}>✚ Tambah Baris Lembur</Btn>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>fileRef.current?.click()} style={{flex:1,background:"#F4F6F8",border:`1px solid ${C.b}`,borderRadius:10,color:C.tL,fontSize:11,fontWeight:700,padding:"8px 10px",cursor:"pointer",fontFamily:"inherit"}}>📥 Import Excel</button>
+                  <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(f)handleImportJadwal(f);e.target.value="";}}/>
+                  <button onClick={downloadExcel} style={{flex:1,background:"#F4F6F8",border:`1px solid ${C.b}`,borderRadius:10,color:C.tL,fontSize:11,fontWeight:700,padding:"8px 10px",cursor:"pointer",fontFamily:"inherit"}}>⬇ Download Excel</button>
+                </div>
               </div>
 
-              {/* Add/Edit row form */}
-              {(editRow!==null || rowForm.tanggalAwal!==undefined) && rowForm.tanggalAwal!==undefined && (
+              {/* Add/Edit row form — muncul kalau rowForm sudah diisi (Tambah/Edit diklik) */}
+              {Object.keys(rowForm).length > 0 && (
                 <Card style={{marginBottom:14,background:"#F0FFF8",border:`1.5px solid ${C.p}33`}}>
                   <SH label={editRow?"✏️ Edit Baris":"✚ Tambah Baris Lembur"} color={C.p}/>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -4161,20 +5318,63 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                         </select>
                       </LF>
                     </div>
-                    <LF label="Tanggal Awal Lembur" req>
-                      <input style={iS} type="date" value={rowForm.tanggalAwal||""} onChange={e=>setRowForm((p:any)=>({...p,tanggalAwal:e.target.value}))}/>
+                    <LF label="Tanggal Awal Lembur (opsional, bisa diisi nanti)">
+                      <DateTxt style={iS} value={rowForm.tanggalAwal||""} onChange={(v:string)=>setRowForm((p:any)=>({...p,tanggalAwal:v}))}/>
                     </LF>
-                    <LF label="Tanggal Akhir Lembur">
-                      <input style={iS} type="date" value={rowForm.tanggalAkhir||""} onChange={e=>setRowForm((p:any)=>({...p,tanggalAkhir:e.target.value}))}/>
-                    </LF>
+                    {(rowForm.jenisEntri||"kerja")==="ambil" && (
+                      <LF label="Tanggal Akhir Lembur">
+                        <DateTxt style={iS} value={rowForm.tanggalAkhir||""} onChange={(v:string)=>setRowForm((p:any)=>({...p,tanggalAkhir:v}))}/>
+                      </LF>
+                    )}
                     {(rowForm.jenisEntri||"kerja")==="kerja" ? (
                       <>
-                        <LF label="Jam Absen Masuk" req>
+                        <LF label="Jam Absen Masuk (opsional, bisa diisi nanti)">
                           <input style={iS} type="time" value={rowForm.jamMasuk||""} onChange={e=>setRowForm((p:any)=>({...p,jamMasuk:e.target.value}))}/>
                         </LF>
-                        <LF label="Jam Absen Keluar" req>
-                          <input style={iS} type="time" value={rowForm.jamKeluar||""} onChange={e=>setRowForm((p:any)=>({...p,jamKeluar:e.target.value}))}/>
-                        </LF>
+                        {/* UPDATE LEMBUR GPS+SELFIE: input manual "Jam Absen Keluar" digantikan tombol
+                            otomatisasi terintegrasi (kamera+GPS) demi mencegah manipulasi waktu.
+                            Field rowForm.jamKeluar tetap sama, hanya cara pengisiannya yang berubah. */}
+                        <div style={{gridColumn:"1 / -1",border:`1px dashed ${rowForm.jamKeluar?C.s:"#cbd5e1"}`,padding:14,borderRadius:10,background:rowForm.jamKeluar?C.sBg:"#f8fafc",marginTop:6}}>
+                          <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:C.s}}>
+                            📸 VERIFIKASI SELESAI LEMBUR (GPS &amp; ANTI-MANIPULASI WAKTU)
+                          </div>
+                          <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:8,flexWrap:"wrap"}}>
+                            <Btn outline onClick={handleSelfieKeluarOtomatis} style={{background:C.pBg,color:C.p,fontSize:12}} disabled={isLoadingSelfie}>
+                              {isLoadingSelfie ? "🔄 Mengunci Parameter Absen..." : "📷 Klik untuk Selfie & Ambil Jam Keluar"}
+                            </Btn>
+                            {rowForm.fotoKeluarUrl && (
+                              <img
+                                src={rowForm.fotoKeluarUrl}
+                                alt="Preview Selfie"
+                                style={{width:45,height:45,borderRadius:6,objectFit:"cover",border:`1px solid ${C.s}`}}
+                              />
+                            )}
+                          </div>
+                          {rowForm.jamKeluar && (
+                            <div style={{fontSize:12,color:C.s,fontWeight:600,lineHeight:"1.4"}}>
+                              ✓ Waktu Terkunci Pada Tanggal: {rowForm.tanggalAkhir?fDMY(rowForm.tanggalAkhir):"—"} | Jam: {rowForm.jamKeluar}<br/>
+                              📍 Koordinat Lokasi: {rowForm.lokasiKeluar||"—"}
+                            </div>
+                          )}
+                          {/* FALLBACK MANUAL: hanya tampil kalau GPS+kamera keduanya gagal/tidak aktif.
+                              Kalau selfie berhasil → tersembunyi. Kalau gagal → muncul otomatis via
+                              setShowManualKeluar(true) di handleSelfieKeluarOtomatis. */}
+                          {showManualKeluar && (
+                            <div style={{marginTop:10,paddingTop:10,borderTop:`1px dashed ${C.w}`}}>
+                              <div style={{fontSize:11,color:"#92400e",background:"#FEF3C7",borderRadius:8,padding:"6px 10px",marginBottom:8,fontWeight:600}}>
+                                ⚠ GPS/Kamera tidak aktif — isi jam keluar secara manual:
+                              </div>
+                              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                                <LF label="Tanggal Akhir Lembur">
+                                  <DateTxt style={iS} value={rowForm.tanggalAkhir||""} onChange={(v:string)=>setRowForm((p:any)=>({...p,tanggalAkhir:v}))}/>
+                                </LF>
+                                <LF label="Jam Absen Keluar">
+                                  <input style={iS} type="time" value={rowForm.jamKeluar||""} onChange={e=>setRowForm((p:any)=>({...p,jamKeluar:e.target.value}))}/>
+                                </LF>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </>
                     ) : (
                       <div style={{gridColumn:"1 / -1"}}>
@@ -4202,8 +5402,8 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                     </LF>
                   </div>
                   <div style={{display:"flex",gap:10,marginTop:8}}>
-                    <Btn full onClick={saveEntry} style={{flex:2}}>✓ Simpan</Btn>
-                    <Btn full outline color={C.g} onClick={()=>{setEditRow(null);setRowForm({});}} style={{flex:1}}>Batal</Btn>
+                    <Btn full onClick={()=>saveEntry()} disabled={isLoadingSelfie} style={{flex:2}}>✓ Simpan</Btn>
+                    <Btn full outline color={C.g} onClick={()=>{stopActiveSelfieStream();setIsLoadingSelfie(false);setShowManualKeluar(false);setEditRow(null);setRowForm({});}} style={{flex:1}}>Batal</Btn>
                   </div>
                 </Card>
               )}
@@ -4218,7 +5418,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                   <div style={{textAlign:"center",padding:"32px 16px",color:C.tL}}>
                     <div style={{fontSize:32,marginBottom:8}}>📋</div>
                     <div style={{fontSize:13,fontWeight:600}}>Belum ada data lembur bulan ini</div>
-                    <div style={{fontSize:12,marginTop:4}}>Klik "Tambah Baris" atau "Import Jadwal dari Excel"</div>
+                    <div style={{fontSize:12,marginTop:4}}>Klik "✚ Tambah Baris Lembur" untuk mulai mencatat</div>
                   </div>
                 ) : (
                   <div style={{overflowX:"auto"}}>
@@ -4246,7 +5446,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                             <tr key={e.id} style={{background:isAmbil?"#FFF4ED":(i%2===0?"#FAFBFD":"#F0FFF8"),borderBottom:`1px solid ${C.b}`}}>
                               <td style={{padding:"8px 10px",textAlign:"center",fontWeight:700,color:C.p}}>{e.no}</td>
                               <td style={{padding:"8px 10px",fontWeight:600,color:C.t}}>{fDMY(e.tanggalAwal||e.jadwalDinas)||"—"}</td>
-                              <td style={{padding:"8px 10px",fontWeight:600,color:C.t}}>{e.tanggalAkhir||"—"}</td>
+                              <td style={{padding:"8px 10px",fontWeight:600,color:C.t}}>{e.tanggalAkhir?fDMY(e.tanggalAkhir):"—"}</td>
                               <td style={{padding:"8px 10px",color:"#1565C0",fontWeight:600}}>{isAmbil?"—":(e.jamMasuk||"—")}</td>
                               <td style={{padding:"8px 10px",color:"#B71C1C",fontWeight:600}}>{isAmbil?"—":(e.jamKeluar||"—")}</td>
                               <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
@@ -4265,7 +5465,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                               <td style={{padding:"8px 10px",color:C.tL}}>{e.keterangan||"—"}</td>
                               <td style={{padding:"8px 10px",color:C.g,fontStyle:e.ttd?"normal":"italic"}}>{e.ttd||"·"}</td>
                               <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
-                                <button onClick={()=>{setEditRow(e.id);setRowForm({...e});}} style={{background:C.iBg,border:`1px solid ${C.i}`,borderRadius:6,color:C.i,padding:"3px 8px",cursor:"pointer",fontSize:11,marginRight:4}}>✏</button>
+                                <button onClick={()=>{stopActiveSelfieStream();setIsLoadingSelfie(false);setQuickLemburMode(false);setEditRow(e.id);setRowForm({...e});}} style={{background:C.iBg,border:`1px solid ${C.i}`,borderRadius:6,color:C.i,padding:"3px 8px",cursor:"pointer",fontSize:11,marginRight:4}}>✏</button>
                                 <button onClick={()=>delEntry(e.id)} style={{background:C.dBg,border:`1px solid ${C.dL}`,borderRadius:6,color:C.d,padding:"3px 8px",cursor:"pointer",fontSize:11}}>🗑</button>
                               </td>
                             </tr>
@@ -4735,7 +5935,19 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
     Object.fromEntries(MON_ROOMS.map(r=>[r, Object.fromEntries(MON_JAMS.map(j=>[j,{...ES}]))]));
   const [slots,setSlots] = useState<Record<string,Record<string,SL>>>(mkSlots);
 
-  /* Isi ulang form slots ketika tanggal berubah */
+  /* Isi ulang form slots ketika tanggal berubah.
+     CATATAN (setelah dikaji ulang): SENGAJA tidak menambahkan
+     monitoringEntries ke deps meski itu berarti form tidak auto-refresh
+     saat device lain menyimpan data monitoring pada tanggal yang sama.
+     Alasannya: `slots` adalah DRAFT LOKAL yang sedang diketik user secara
+     aktif (nilai suhu/kelembaban per slot belum tersimpan). Menambahkan
+     monitoringEntries ke deps akan memicu mkSlots() dan MERESET SELURUH
+     draft form — termasuk input yang sedang diketik user tapi belum
+     diklik "Simpan" — setiap kali ADA SAJA perubahan monitoringEntries
+     dari device lain, walau untuk ruangan/tanggal yang tidak terkait sama
+     sekali. Risiko kehilangan input aktif ini jauh lebih berbahaya
+     daripada risiko form menampilkan data sedikit usang. Trade-off ini
+     disengaja — biarkan apa adanya. */
   useEffect(()=>{
     const ns = mkSlots();
     MON_ROOMS.forEach(ruang=>{
@@ -5020,7 +6232,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
           {subTab==="harian"&&(
             <div>
               <div style={{fontSize:11,fontWeight:700,color:"#64748B",marginBottom:4}}>Tanggal Input</div>
-              <input type="date" value={formDate} onChange={e=>setFormDate(e.target.value)} style={{...iSm,width:"auto"}}/>
+              <DateTxt value={formDate} onChange={(v:string)=>setFormDate(v)} style={{...iSm,width:"auto"}}/>
             </div>
           )}
         </div>
@@ -6759,7 +7971,134 @@ const ALL_TABS: Array<{k:string; l:string; roles:Array<"admin"|"perawat">}> = [
   {k:"arsip",     l:"🗂 Arsip",      roles:["admin"]},
 ];
 
+// ===== Install Prompt PWA (Android/desktop pakai event browser, iOS pakai instruksi manual) =====
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
+
+const KB_INSTALL_DISMISS_KEY = "kb_install_banner_dismissed_at";
+const KB_INSTALL_DISMISS_MS = 7 * 24 * 60 * 60 * 1000; // 7 hari
+
+function kbIsStandalone(): boolean {
+  return (
+    window.matchMedia("(display-mode: standalone)").matches ||
+    (window.navigator as unknown as { standalone?: boolean }).standalone === true
+  );
+}
+
+function kbIsIos(): boolean {
+  const ua = window.navigator.userAgent;
+  const isIosDevice = /iphone|ipad|ipod/i.test(ua);
+  const isIpadOs = /macintosh/i.test(ua) && "ontouchend" in document;
+  return isIosDevice || isIpadOs;
+}
+
+function kbWasDismissedRecently(): boolean {
+  const raw = localStorage.getItem(KB_INSTALL_DISMISS_KEY);
+  if (!raw) return false;
+  const dismissedAt = Number(raw);
+  if (Number.isNaN(dismissedAt)) return false;
+  return Date.now() - dismissedAt < KB_INSTALL_DISMISS_MS;
+}
+
+function InstallPrompt() {
+  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [showIosBanner, setShowIosBanner] = useState(false);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    if (kbIsStandalone() || kbWasDismissedRecently()) return;
+
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e as BeforeInstallPromptEvent);
+      setVisible(true);
+    };
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+
+    if (kbIsIos()) {
+      setShowIosBanner(true);
+      setVisible(true);
+    }
+
+    return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    await deferredPrompt.prompt();
+    const choice = await deferredPrompt.userChoice;
+    if (choice.outcome === "accepted") setVisible(false);
+    setDeferredPrompt(null);
+  };
+
+  const handleDismiss = () => {
+    localStorage.setItem(KB_INSTALL_DISMISS_KEY, String(Date.now()));
+    setVisible(false);
+  };
+
+  if (!visible) return null;
+
+  return (
+    <div style={{
+      position: "fixed", left: "12px", right: "12px", bottom: "12px", zIndex: 9999,
+      background: "#16685F", color: "white", borderRadius: "12px", padding: "14px 16px",
+      boxShadow: "0 4px 16px rgba(0,0,0,0.25)", display: "flex", alignItems: "center",
+      gap: "12px", fontSize: "14px", lineHeight: 1.4,
+    }}>
+      <div style={{ flex: 1 }}>
+        {showIosBanner ? (
+          <span>Instal aplikasi ini: tekan tombol <strong>Share</strong> di Safari, lalu pilih <strong>"Add to Home Screen"</strong>.</span>
+        ) : (
+          <span>Instal Sistem Kamar Bedah ke layar utama untuk akses lebih cepat.</span>
+        )}
+      </div>
+      {!showIosBanner && (
+        <button onClick={handleInstallClick} style={{
+          background: "white", color: "#16685F", border: "none", borderRadius: "8px",
+          padding: "8px 14px", fontWeight: 600, fontSize: "14px", cursor: "pointer", whiteSpace: "nowrap",
+        }}>Instal</button>
+      )}
+      <button onClick={handleDismiss} aria-label="Tutup" style={{
+        background: "transparent", border: "none", color: "white", fontSize: "18px",
+        cursor: "pointer", padding: "0 4px", lineHeight: 1,
+      }}>×</button>
+    </div>
+  );
+}
+// ===== End Install Prompt =====
+
 export default function App() {
+  /* FIX AUDIT #23 (MEDIUM — Silent Failure jika env var Supabase hilang):
+     sebelumnya kegagalan ini hanya di-console.error (tidak terlihat user),
+     lalu aplikasi tetap render normal — perawat bisa login & mengisi form
+     tanpa tahu bahwa SEMUA operasi simpan akan gagal karena tidak pernah
+     ada koneksi ke database sama sekali. Untuk sistem medis, "silent
+     failure" seperti ini berbahaya: perawat mengira data tersimpan padahal
+     tidak. Sekarang aplikasi berhenti di layar blocking yang jelas,
+     mencegah interaksi lebih jauh sampai konfigurasi diperbaiki. */
+  /* ⚠️ CATATAN RULES OF HOOKS: early-return ini AMAN karena SUPA_URL/SUPA_ANON
+     adalah module-level const yang dihitung SEKALI saat file di-load dan
+     TIDAK PERNAH berubah selama sesi browser berjalan — sehingga kondisi ini
+     selalu identik di setiap render (tidak akan pernah mengubah jumlah/urutan
+     hooks di bawahnya). JANGAN tiru pola early-return-sebelum-hooks ini untuk
+     kondisi yang BISA berubah antar render (state/props) — itu akan
+     melanggar Rules of Hooks dan menyebabkan bug "Rendered more hooks than
+     during the previous render". */
+  if (!SUPA_URL || !SUPA_ANON) {
+    return (
+      <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,background:"#FEF2F2",textAlign:"center"}}>
+        <div style={{fontSize:40,marginBottom:12}}>⚠️</div>
+        <div style={{fontSize:16,fontWeight:800,color:"#991B1B",marginBottom:8}}>Konfigurasi Server Belum Lengkap</div>
+        <div style={{fontSize:13,color:"#7F1D1D",maxWidth:420,lineHeight:1.5}}>
+          Aplikasi tidak dapat terhubung ke database (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY belum diset).
+          Semua data TIDAK AKAN TERSIMPAN sampai konfigurasi ini diperbaiki oleh admin/IT.
+          Hubungi tim IT sebelum menggunakan aplikasi ini.
+        </div>
+      </div>
+    );
+  }
   const [pinOK,    setPinOK]    = useState(false);
   const [role,     setRole]     = useState<"admin"|"perawat">("perawat");
   const [pinAdmin,   setPinAdmin]   = useState<string>("2409"); // fallback
@@ -6768,6 +8107,12 @@ export default function App() {
   const [pinFromCloud, setPinFromCloud] = useState(false); // true jika PIN loaded dari Supabase
   const isFirstTime = pinLoaded && !pinFromCloud; // first time jika Supabase tidak punya PIN
   const [tab,      setTab]      = useState("home");
+  /* MENU INPUT LEMBUR KHUSUS: jika true, perawat login lewat tombol
+     "⏰ Input Lembur" di layar PIN, sehingga setelah login HANYA tab Lembur
+     yang tersedia (tanpa tab lain) — mempermudah perawat yang cuma perlu
+     mencatat lembur tanpa harus melewati semua halaman. Login biasa (tombol
+     Masuk biasa) tetap membuka semua tab seperti biasa. */
+  const [lemburOnlyMode, setLemburOnlyMode] = useState(false);
 
   // Load PIN dari Supabase saat pertama buka — pakai SUPA_CLIENT singleton
   useEffect(()=>{
@@ -6835,6 +8180,10 @@ export default function App() {
   const [rtEnabled,      setRtEnabled]      = useState(true); // Realtime aktif otomatis
   const [rtStatus,       setRtStatus]       = useState<"offline"|"connecting"|"online">("offline");
   const [lemburPegawai,  setLemburPegawai]  = useState<any[]>([]);
+  /* OPSI A: state untuk auto-pilih pegawai di ViewLembur setelah login via
+     "⏰ Input Lembur" — diset saat user memilih nama di PinScreen, diteruskan
+     ke ViewLembur sebagai initialSelPeg, lalu dikosongkan setelah dipakai */
+  const [autoSelPeg, setAutoSelPeg] = useState<string>("");
   const [lemburData,     setLemburData]     = useState<Record<string,any>>({});
   const [monitoringEntries, setMonitoringEntries] = useState<MonitoringEntry[]>([]);
   const [monitoringCfg,     setMonitoringCfg]     = useState<MonitoringCfg>(defaultMonCfg);
@@ -6956,11 +8305,16 @@ export default function App() {
       const last = currentCfg.lastExcelBackupTs||0;
       if(now - last < 24*60*60*1000) return; /* 24h not yet elapsed */
       const folder = currentCfg.path.replace(/[^/]+$/, "");
-      const stamp = new Date().toISOString().slice(0,10);
+      /* FIX AUDIT #22 (LOW/MEDIUM — Pergeseran Tanggal Timezone di nama file):
+         sama seperti FIX AUDIT #21 — toISOString() memakai UTC, sehingga
+         backup yang dibuat pukul 00:00–06:59 WIB diberi nama tanggal
+         KEMARIN. Diganti ke toLocalISODate() supaya nama file backup selalu
+         konsisten dengan tanggal kalender WIB yang dilihat admin. */
+      const stamp = toLocalISODate(new Date());
       /* — Operasi Excel — */
       const wbOps = XLSX.utils.book_new();
       const h = ["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status","Dibuat"];
-      const rows = [...currentOps].sort((a:any,b:any)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map((o:any,i:number)=>[i+1,o.date,o.time,o.patient||"",o.age||"",o.rm||"",o.opType||"",o.diagnosis||"",o.procedure||"",o.room||"",o.surgeon||"",o.anesthesiologist||"",o.assistantNurse||"",o.circulatingNurse||"",o.anesthesiaNurse||"",o.onloopNurse||"",o.rrKatim||"",o.status||"",o.createdAt||""]);
+      const rows = [...currentOps].sort((a:any,b:any)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map((o:any,i:number)=>[i+1,o.date,o.time,sanitizeCellForExcel(o.patient||""),o.age||"",o.rm||"",o.opType||"",sanitizeCellForExcel(o.diagnosis||""),sanitizeCellForExcel(o.procedure||""),o.room||"",sanitizeCellForExcel(o.surgeon||""),sanitizeCellForExcel(o.anesthesiologist||""),sanitizeCellForExcel(o.assistantNurse||""),sanitizeCellForExcel(o.circulatingNurse||""),sanitizeCellForExcel(o.anesthesiaNurse||""),sanitizeCellForExcel(o.onloopNurse||""),sanitizeCellForExcel(o.rrKatim||""),o.status||"",o.createdAt||""]);
       const wsOps = XLSX.utils.aoa_to_sheet([h,...rows]);
       XLSX.utils.book_append_sheet(wbOps, wsOps, "Jadwal Operasi");
       const resOps = await dropboxUploadExcel(`${folder}Auto_Operasi_${stamp}.xlsx`, wbOps);
@@ -6970,9 +8324,11 @@ export default function App() {
         const entries: any[][]=[];
         Object.keys(currentLemburData).filter(k=>k.startsWith(p.id+"_")).sort().forEach(k=>{
           const rec=currentLemburData[k];
-          (rec.entries||[]).forEach((e:any)=>entries.push([p.name,p.nik||"",k.replace(p.id+"_",""),e.tanggalAwal||"",e.tanggalAkhir||"",e.jamMasuk||"",e.jamKeluar||"",e.keperluanLembur||"",e.keterangan||"",e.ttd||""]));
+          /* UPDATE LEMBUR GPS+SELFIE: kolom lokasiKeluar & fotoKeluarUrl ditambahkan di ujung kanan,
+             dengan fallback "—" untuk data lama agar tidak ada baris yang error/kosong */
+          (rec.entries||[]).forEach((e:any)=>entries.push([sanitizeCellForExcel(p.name),p.nik||"",k.replace(p.id+"_",""),e.tanggalAwal||"",e.tanggalAkhir||"",e.jamMasuk||"",e.jamKeluar||"",sanitizeCellForExcel(e.keperluanLembur||""),sanitizeCellForExcel(e.keterangan||""),sanitizeCellForExcel(e.ttd||""),e.lokasiKeluar||"—",e.fotoKeluarUrl||"—"]));
         });
-        if(entries.length){const ws=XLSX.utils.aoa_to_sheet([["Nama","NIK","Bulan","Tgl Awal","Tgl Akhir","Jam Masuk","Jam Keluar","Keperluan","Keterangan","TTD"],...entries]);XLSX.utils.book_append_sheet(wbLmb,ws,p.name.slice(0,28));}
+        if(entries.length){const ws=XLSX.utils.aoa_to_sheet([["Nama","NIK","Bulan","Tgl Awal","Tgl Akhir","Jam Masuk","Jam Keluar","Keperluan","Keterangan","TTD","Lokasi Keluar (GPS)","Tautan Foto Selfie"],...entries]);XLSX.utils.book_append_sheet(wbLmb,ws,p.name.slice(0,28));}
       });
       if(!wbLmb.SheetNames.length) XLSX.utils.book_append_sheet(wbLmb,XLSX.utils.aoa_to_sheet([["Belum ada data lembur"]]),"Data Lembur");
       const resLmb = await dropboxUploadExcel(`${folder}Auto_Lembur_${stamp}.xlsx`, wbLmb);
@@ -7098,6 +8454,25 @@ export default function App() {
     loadAllFromSupa();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[pinOK]);
+
+  /* REVISI: sebelumnya lemburPegawai HANYA di-load lewat loadAllFromSupa()
+     yang baru jalan setelah pinOK (setelah login berhasil). Akibatnya saat
+     PinScreen pertama kali dibuka (sebelum login), dropdown nama pegawai di
+     alur "⏰ Input Lembur" selalu kosong dan memunculkan pesan keliru
+     "Belum ada data pegawai" — padahal datanya memang ada di Supabase,
+     hanya belum sempat di-fetch. Di sini kita fetch kb_lembur_pegawai saja
+     (ringan, tanpa data operasi/pasien) SEKALI saat aplikasi pertama kali
+     dimuat, sebelum login, supaya dropdown nama langsung terisi. */
+  useEffect(()=>{
+    if(pinOK) return; // sudah login → biarkan loadAllFromSupa yang urus
+    (async ()=>{
+      try{
+        const {data} = await SUPA_CLIENT.from("kb_lembur_pegawai").select("data").order("updated_at",{ascending:false});
+        if(data?.length) setLemburPegawai(data.map((x:any)=>x.data));
+      } catch { /* offline — PinScreen tetap tampilkan pesan fallback apa adanya */ }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
 
   /* ══════════════════════════════════════════════════════════════════════
      SUPABASE REALTIME — SSOT (Single Source of Truth)
@@ -7457,7 +8832,7 @@ export default function App() {
     latestDataRef.current = {ops, archive, notifs, lemburPegawai, lemburData, monitoringEntries, monitoringCfg, staff, roster};
   },[ops, archive, notifs, lemburPegawai, lemburData, monitoringEntries, monitoringCfg, staff, roster]);
 
-  const handlePinVerify = (newRole: "admin"|"perawat", newAdminPin?: string, newPerawatPin?: string) => {
+  const handlePinVerify = (newRole: "admin"|"perawat", newAdminPin?: string, newPerawatPin?: string, quickLembur?: boolean, pegawaiId?: string) => {
     /* ── TURSO LOG: LOGIN_SUKSES ── */
     AmbilLogMedis(
       "KEAMANAN", newRole==="admin"?"Admin":"Perawat",
@@ -7486,6 +8861,13 @@ export default function App() {
       })();
     }
     setRole(newRole);
+    /* Jika login lewat tombol "⏰ Input Lembur": kunci ke tab lembur saja.
+       Login normal: pastikan mode ini ter-reset (jaga-jaga sesi sebelumnya). */
+    setLemburOnlyMode(!!quickLembur);
+    /* OPSI A: simpan pilihan pegawai dari PinScreen agar ViewLembur bisa
+       auto-set selPeg tanpa user perlu pilih dropdown lagi */
+    if(pegawaiId) setAutoSelPeg(pegawaiId);
+    setTab(quickLembur ? "lembur" : "home");
     lastAct.current=Date.now(); setPinOK(true);
   };
 
@@ -7641,11 +9023,12 @@ export default function App() {
       const pegEntries: any[][] = [];
       Object.keys(ld).filter(k=>k.startsWith(p.id+"_")).sort().forEach(k=>{
         const rec=ld[k];
-        (rec.entries||[]).forEach((e:any)=>pegEntries.push([p.name,p.nik||"",k.replace(p.id+"_",""),e.tanggalAwal||"",e.tanggalAkhir||"",e.jamMasuk||"",e.jamKeluar||"",e.keperluanLembur||"",e.keterangan||"",e.ttd||""]));
+        /* UPDATE LEMBUR GPS+SELFIE: kolom lokasiKeluar & fotoKeluarUrl ditambahkan di ujung kanan */
+        (rec.entries||[]).forEach((e:any)=>pegEntries.push([sanitizeCellForExcel(p.name),p.nik||"",k.replace(p.id+"_",""),e.tanggalAwal||"",e.tanggalAkhir||"",e.jamMasuk||"",e.jamKeluar||"",sanitizeCellForExcel(e.keperluanLembur||""),sanitizeCellForExcel(e.keterangan||""),sanitizeCellForExcel(e.ttd||""),e.lokasiKeluar||"—",e.fotoKeluarUrl||"—"]));
       });
       if(pegEntries.length){
-        const ws=XLSX.utils.aoa_to_sheet([["Nama","NIK","Bulan","Tgl Awal","Tgl Akhir","Jam Masuk","Jam Keluar","Keperluan","Keterangan","TTD"],...pegEntries]);
-        ws["!cols"]=[{wch:22},{wch:14},{wch:10},{wch:14},{wch:14},{wch:10},{wch:10},{wch:28},{wch:20},{wch:14}];
+        const ws=XLSX.utils.aoa_to_sheet([["Nama","NIK","Bulan","Tgl Awal","Tgl Akhir","Jam Masuk","Jam Keluar","Keperluan","Keterangan","TTD","Lokasi Keluar (GPS)","Tautan Foto Selfie"],...pegEntries]);
+        ws["!cols"]=[{wch:22},{wch:14},{wch:10},{wch:14},{wch:14},{wch:10},{wch:10},{wch:28},{wch:20},{wch:14},{wch:24},{wch:32}];
         XLSX.utils.book_append_sheet(wb, ws, p.name.slice(0,28));
       }
     });
@@ -7786,12 +9169,23 @@ export default function App() {
   };
   const sendReminder=(op:any,type:string)=>{
     if((op.reminders||[]).includes(type))return;
-    setNotifs(p=>[{id:gId(),type,label:(type==="H-1"?"H-1":"1 Jam")+" → "+op.surgeon,patient:op.patient,procedure:op.procedure,message:"",sentAt:fNow()},...p]);
+    const notifId = gId();
+    /* FIX AUDIT #24: cap 200 entri terbaru untuk endurance 24/7. */
+    setNotifs(p=>[{id:notifId,type,label:(type==="H-1"?"H-1":"1 Jam")+" → "+op.surgeon,patient:op.patient,procedure:op.procedure,message:"",sentAt:fNow()},...p].slice(0,200));
     const updatedOp = {...op, reminders:[...(op.reminders||[]),type]};
     /* Optimistic update */
     setOps(p=>p.map((o:any)=>o.id===op.id ? updatedOp : o));
     upsertOneToSupa("kb_operasi", updatedOp).then(res=>{
-      if(!res?.ok){ setOps(p=>p.map((o:any)=>o.id===op.id ? op : o)); showToast(`⚠ Gagal mencatat pengingat: ${res?.error||"kesalahan tidak diketahui"}`,C.d); }
+      if(!res?.ok){
+        setOps(p=>p.map((o:any)=>o.id===op.id ? op : o));
+        /* FIX AUDIT #26 (LOW — Rollback Tidak Lengkap): sebelumnya kalau
+           upsertOneToSupa gagal, ops di-rollback tapi entri notifs yang
+           sudah ditambahkan optimistically TIDAK ikut dihapus — log UI
+           tetap menampilkan "✓ berhasil" walau sebenarnya gagal tersimpan.
+           Sekarang notifId dilacak agar entri log ikut dihapus saat rollback. */
+        setNotifs(p=>p.filter((n:any)=>n.id!==notifId));
+        showToast(`⚠ Gagal mencatat pengingat: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
+      }
     });
     showToast("✓ Pengingat dicatat & tersinkron");
   };
@@ -7864,7 +9258,12 @@ export default function App() {
       `Berpindah ke tab: ${k} (via bottom nav)`, { tab: k, role, source: "bottom_nav" });
     setTab(k);
   }, [role, showToast]);
-  const TABS = useMemo(() => ALL_TABS.filter(t => t.roles.includes(role)), [role]);
+  const TABS = useMemo(
+    () => lemburOnlyMode
+      ? ALL_TABS.filter(t => t.k === "lembur")
+      : ALL_TABS.filter(t => t.roles.includes(role)),
+    [role, lemburOnlyMode]
+  );
 
   if(!pinLoaded) return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#5FA39A,#3FA897,#16685F)"}}>
@@ -7876,7 +9275,7 @@ export default function App() {
       </div>
     </div>
   );
-  if(!pinOK) return <PinScreen onVerify={handlePinVerify} pinAdmin={pinAdmin} pinPerawat={pinPerawat} isFirstTime={isFirstTime}/>;
+  if(!pinOK) return <PinScreen onVerify={handlePinVerify} pinAdmin={pinAdmin} pinPerawat={pinPerawat} isFirstTime={isFirstTime} lemburPegawai={lemburPegawai}/>;
 
   const todayOpsCount = ops.filter((o:any)=>o.date===todayDate()).length;
 
@@ -7998,7 +9397,7 @@ export default function App() {
       {tab==="wa"         && <ViewKirimWA ops={ops} staff={staff} setNotifs={setNotifs} showToast={showToast}/>}
       {tab==="statistik"  && <ViewStatistik ops={ops} archive={archive}/>}
       {tab==="staf"       && <ViewStaf staff={staff} setStaff={setStaff} roster={roster} setRoster={setRoster} showToast={showToast} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} upsertBulkToSupa={upsertBulkToSupa}/>}
-      {tab==="lembur"     && <ViewLembur lemburPegawai={lemburPegawai} setLemburPegawai={setLemburPegawai} lemburData={lemburData} setLemburData={setLemburData} showToast={showToast} supaCfg={supaCfg} dbxCfg={dbxCfg} role={role} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa}/>}
+      {tab==="lembur"     && <ViewLembur lemburPegawai={lemburPegawai} setLemburPegawai={setLemburPegawai} lemburData={lemburData} setLemburData={setLemburData} showToast={showToast} supaCfg={supaCfg} dbxCfg={dbxCfg} role={role} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} autoSelPeg={autoSelPeg} onAutoSelPegUsed={()=>setAutoSelPeg("")}/>}
       {tab==="monitoring" && <ViewMonitoring monitoringEntries={monitoringEntries} setMonitoringEntries={setMonitoringEntries} monitoringCfg={monitoringCfg} setMonitoringCfg={setMonitoringCfg} showToast={showToast} supaCfg={supaCfg} dbxCfg={dbxCfg} role={role} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa}/>}
       {tab==="roster_gen" && role==="admin" && <ViewRosterGenerator showToast={showToast} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg}/>}
       {tab==="arsip"      && <ViewArsip
@@ -8027,6 +9426,7 @@ export default function App() {
 
   return (
     <div className="kbShell" style={{color:C.t,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}>
+      <InstallPrompt />
 
       {/* ── Sticky header (mobile + tablet: full header; desktop: top bar only) ── */}
       <div className="kb-header" style={{background:"linear-gradient(135deg,#1e3a8a,#1d4ed8 55%,#0284c7)",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 16px rgba(30,58,138,.35)"}}>
@@ -8053,7 +9453,7 @@ export default function App() {
             )}
             {role==="admin" && <button onClick={()=>setShowPinMgmt(true)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,padding:"6px 10px",color:"#fff",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>⚙ PIN</button>}
             <span style={{background:role==="admin"?"rgba(255,255,255,.25)":"rgba(255,255,255,.12)",border:"1px solid rgba(255,255,255,.3)",borderRadius:8,padding:"4px 9px",color:"#fff",fontSize:10,fontWeight:700}}>{role==="admin"?"🔐 Admin":"👤 Perawat"}</span>
-            <button onClick={()=>{setPinOK(false);setRole("perawat");}} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,padding:"6px 12px",color:"#fff",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>🔒 Kunci</button>
+            <button onClick={()=>{setPinOK(false);setRole("perawat");setLemburOnlyMode(false);}} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,padding:"6px 12px",color:"#fff",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>🔒 Kunci</button>
           </div>
         </div>
         {/* Mobile/tablet tabs — hidden on desktop via CSS */}
