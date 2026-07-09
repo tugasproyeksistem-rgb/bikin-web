@@ -4625,7 +4625,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
           p_key: key,
           p_entry: entryBaru,
           p_base: { ...baseRecForKey, entries: [] },
-        }) as Promise<any>,
+        }) as unknown as Promise<any>,
         15000, "Simpan absen (atomic)"
       );
       if(!error){
