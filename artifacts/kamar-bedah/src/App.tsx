@@ -9,7 +9,6 @@ import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
 import html2canvas from "html2canvas";
 import { createClient, type RealtimeChannel } from "@supabase/supabase-js";
-import { createClient as createTursoClient } from "@libsql/client";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
 
 /* ─── ENV TYPES (FIX #1 — AUDIT CRITICAL #1) ────────────────────────────
@@ -19,13 +18,22 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, R
        readonly VITE_SUPABASE_ANON_KEY: string;
      }
    Dideklarasikan inline di sini agar file ini tetap valid TypeScript
-   tanpa harus menambah file terpisah. */
+   tanpa harus menambah file terpisah.
+
+   FIX AUDIT #29 (CRITICAL — Kebocoran Credential Turso di Client Bundle):
+   VITE_TURSO_URL / VITE_TURSO_TOKEN SEBELUMNYA dipakai di sini untuk
+   membuat @libsql/client langsung di browser. Karena Vite meng-inline
+   SEMUA variabel berprefix VITE_ ke dalam bundle publik, token Turso
+   bisa diekstrak siapa pun lewat DevTools → Sources, memberi akses
+   baca/tulis PENUH ke database audit log. Token ini DIHAPUS TOTAL dari
+   sisi client. Audit log sekarang dikirim lewat Supabase Edge Function
+   "turso-audit-proxy" (lihat supabase/functions/turso-audit-proxy/index.ts),
+   persis seperti pola yang sudah dipakai untuk Dropbox (DBX_PROXY_SECRET).
+   Token Turso asli HANYA hidup sebagai secret server-side (Deno.env). */
 declare global {
   interface ImportMetaEnv {
     readonly VITE_SUPABASE_URL?: string;
     readonly VITE_SUPABASE_ANON_KEY?: string;
-    readonly VITE_TURSO_URL?: string;
-    readonly VITE_TURSO_TOKEN?: string;
   }
   interface ImportMeta {
     readonly env: ImportMetaEnv;
@@ -40,36 +48,38 @@ const CONFIG = {
 const HOSPITAL = CONFIG.HOSPITAL;
 const LOCK_MS  = 10 * 60 * 1000;
 
-/* ─── TURSO AUDIT CLIENT ─────────────────────────────────────────────
-   Driver: @libsql/client (official Turso JS driver).
-   Client di-init sekali di module level — ringan, koneksi di-pool otomatis.
-   Semua tulis audit bersifat FIRE-AND-FORGET (.catch tanpa await) sehingga
-   TIDAK PERNAH memblokir UI rendering apapun di aplikasi utama.
-   ─────────────────────────────────────────────────────────────────── */
-const TURSO_CLIENT = createTursoClient({
-  url:       (import.meta as ImportMeta).env.VITE_TURSO_URL  || "",
-  authToken: (import.meta as ImportMeta).env.VITE_TURSO_TOKEN || "",
-});
+/* ─── TURSO AUDIT LOGGER — via Supabase Edge Function Proxy ──────────
+   FIX AUDIT #29 (CRITICAL): sebelumnya modul ini membuat @libsql/client
+   LANGSUNG di browser dengan token Turso mentah (VITE_TURSO_TOKEN),
+   yang berarti token itu ikut ter-bundle ke JS publik dan bisa dicuri
+   siapa pun lewat DevTools. Sekarang audit log dikirim ke Supabase Edge
+   Function "turso-audit-proxy" — persis pola yang sudah dipakai untuk
+   Dropbox (lihat dbxApiRaw/DBX_PROXY_SECRET). Token & URL Turso asli
+   HANYA disimpan sebagai secret di sisi server (Deno.env di Edge
+   Function), TIDAK PERNAH dikirim ke client.
 
-/** Inisialisasi tabel audit log (DDL CREATE IF NOT EXISTS) — dipanggil sekali saat modul dimuat */
-(async () => {
-  try {
-    await TURSO_CLIENT.execute(`
-      CREATE TABLE IF NOT EXISTS audit_log_kamar_bedah (
-        id       TEXT PRIMARY KEY,
-        waktu    TEXT NOT NULL,
-        kategori TEXT NOT NULL,
-        operator TEXT NOT NULL,
-        aksi     TEXT NOT NULL,
-        detail   TEXT NOT NULL,
-        metadata TEXT NOT NULL
-      )
-    `);
-  } catch (e) {
-    /* DDL gagal (mis: URL kosong saat dev lokal) — diabaikan senyap */
-    console.warn("[TURSO] DDL init skipped:", e);
-  }
-})();
+   Deploy Edge Function berikut sebagai
+   supabase/functions/turso-audit-proxy/index.ts (contoh):
+
+     import { createClient as createTursoClient } from "npm:@libsql/client";
+     const TURSO = createTursoClient({
+       url: Deno.env.get("TURSO_URL")!,
+       authToken: Deno.env.get("TURSO_TOKEN")!,
+     });
+     Deno.serve(async (req) => {
+       const { id, waktu, kategori, operator, aksi, detail, metadata } = await req.json();
+       await TURSO.execute({
+         sql: `INSERT OR IGNORE INTO audit_log_kamar_bedah
+                 (id, waktu, kategori, operator, aksi, detail, metadata)
+               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         args: [id, waktu, kategori, operator, aksi, detail, JSON.stringify(metadata)],
+       });
+       return new Response(JSON.stringify({ ok: true }), { headers: { "Content-Type": "application/json" } });
+     });
+
+   Jalankan DDL CREATE TABLE IF NOT EXISTS di atas SEKALI lewat Turso CLI
+   / migrasi terpisah — bukan lagi otomatis dari client saat modul dimuat.
+   ─────────────────────────────────────────────────────────────────── */
 
 /** fWIB — format Date ke string WIB: "YYYY-MM-DD HH:MM:SS" */
 function fWIB(d: Date = new Date()): string {
@@ -103,23 +113,26 @@ const AmbilLogMedis = (
   detail:   string,
   metadata: object = {}
 ): void => {
-  /* Guard: jika URL Turso tidak dikonfigurasi, skip tanpa error */
-  if(!(import.meta as ImportMeta).env.VITE_TURSO_URL) return;
-
-  TURSO_CLIENT.execute({
-    sql: `INSERT OR IGNORE INTO audit_log_kamar_bedah
-            (id, waktu, kategori, operator, aksi, detail, metadata)
-          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    args: [
-      gHex16(),
-      fWIB(),
-      kategori,
-      operator,
-      aksi,
-      detail,
-      JSON.stringify(metadata),
-    ],
-  }).catch((err: unknown) => console.error("[TURSO] audit log error:", err));
+  /* FIX AUDIT #29: tidak lagi bicara ke Turso langsung dari client.
+     Payload dikirim ke Edge Function "turso-audit-proxy"; kredensial
+     Turso tidak pernah menyentuh browser. Tetap fire-and-forget agar
+     tidak memblokir UI, dan gagal-senyap (best-effort logging) — audit
+     log yang gagal terkirim TIDAK boleh menghalangi alur bisnis utama. */
+  try {
+    SUPA_CLIENT.functions.invoke("turso-audit-proxy", {
+      body: {
+        id: gHex16(),
+        waktu: fWIB(),
+        kategori,
+        operator,
+        aksi,
+        detail,
+        metadata,
+      },
+    }).catch((err: unknown) => console.error("[TURSO-PROXY] audit log error:", err));
+  } catch (err) {
+    console.error("[TURSO-PROXY] audit log invoke error:", err);
+  }
 };
 
 /* ─── CONSTANTS ─────────────────────────────────────────────────────── */
@@ -233,6 +246,20 @@ export type UpsertOneFn = (table: string, data: Record<string, unknown>) => Prom
 
 /** Hapus satu record dari Supabase */
 export type DeleteFromSupaFn = (table: string, id: string) => Promise<{ok: boolean; error?: string}>;
+
+/* FIX AUDIT #42 (LOW — Type Safety pada Payload Realtime): sebelumnya
+   applyDelta(table, payload:any) menerima payload Supabase Realtime tanpa
+   tipe sama sekali, sehingga kalau skema kolom berubah (mis. nama kolom
+   `data`/`updated_at` diganti saat migrasi DB), TypeScript tidak akan
+   memperingatkan apa pun saat build — error baru akan muncul diam-diam di
+   runtime production. RtPayload mendeskripsikan bentuk minimal payload
+   `postgres_changes` dari Supabase (baris disimpan sebagai jsonb di kolom
+   `data`, sesuai pola tabel kb_* di app ini). */
+export interface RtPayload {
+  eventType: "INSERT" | "UPDATE" | "DELETE";
+  new: { id: string; data?: any } | null;
+  old: { id: string } | null;
+}
 
 /** Upsert banyak record ke Supabase sekaligus */
 export type UpsertBulkFn = (table: string, rows: Record<string, unknown>[]) => Promise<{ok: boolean; error?: string}>;
@@ -892,6 +919,58 @@ interface OcrExtractResult {
   confidence: "high" | "low";
 }
 
+/* FIX AUDIT #34 (HIGH — Validasi Runtime pada Respons Eksternal):
+   Sebelumnya `json.data as OcrExtractResult[]` langsung di-cast paksa tanpa
+   validasi bentuk/tipe. Kalau model vision/Worker mengembalikan field
+   dengan tipe tak terduga (mis. `room` berupa angka), pemanggilan method
+   khusus-string (`.match`, `.toUpperCase`) di applyOcrResult/autoSaveOcrBatch
+   akan throw dan bisa membuat komponen crash di tengah alur kerja perawat.
+   coerceOcrResult() memaksa SEMUA field jadi string yang aman dipakai,
+   apa pun tipe asli dari respons server. */
+function coerceOcrResult(raw: any): OcrExtractResult {
+  const s = (v: any): string => typeof v === "string" ? v : (v==null ? "" : String(v));
+  const ot = raw?.opType;
+  return {
+    patient: s(raw?.patient), age: s(raw?.age), ageMonths: s(raw?.ageMonths), rm: s(raw?.rm),
+    diagnosis: s(raw?.diagnosis), procedure: s(raw?.procedure),
+    opType: (ot==="elektif"||ot==="semi"||ot==="cyto") ? ot : "",
+    date: s(raw?.date), time: s(raw?.time), surgeon: s(raw?.surgeon),
+    anesthesiologist: s(raw?.anesthesiologist), room: s(raw?.room),
+    allergy: s(raw?.allergy), bloodType: s(raw?.bloodType),
+    confidence: raw?.confidence==="high" ? "high" : "low",
+  };
+}
+
+/* FIX AUDIT #35 (MEDIUM — Tidak Ada Batas Panjang Teks Bebas): model vision
+   yang berhalusinasi pada gambar buram/kompleks bisa mengembalikan teks
+   sangat panjang. capOcrText() memotong ke panjang wajar untuk field
+   nama/diagnosa/tindakan/dll sebelum disimpan ke form atau database. */
+function capOcrText(s: string, max = 200): string {
+  return s.length > max ? s.slice(0, max) + "…" : s;
+}
+
+/* FIX AUDIT #30 (CRITICAL, bagian OCR): validasi terpusat untuk field
+   semi-terstruktur (umur, tanggal, jam, kamar, gol. darah) hasil OCR.
+   SEBELUMNYA hanya diterapkan di applyOcrResult (jalur 1-kandidat) — jalur
+   autoSaveOcrBatch (≥2 kandidat) menulis field ini MENTAH langsung ke
+   Supabase tanpa validasi apa pun. Sekarang kedua jalur memakai validator
+   yang SAMA, supaya tidak ada lagi celah data tidak valid yang lolos ke
+   database produksi hanya karena lewat jalur auto-save batch. */
+function validateOcrScalarFields(r: OcrExtractResult): {
+  age: string; ageMonths: string; date: string; time: string; room: string; bloodType: string;
+} {
+  const ageNum = Number(r.age);
+  const age = (r.age && !isNaN(ageNum) && ageNum>=0 && ageNum<=150) ? String(ageNum) : "";
+  const moNum = Number(r.ageMonths);
+  const ageMonths = (r.ageMonths && !isNaN(moNum) && moNum>=0 && moNum<=11) ? String(moNum) : "";
+  const date = r.date ? (toISODateStrict(r.date) || "") : "";
+  const time = (r.time && /^([01]\d|2[0-3]):([0-5]\d)$/.test(r.time)) ? r.time : "";
+  const roomMatch = r.room ? r.room.match(/\d+/) : null;
+  const room = roomMatch ? (ROOMS.find(rm2 => rm2.includes(roomMatch[0])) || "") : "";
+  const bloodType = r.bloodType ? (BT.find(bt => bt.toUpperCase()===r.bloodType.toUpperCase()) || "") : "";
+  return { age, ageMonths, date, time, room, bloodType };
+}
+
 /** Kompresi + resize gambar di client sebelum dikirim ke Worker.
  *  Mengecilkan payload — penting untuk jaringan RS yang lambat, dan
  *  mengurangi token/neuron yang dipakai model vision (lebih hemat
@@ -949,7 +1028,10 @@ async function runWorkerOcrScan(
     }
     const json = await res.json();
     if (!json?.ok) return { ok: false, msg: json?.msg || "Gagal — server mengembalikan respons tidak sukses" };
-    return { ok: true, data: json.data as OcrExtractResult[], msg: json.msg || "✓ Berhasil" };
+    /* FIX AUDIT #34: coerce semua item ke tipe string yang aman sebelum
+       diteruskan ke pemanggil (applyOcrResult / autoSaveOcrBatch). */
+    const rawData = Array.isArray(json.data) ? json.data : [];
+    return { ok: true, data: rawData.map(coerceOcrResult), msg: json.msg || "✓ Berhasil" };
   } catch (e: any) {
     return { ok: false, msg: "Gagal menghubungi server OCR: " + (e?.message || "network error") };
   }
@@ -1352,13 +1434,42 @@ class ErrorBoundary extends Component<{children: React.ReactNode},{err:boolean;m
    kendali kode App.tsx ini. */
 const PIN_MAX_ATTEMPTS = 5;
 const PIN_LOCKOUT_MS   = 60_000;
+/* FIX AUDIT #31 (HIGH — Bypass Lockout via Refresh): sebelumnya `attempts`
+   dan `lockedUntil` HANYA berupa useState React biasa, sehingga refresh
+   halaman (F5) langsung mereset percobaan ke 0 dan lockout ke null. Ini
+   membuat brute-force PIN 4 digit (10.000 kombinasi) jadi trivial — tinggal
+   refresh tiap 5 kali gagal. Sekarang state ini di-persist ke sessionStorage
+   agar bertahan lewat refresh (mitigasi client-side). CATATAN: ini tetap
+   bisa dilewati lewat mode incognito/browser lain — perbaikan PERMANEN
+   yang benar adalah enforce rate-limit di server (Supabase Edge Function
+   / tabel kb_login_attempts dengan RLS), karena client tidak pernah bisa
+   dipercaya sepenuhnya untuk self-enforce security control. */
+const PIN_LOCK_STORAGE_KEY = "kb_pin_lock_state_v1";
+function readPinLockState(): {attempts:number; lockedUntil:number|null} {
+  try {
+    const raw = sessionStorage.getItem(PIN_LOCK_STORAGE_KEY);
+    if(!raw) return {attempts:0, lockedUntil:null};
+    const parsed = JSON.parse(raw);
+    /* buang lockout yang sudah lewat waktunya supaya tidak nyangkut permanen */
+    if(parsed.lockedUntil && Date.now() >= parsed.lockedUntil) return {attempts:0, lockedUntil:null};
+    return { attempts: Number(parsed.attempts)||0, lockedUntil: parsed.lockedUntil||null };
+  } catch { return {attempts:0, lockedUntil:null}; }
+}
+function writePinLockState(attempts:number, lockedUntil:number|null){
+  try { sessionStorage.setItem(PIN_LOCK_STORAGE_KEY, JSON.stringify({attempts,lockedUntil})); } catch {}
+}
 function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime,lemburPegawai}: any) {
   const [pin,setPin]   = useState("");
   const [err,setErr]   = useState("");
   const [shake,setShk] = useState(false);
   const [checking,setChecking] = useState(false);
-  const [attempts,setAttempts]     = useState(0);
-  const [lockedUntil,setLockedUntil] = useState<number|null>(null);
+  const initialLock = readPinLockState();
+  const [attempts,setAttempts]     = useState(initialLock.attempts);
+  const [lockedUntil,setLockedUntil] = useState<number|null>(initialLock.lockedUntil);
+  /* Sinkron otomatis ke sessionStorage setiap kali salah satu berubah —
+     pakai useEffect (bukan wrapper setter) agar selalu menulis nilai TERBARU
+     dari kedua state, tidak ada risiko closure basi menimpa nilai yang lain. */
+  useEffect(()=>{ writePinLockState(attempts, lockedUntil); }, [attempts, lockedUntil]);
   // Force setup state (first time: PIN 0000)
   const [setupMode,setSetupMode] = useState(false);
   const [newAdmin,setNewAdmin]   = useState("");
@@ -1410,7 +1521,16 @@ function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime,lemburPegawai}: any
       setTimeout(()=>{setShk(false);},400);
       return;
     }
-    if(isFirstTime && pin==="0000"){
+    /* FIX AUDIT #32 (MEDIUM — Hardcoded Bypass PIN "0000"): sebelumnya
+       bypass ini HANYA dijaga oleh `isFirstTime` (dihitung dari ada/tidaknya
+       PIN di Supabase). Kalau suatu saat pinFromCloud ter-null-kan lagi
+       akibat bug lain (mis. gagal parse config), "0000" jadi backdoor
+       de-facto ke mode setup admin. Sekarang ditambah flag terpisah di
+       localStorage yang HANYA di-set sekali setelah setup benar-benar
+       selesai (lihat doSetup) — begitu flag ini ada, bypass "0000" tidak
+       akan aktif lagi apa pun nilai isFirstTime dari cloud. */
+    const setupSudahSelesai = (()=>{ try { return localStorage.getItem("kb_setup_done_v1")==="1"; } catch { return false; } })();
+    if(isFirstTime && !setupSudahSelesai && pin==="0000"){
       setSetupMode(true); setPin(""); setErr(""); return;
     }
     setChecking(true);
@@ -1431,24 +1551,50 @@ function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime,lemburPegawai}: any
         `PIN salah — percobaan ke-${nextAttempts}/${PIN_MAX_ATTEMPTS}`,
         { attempt: nextAttempts, locked: nextAttempts >= PIN_MAX_ATTEMPTS }
       );
-      if(nextAttempts >= PIN_MAX_ATTEMPTS){
+      const willLock = nextAttempts >= PIN_MAX_ATTEMPTS;
+      if(willLock){
         setLockedUntil(Date.now() + PIN_LOCKOUT_MS);
         setErr(`Terlalu banyak percobaan gagal. Coba lagi dalam ${Math.ceil(PIN_LOCKOUT_MS/1000)} detik.`);
       } else {
         setErr(`PIN salah. Coba lagi. (${nextAttempts}/${PIN_MAX_ATTEMPTS})`);
       }
       setShk(true);
-      setTimeout(()=>{setShk(false);setErr("");setPin("");},1500);
+      /* BUG FIX: sebelumnya setErr("") di sini SELALU dipanggil setelah 1.5 detik,
+         termasuk saat baru saja masuk status terkunci (willLock=true) — akibatnya
+         pesan "Coba lagi dalam 60 detik" hilang dari layar hanya 1.5 detik setelah
+         muncul, padahal input masih terkunci selama sisa ~58.5 detik berikutnya.
+         User jadi bingung kenapa tombol "🔒 Terkunci" tanpa keterangan apa pun.
+         Sekarang: pesan lockout HANYA dihapus oleh efek countdown di bawah (yang
+         memperbarui hitungan mundur tiap detik lalu membersihkannya begitu waktu
+         kunci benar-benar habis) — bukan oleh timer 1.5 detik ini. */
+      setTimeout(()=>{ setShk(false); setPin(""); if(!willLock) setErr(""); },1500);
     } finally {
       setChecking(false);
     }
   };
+  /* Countdown live untuk pesan lockout: memperbarui sisa detik tiap 1 detik
+     selama lockedUntil aktif, lalu otomatis membuka kunci & membersihkan
+     pesan begitu waktunya habis — tanpa perlu user menekan tombol lagi. */
+  useEffect(()=>{
+    if(!lockedUntil) return;
+    const iv = setInterval(()=>{
+      const sisa = lockedUntil - Date.now();
+      if(sisa<=0){
+        setLockedUntil(null); setErr(""); setAttempts(0); clearInterval(iv);
+      } else {
+        setErr(`Terlalu banyak percobaan gagal. Coba lagi dalam ${Math.ceil(sisa/1000)} detik.`);
+      }
+    },1000);
+    return ()=>clearInterval(iv);
+  },[lockedUntil]);
   const doSetup = () => {
     if(newAdmin.length<4){setSetupErr("PIN Admin minimal 4 digit");return;}
     if(newAdmin!==cfAdmin){setSetupErr("PIN Admin tidak cocok");return;}
     if(newPerawat.length<4){setSetupErr("PIN Perawat minimal 4 digit");return;}
     if(newPerawat!==cfPerawat){setSetupErr("PIN Perawat tidak cocok");return;}
     if(newAdmin===newPerawat){setSetupErr("PIN Admin & Perawat tidak boleh sama");return;}
+    /* FIX AUDIT #32: kunci permanen bypass "0000" begitu setup pertama selesai */
+    try { localStorage.setItem("kb_setup_done_v1","1"); } catch {}
     onVerify("admin",newAdmin,newPerawat);
   };
 
@@ -2009,14 +2155,33 @@ interface ScanFormulirProps {
   onResults: (results: OcrExtractResult[]) => void;
   showToast: ShowToastFn;
 }
+/* FIX AUDIT #36 (MEDIUM — Resource Exhaustion): batas jumlah kandidat yang
+   diproses dari 1 scan, mencegah auto-save massal kalau server/model
+   mengembalikan array besar akibat bug atau respons cacat. */
+const MAX_OCR_BATCH = 20;
+/* FIX AUDIT #37 (LOW — Client-Side DoS): batas ukuran file sebelum decode
+   canvas, mencegah browser HP hang saat memproses foto beresolusi sangat
+   tinggi (mis. RAW/HEIC besar). */
+const MAX_OCR_FILE_MB = 15;
 function ScanFormulir({onResults, showToast}: ScanFormulirProps) {
   const [loading, setLoading] = useState(false);
   const cameraInputRef  = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
+  /* FIX AUDIT #38 (LOW — Double-Submit): guard sinkron via ref, pola yang
+     sama seperti isSubmittingAbsenRef di modul lembur — `loading` (state
+     React) saja tidak cukup karena ada celah singkat sebelum re-render di
+     mana tap ganda cepat masih bisa lolos memicu 2 scan bersamaan. */
+  const isProcessingRef = useRef(false);
 
   const handleFile = useCallback(async (file: File | undefined) => {
     if(!file) return;
+    if(isProcessingRef.current) return;
     if(!file.type.startsWith("image/")){ showToast("File harus berupa gambar (foto/screenshot)",C.d); return; }
+    if(file.size > MAX_OCR_FILE_MB*1024*1024){
+      showToast(`Ukuran file terlalu besar (maks ${MAX_OCR_FILE_MB}MB) — coba screenshot atau kompres dulu.`, C.d);
+      return;
+    }
+    isProcessingRef.current = true;
     setLoading(true);
     try{
       // Dikirim ke route /api/ocr-scan di Worker yang sama (Cloudflare
@@ -2027,12 +2192,37 @@ function ScanFormulir({onResults, showToast}: ScanFormulirProps) {
         showToast(res.msg || "Tidak ada data yang berhasil dibaca dari gambar", C.d);
         return;
       }
-      onResults(res.data);
-      AmbilLogMedis("DAFTAR_PASIEN","Perawat","OCR_SCAN_FORMULIR",`Scan formulir berhasil — ${res.data.length} entri terbaca (Cloudflare Workers AI)`,{jumlahEntri:res.data.length});
-      showToast(`✓ ${res.data.length} data terbaca — mohon periksa sebelum simpan`, C.s);
+      const dataCapped = res.data.length > MAX_OCR_BATCH ? res.data.slice(0, MAX_OCR_BATCH) : res.data;
+      /* FIX AUDIT #39 (BUG — Notifikasi Tertimpa & Membingungkan):
+         SEBELUMNYA di sini ada showToast("✓ ... data terbaca — mohon
+         periksa sebelum simpan", C.s) yang SELALU dipanggil PALING AKHIR,
+         menimpa toast spesifik apa pun yang sudah ditampilkan oleh
+         onResults() (mis. peringatan "Tanggal tidak valid" dari
+         applyOcrResult, atau ringkasan hasil dari autoSaveOcrBatch) —
+         karena showToast hanya punya SATU slot pesan yang saling
+         menggantikan. Akibatnya perawat SELALU melihat toast hijau
+         generik yang terkesan "berhasil disimpan", padahal untuk kasus
+         1 pasien (results.length===1 → applyOcrResult) data itu BARU
+         mengisi form, BELUM tersimpan ke Supabase / BELUM masuk tab
+         Jadwal — perawat masih wajib scroll & tekan "Simpan" manual.
+         Sekarang: onResults() SENDIRI yang bertanggung jawab penuh
+         menampilkan toast akhir yang sesuai dengan hasil sebenarnya
+         (lihat applyOcrResult & autoSaveOcrBatch), sehingga pesannya
+         akurat sesuai apa yang benar-benar terjadi pada data. */
+      onResults(dataCapped);
+      AmbilLogMedis("DAFTAR_PASIEN","Perawat","OCR_SCAN_FORMULIR",`Scan formulir berhasil — ${dataCapped.length} entri terbaca (Cloudflare Workers AI)`,{jumlahEntri:dataCapped.length});
+      const totalTerbaca = res.data.length;
+      if(totalTerbaca > MAX_OCR_BATCH){
+        /* Ditunda agar tidak langsung tertimpa toast hasil dari onResults()
+           di atas (yang tampil lebih dulu selama ~3.2 detik). */
+        setTimeout(()=>{
+          showToast(`⚠ Sebelumnya terbaca ${totalTerbaca} entri dari 1 foto — hanya ${MAX_OCR_BATCH} pertama yang diproses. Scan ulang per bagian untuk sisanya.`, C.w);
+        }, 3400);
+      }
     }catch(e:any){
       showToast("Gagal memproses gambar: "+(e?.message||"unknown error"), C.d);
     }finally{
+      isProcessingRef.current = false;
       setLoading(false);
       if(cameraInputRef.current) cameraInputRef.current.value = "";
       if(galleryInputRef.current) galleryInputRef.current.value = "";
@@ -2086,7 +2276,10 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
     }
   },[pendingEditOp]);
 
-  const resetOp = () => { setOpForm({...EOP,date:todayDate()}); setEditingOp(null); setOpErrors({}); setDupWarn(false); };
+  /* FIX AUDIT #39 (lanjutan): reset juga ocrFilledFields di sini — tanpa ini,
+     banner "form terisi dari OCR, BELUM TERSIMPAN" bisa nyangkut/salah tampil
+     lagi setelah form BERHASIL disimpan & dikosongkan untuk entri berikutnya. */
+  const resetOp = () => { setOpForm({...EOP,date:todayDate()}); setEditingOp(null); setOpErrors({}); setDupWarn(false); setOcrFilledFields(new Set()); };
   const saveOp  = () => saveOpFn({opForm, editingOp, setOpErrors, setDupWarn, resetOp});
   const dupWarning = dupWarn;
 
@@ -2103,79 +2296,61 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
   // terisi otomatis dari scan, supaya perawat tahu field mana yang wajib dicek
   // ulang sebelum menyimpan. Field ditandai "kritis" (merah) khusus utk RM &
   // tanggal karena kesalahan baca di dua field ini paling berisiko.
-  const [ocrCandidates, setOcrCandidates] = useState<OcrExtractResult[]>([]);
   const [ocrFilledFields, setOcrFilledFields] = useState<Set<string>>(new Set());
   const OCR_CRITICAL_FIELDS = new Set(["rm","date"]);
 
   const applyOcrResult = (r: OcrExtractResult) => {
     const filled = new Set<string>();
-    let dateWasInvalid = false;
+    /* FIX AUDIT #30/#35 (konsistensi): pakai validator terpusat yang sama
+       dengan autoSaveOcrBatch, supaya jalur 1-kandidat dan ≥2-kandidat
+       tidak lagi bisa berbeda perilaku validasinya. */
+    const v = validateOcrScalarFields(r);
+    let dateWasInvalid = !!r.date && !v.date;
     setOpForm((prev: any) => {
       const next = {...prev};
-      if(r.patient)         { next.patient = r.patient; filled.add("patient"); }
-      // FIX BUG: umur tidak divalidasi range sebelum ini — OCR salah baca
-      // (mis. "999" atau "-5") bisa lolos langsung ke form. Sekarang di-clamp
-      // ke range yang sama dengan batas input HTML form (0-150 th, 0-11 bln).
-      if(r.age){
-        const ageNum = Number(r.age);
-        if(!isNaN(ageNum) && ageNum>=0 && ageNum<=150){ next.age = String(ageNum); filled.add("age"); }
-      }
-      if(r.ageMonths){
-        const moNum = Number(r.ageMonths);
-        if(!isNaN(moNum) && moNum>=0 && moNum<=11){ next.ageMonths = String(moNum); filled.add("ageMonths"); }
-      }
-      if(r.rm)              { next.rm = r.rm; filled.add("rm"); }
-      if(r.diagnosis)       { next.diagnosis = r.diagnosis; filled.add("diagnosis"); }
-      if(r.procedure)       { next.procedure = r.procedure; filled.add("procedure"); }
+      if(r.patient)         { next.patient = capOcrText(r.patient); filled.add("patient"); }
+      if(v.age)             { next.age = v.age; filled.add("age"); }
+      if(v.ageMonths)       { next.ageMonths = v.ageMonths; filled.add("ageMonths"); }
+      if(r.rm)              { next.rm = capOcrText(r.rm, 50); filled.add("rm"); }
+      if(r.diagnosis)       { next.diagnosis = capOcrText(r.diagnosis); filled.add("diagnosis"); }
+      if(r.procedure)       { next.procedure = capOcrText(r.procedure); filled.add("procedure"); }
       if(r.opType)          { next.opType = r.opType; filled.add("opType"); }
       // FIX BUG: field "Kamar Operasi" adalah dropdown dengan opsi tetap
       // (ROOMS = ["Kamar Operasi 1"..."5"]). Teks bebas hasil OCR (mis.
       // "OK 2" atau "Ruang Bedah 2") tidak akan cocok dengan opsi manapun
       // kalau ditaruh mentah — <select> akan tampak kosong/tidak terpilih
       // secara visual walau state sebenarnya berisi string yang salah.
-      // Di sini kita cocokkan angka kamar yang disebut OCR ke opsi ROOMS
-      // yang valid; kalau tidak ada angka yang cocok, field dibiarkan
-      // kosong (tidak diisi) daripada menyimpan nilai yang tidak valid.
-      if(r.room){
-        const roomNumMatch = r.room.match(/\d+/);
-        const matchedRoom = roomNumMatch ? ROOMS.find(rm2 => rm2.includes(roomNumMatch[0])) : undefined;
-        if(matchedRoom){ next.room = matchedRoom; filled.add("room"); }
-      }
+      if(v.room)            { next.room = v.room; filled.add("room"); }
       // FIX BUG (CRITICAL): tanggal SEBELUMNYA masuk mentah dari OCR tanpa
       // lewat toISODateStrict() — validator yang sama dipakai DateTxt di
-      // seluruh app. Tanpa ini, tanggal salah-baca (overflow kalender,
-      // format DD/MM tertukar, dll) bisa lolos ke form tanpa peringatan
-      // untuk field yang paling kritis (jadwal operasi). Sekarang: kalau
-      // tidak valid, field DIKOSONGKAN dan diberi tanda merah agar perawat
-      // WAJIB isi manual — tidak dibiarkan menyimpan tanggal yang salah.
-      if(r.date){
-        const validIso = toISODateStrict(r.date);
-        if(validIso){ next.date = validIso; filled.add("date"); }
-        else { next.date = ""; dateWasInvalid = true; }
-      }
-      if(r.time){
-        // Validasi format jam HH:MM sebelum dipakai
-        if(/^([01]\d|2[0-3]):([0-5]\d)$/.test(r.time)){ next.time = r.time; filled.add("time"); }
-      }
-      if(r.surgeon)         { next.surgeon = r.surgeon; filled.add("surgeon"); }
-      if(r.anesthesiologist){ next.anesthesiologist = r.anesthesiologist; filled.add("anesthesiologist"); }
-      if(r.allergy)         { next.allergy = r.allergy; filled.add("allergy"); }
+      // seluruh app. Kalau tidak valid, field DIKOSONGKAN dan diberi tanda
+      // merah agar perawat WAJIB isi manual.
+      if(v.date)            { next.date = v.date; filled.add("date"); }
+      else if(r.date)        { next.date = ""; }
+      if(v.time)            { next.time = v.time; filled.add("time"); }
+      if(r.surgeon)         { next.surgeon = capOcrText(r.surgeon, 80); filled.add("surgeon"); }
+      if(r.anesthesiologist){ next.anesthesiologist = capOcrText(r.anesthesiologist, 80); filled.add("anesthesiologist"); }
+      if(r.allergy)         { next.allergy = capOcrText(r.allergy, 120); filled.add("allergy"); }
       // FIX BUG: "Golongan Darah" juga dropdown dengan opsi tetap (BT).
-      // Hasil OCR yang tidak persis cocok (mis. "O" tanpa tanda +/-)
-      // akan membuat <select> tampak kosong walau state berisi nilai
-      // yang tidak valid. Di sini kita cocokkan ke opsi BT yang persis,
-      // dan biarkan kosong (bukan default) kalau tidak ada yang cocok.
-      if(r.bloodType){
-        const matchedBt = BT.find(bt => bt.toUpperCase() === r.bloodType.toUpperCase());
-        if(matchedBt){ next.bloodType = matchedBt; filled.add("bloodType"); }
-      }
+      if(v.bloodType)       { next.bloodType = v.bloodType; filled.add("bloodType"); }
       return next;
     });
     setOcrFilledFields(filled);
-    setOcrCandidates([]);
     setOpErrors({});
+    /* FIX AUDIT #39 (BUG UTAMA yang dilaporkan user): SEBELUMNYA fungsi ini
+       hanya menampilkan toast kalau tanggal invalid — untuk kasus normal
+       (semua field valid) TIDAK ADA toast dari applyOcrResult sama sekali,
+       sehingga toast hijau generik "✓ ... data terbaca" dari ScanFormulir
+       (yang terlihat seperti "berhasil disimpan") jadi satu-satunya pesan
+       yang perawat lihat — padahal data BARU mengisi form di tab "Daftar",
+       BELUM tersimpan ke Supabase dan BELUM masuk tab "Jadwal". Ini akar
+       penyebab keluhan "notifikasi berhasil tapi tidak muncul di Jadwal".
+       Sekarang applyOcrResult SELALU menampilkan toast oranye (bukan hijau)
+       yang eksplisit bilang data BELUM tersimpan, apa pun hasil validasinya. */
     if(dateWasInvalid){
-      showToast("⚠ Tanggal hasil scan tidak valid — mohon isi tanggal secara manual", C.d);
+      showToast("⚠ Tanggal hasil scan tidak valid — mohon isi tanggal secara manual, lalu tekan \"Simpan\"", C.d);
+    } else {
+      showToast("📝 Data terbaca & form terisi otomatis — GULIR KE BAWAH, periksa, lalu tekan \"Simpan\" agar masuk ke Jadwal.", C.w);
     }
   };
 
@@ -2233,24 +2408,22 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
           else autoSaveOcrBatch(results);
         }}
       />
-      {ocrCandidates.length>0 && (
-        <Card style={{marginBottom:14,background:"#FFFBEB",border:"1px solid #FDE68A"}}>
-          <SH label={`${ocrCandidates.length} data ditemukan — pilih salah satu`}/>
-          {ocrCandidates.some(c=>c.confidence==="low") && <div style={{fontSize:12,color:C.d,marginBottom:8,fontWeight:600}}>⚠ Sebagian data mungkin kurang akurat (tulisan tangan) — periksa teliti sebelum memilih.</div>}
-          {ocrCandidates.map((c,i)=>(
-            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:i<ocrCandidates.length-1?"1px solid #FDE68A":"none",gap:8}}>
-              <div style={{minWidth:0}}>
-                <div style={{fontWeight:700,fontSize:13,color:C.t}}>{c.patient || "(nama tidak terbaca)"}</div>
-                <div style={{fontSize:11,color:C.tL}}>
-                  {c.procedure || "-"} · {c.date || "-"} {c.time || ""}
-                  {c.confidence==="low" && <span style={{color:C.d,marginLeft:6}}>⚠ perlu dicek</span>}
-                </div>
-              </div>
-              <Btn sm onClick={()=>applyOcrResult(c)}>Pilih</Btn>
-            </div>
-          ))}
-          <Btn full outline color={C.tL} onClick={()=>setOcrCandidates([])} style={{marginTop:8}}>Batalkan</Btn>
-        </Card>
+      {/* CLEANUP: blok "pilih salah satu kandidat OCR" DIHAPUS — ini kode mati
+          peninggalan desain lama. Sejak alur routing berdasar jumlah hasil
+          (results.length===1 → applyOcrResult, ≥2 → autoSaveOcrBatch),
+          ocrCandidates tidak pernah lagi diisi data (hanya pernah di-set ke
+          array kosong), sehingga blok ini TIDAK PERNAH tampil ke pengguna.
+          Dibiarkan ada sebelumnya hanya membingungkan pembaca kode. */}
+      {/* FIX AUDIT #39 (lanjutan): banner PERSISTEN (bukan toast yang hilang
+          dalam 3.2 detik) yang tetap tampil selama form masih berisi data
+          hasil OCR yang belum disimpan — pengingat kuat agar perawat tidak
+          lupa/salah kira sudah tersimpan hanya karena sempat melihat toast
+          sekilas. Hilang otomatis begitu form disimpan (ocrFilledFields
+          direset) atau dikosongkan ulang. */}
+      {ocrFilledFields.size>0 && (
+        <div style={{background:"#FFFBEB",border:"1.5px solid #F59E0B",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:13,color:"#92400E",fontWeight:700}}>
+          📝 Form ini terisi otomatis dari hasil scan OCR — <u>BELUM TERSIMPAN</u>. Periksa data di bawah, lalu tekan tombol "Simpan" agar masuk ke Jadwal Operasi.
+        </div>
       )}
       {dupWarning && <div style={{background:C.wBg,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:13,color:C.w,fontWeight:600,border:`1.5px solid ${C.w}`}}>⚠ Duplikasi: pasien, tanggal & jam yang sama sudah terdaftar.</div>}
       <Card>
@@ -2842,15 +3015,23 @@ function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
 
       /* ── Sheet 6: Data Detail semua operasi ── */
       const headers = ["No","Tanggal","Jam","Pasien","Usia","No RM","Jenis","Diagnosa","Tindakan","Kamar","Dokter Bedah","Dokter Anestesi","Asisten","PERAWAT Instrumen","P.Anestesi","Onloop","RR/Katim","Alergi","Gol.Darah","Status"];
+      /* FIX AUDIT #33 (HIGH — CSV/Excel Formula Injection, CWE-1236):
+         sebelumnya kolom bebas-teks (pasien, diagnosa, tindakan, nama staf,
+         dll) ditulis MENTAH ke aoa_to_sheet, padahal field ini bisa diisi
+         manual atau auto-fill OCR (data eksternal). Kalau ada nilai yang
+         diawali "=", "+", "-", atau "@", Excel akan menafsirkannya sebagai
+         formula saat file dibuka (bisa dipakai untuk RCE/DDE atau eksfiltrasi
+         data via =WEBSERVICE(...)). sanitizeCellForExcel() sudah dipakai di
+         modul lembur — sekarang diterapkan juga di sini agar konsisten. */
       const detailRows = filtered.map((op:any,i:number)=>[
         i+1, op.date||"", op.time||"",
-        op.patient||"", op.age||"", op.rm||"",
+        sanitizeCellForExcel(op.patient||""), op.age||"", sanitizeCellForExcel(op.rm||""),
         OT[op.opType as keyof typeof OT]?.label||"Elektif",
-        op.diagnosis||"", op.procedure||"", op.room||"",
-        op.surgeon||"", op.anesthesiologist||"",
-        op.assistantNurse||"", op.circulatingNurse||"",
-        op.anesthesiaNurse||"", op.onloopNurse||"",
-        op.rrKatim||"", op.allergy||"", op.bloodType||"",
+        sanitizeCellForExcel(op.diagnosis||""), sanitizeCellForExcel(op.procedure||""), sanitizeCellForExcel(op.room||""),
+        sanitizeCellForExcel(op.surgeon||""), sanitizeCellForExcel(op.anesthesiologist||""),
+        sanitizeCellForExcel(op.assistantNurse||""), sanitizeCellForExcel(op.circulatingNurse||""),
+        sanitizeCellForExcel(op.anesthesiaNurse||""), sanitizeCellForExcel(op.onloopNurse||""),
+        sanitizeCellForExcel(op.rrKatim||""), sanitizeCellForExcel(op.allergy||""), op.bloodType||"",
         STS[op.status as keyof typeof STS]?.l||op.status||""
       ]);
       const wsDetail = XLSX.utils.aoa_to_sheet([headers,...detailRows]);
@@ -4405,6 +4586,67 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     return true;
   };
 
+  /* FIX AUDIT #30 (CRITICAL — Race Condition / Lost Update pada writeLemburKey):
+     writeLemburKey() menulis SELURUH array `entries` hasil hitung ulang di
+     client. Kalau device/tab lain menulis ke `key` yang sama dalam window
+     waktu network round-trip (mis. user submit absen masuk dari 2 tab, atau
+     retry sesudah timeout), upsert kedua akan MENIMPA array `entries` yang
+     baru saja ditulis device pertama — entry milik device pertama HILANG
+     tanpa error apa pun, karena keduanya "berhasil" secara independen.
+
+     Perbaikan: entri BARU (absen masuk / baris baru) tidak lagi ditulis lewat
+     read-modify-write penuh, tapi lewat RPC Postgres yang meng-append secara
+     atomik di sisi database (jsonb concat dalam satu statement UPDATE),
+     sehingga dua penulisan bersamaan TIDAK saling menimpa.
+
+     Jalankan migrasi berikut SEKALI di Supabase SQL Editor:
+
+       create or replace function append_lembur_entry(p_key text, p_entry jsonb, p_base jsonb)
+       returns void as $$
+         insert into kb_lembur_data (id, data, updated_at)
+         values (p_key, jsonb_set(p_base, '{entries}', jsonb_build_array(p_entry)), now())
+         on conflict (id) do update
+           set data = jsonb_set(
+                 kb_lembur_data.data,
+                 '{entries}',
+                 coalesce(kb_lembur_data.data->'entries', '[]'::jsonb) || p_entry
+               ),
+               updated_at = now();
+       $$ language sql;
+
+     Jika RPC ini belum di-deploy, fallback otomatis ke writeLemburKey (mode
+     lama) supaya aplikasi tetap jalan — tapi tetap rawan race, jadi migrasi
+     di atas SANGAT direkomendasikan untuk segera dijalankan. */
+  const writeLemburKeyAppend = async (baseRecForKey: any, entryBaru: any): Promise<boolean> => {
+    if(!key) return false;
+    try {
+      const { error } = await withTimeout(
+        SUPA_CLIENT.rpc("append_lembur_entry", {
+          p_key: key,
+          p_entry: entryBaru,
+          p_base: { ...baseRecForKey, entries: [] },
+        }) as Promise<any>,
+        15000, "Simpan absen (atomic)"
+      );
+      if(!error){
+        /* Sinkron optimis di state lokal — data otoritatif tetap datang lewat
+           realtime/loadFromSupaTable, ini hanya agar UI langsung responsif. */
+        setLemburData((p:Record<string,any>)=>{
+          const prevEntries = p[key!]?.entries || baseRecForKey.entries || [];
+          return {...p, [key!]: {...baseRecForKey, entries:[...prevEntries, entryBaru]}};
+        });
+        return true;
+      }
+      console.warn("[LEMBUR] RPC append_lembur_entry gagal/belum ada, fallback ke write penuh:", error);
+    } catch (e) {
+      console.warn("[LEMBUR] RPC append_lembur_entry error, fallback ke write penuh:", e);
+    }
+    /* Fallback: RPC belum di-deploy → pola lama (tetap ada risiko race,
+       lebih baik daripada gagal total sebelum migrasi dijalankan). */
+    const entriesNow: any[] = (key && lemburData[key]?.entries) || baseRecForKey.entries || [];
+    return writeLemburKey({ ...baseRecForKey, entries: [...entriesNow, entryBaru] });
+  };
+
   /* REVISI: saveEntry sekarang menerima parameter opsional `formOverride`.
      Dipakai oleh auto-save (login lembur) agar menyimpan data rowForm yang
      PALING BARU (hasil GPS+selfie) tanpa risiko stale-state, sementara
@@ -4441,11 +4683,15 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
        sebelum tombol Simpan diklik. */
     const recNow: any = (key && lemburData[key]) || rec;
     const entriesNow: any[] = recNow.entries || [];
-    const upd = editRow
-      ? entriesNow.map((e:any)=>e.id===editRow?{...e,...cleanForm}:e)
-      : [...entriesNow,{id:gId(),...cleanForm,no:entriesNow.length+1}];
     showToast("⟳ Menyimpan...",C.p);
-    const ok = await writeLemburKey({...recNow, entries:upd});
+    /* FIX AUDIT #30: baris BARU pakai append atomic (RPC) agar tidak
+       menimpa entry dari device/tab lain yang menulis di window waktu yang
+       sama; baris EDIT tetap pakai write penuh karena mengubah field pada
+       entry yang sudah ada (butuh RPC update-by-id terpisah untuk atomik
+       penuh — lihat catatan pada writeLemburKeyAppend). */
+    const ok = editRow
+      ? await writeLemburKey({...recNow, entries: entriesNow.map((e:any)=>e.id===editRow?{...e,...cleanForm}:e)})
+      : await writeLemburKeyAppend(recNow, {id:gId(),...cleanForm,no:entriesNow.length+1});
     isSubmittingAbsenRef.current = false;
     if(ok){ setEditRow(null); setRowForm({}); showToast("✓ Baris disimpan & tersinkron",C.s); }
   };
@@ -4768,7 +5014,8 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
       jumlahJamAmbil: "", keperluanLembur: "", keterangan: "", ttd: ""
     };
     showToast("⟳ Menyimpan absen masuk...", C.p);
-    const ok = await writeLemburKey({ ...(lemburData[key!]||rec), entries: [...entriesNow, entryBaru] });
+    /* FIX AUDIT #30: append atomic, bukan read-modify-write penuh */
+    const ok = await writeLemburKeyAppend(lemburData[key!]||rec, entryBaru);
     isSubmittingAbsenRef.current = false;
     /* FIX AUDIT #19 (MEDIUM — setState setelah unmount): guard mounted
        harus dicek lagi SETELAH await KEDUA (writeLemburKey), bukan hanya
@@ -4950,7 +5197,8 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
       /* Data lama (sebelum sistem selfie ada) otomatis terisi strip (—) — aman, tidak error */
       const gpsCol    = e.lokasiKeluar || "—";
       const selfieCol = e.fotoKeluarUrl || "—";
-      [e.no,e.tanggalAwal||e.jadwalDinas||"",e.tanggalAkhir||"",masukCol,keluarCol,kepCol,e.keterangan,e.ttd||"",gpsCol,selfieCol].forEach((v,c)=>setC(r,c,String(v||""),false,c===0||c===3||c===4,true,i%2===0?"F0FFF8":undefined));
+      /* FIX AUDIT #41: pakai i+1 (index array), bukan e.no statis yang bisa bentrok */
+      [i+1,e.tanggalAwal||e.jadwalDinas||"",e.tanggalAkhir||"",masukCol,keluarCol,kepCol,e.keterangan,e.ttd||"",gpsCol,selfieCol].forEach((v,c)=>setC(r,c,String(v||""),false,c===0||c===3||c===4,true,i%2===0?"F0FFF8":undefined));
     });
     /* Ringkasan saldo: Didapat / Diambil / Saldo Bersih */
     const totalMinsKerjaX = entries.reduce((s:number,e:any)=>{
@@ -5097,7 +5345,8 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
         const masukCol  = isAmbil ? "—" : (e.jamMasuk||"");
         const keluarCol = isAmbil ? "—" : (e.jamKeluar||"");
         const kepCol    = isAmbil ? `[PENGAMBILAN -${Number(e.jumlahJamAmbil)||0} jam] ${e.keperluanLembur||""}`.trim() : (e.keperluanLembur||"");
-        [String(e.no),e.tanggalAwal||e.jadwalDinas||"",e.tanggalAkhir||"",masukCol,keluarCol,kepCol,e.keterangan||""].forEach((v,c)=>s2(row,c,v,false,c===0||c===3||c===4,true,bg));
+        /* FIX AUDIT #41: pakai i+1 (index array), bukan e.no statis yang bisa bentrok */
+        [String(i+1),e.tanggalAwal||e.jadwalDinas||"",e.tanggalAkhir||"",masukCol,keluarCol,kepCol,e.keterangan||""].forEach((v,c)=>s2(row,c,v,false,c===0||c===3||c===4,true,bg));
       });
       ws2["!ref"]=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:2+r.entries.length,c:6}});
       ws2["!cols"]=[{wch:4},{wch:16},{wch:16},{wch:14},{wch:14},{wch:24},{wch:20}];
@@ -5447,7 +5696,15 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                           const jamAmbil = isAmbil ? Number(e.jumlahJamAmbil)||0 : 0;
                           return (
                             <tr key={e.id} style={{background:isAmbil?"#FFF4ED":(i%2===0?"#FAFBFD":"#F0FFF8"),borderBottom:`1px solid ${C.b}`}}>
-                              <td style={{padding:"8px 10px",textAlign:"center",fontWeight:700,color:C.p}}>{e.no}</td>
+                              {/* FIX AUDIT #41 (MEDIUM — Nomor Urut Bentrok): kolom "No"
+                                  SEBELUMNYA menampilkan field statis e.no yang dihitung sekali
+                                  saat entri dibuat (entriesNow.length+1). Field ini bisa jadi
+                                  tidak akurat/bentrok kalau ada race penulisan bersamaan atau
+                                  urutan entries berubah (mis. setelah hapus baris tengah tanpa
+                                  semua jalur ikut renumbering). Nomor urut murni tampilan —
+                                  jadi diturunkan langsung dari index array saat render, yang
+                                  SELALU konsisten & tidak pernah bentrok/berlubang. */}
+                              <td style={{padding:"8px 10px",textAlign:"center",fontWeight:700,color:C.p}}>{i+1}</td>
                               <td style={{padding:"8px 10px",fontWeight:600,color:C.t}}>{fDMY(e.tanggalAwal||e.jadwalDinas)||"—"}</td>
                               <td style={{padding:"8px 10px",fontWeight:600,color:C.t}}>{e.tanggalAkhir?fDMY(e.tanggalAkhir):"—"}</td>
                               <td style={{padding:"8px 10px",color:"#1565C0",fontWeight:600}}>{isAmbil?"—":(e.jamMasuk||"—")}</td>
@@ -5825,7 +6082,7 @@ function monXlsx(
       cfg.suhuMin+"-"+cfg.suhuMax,
       cfg.rhMin+"-"+cfg.rhMax,
       ok?"SESUAI":"TIDAK SESUAI",
-      e.petugas,
+      sanitizeCellForExcel(e.petugas||""), // FIX AUDIT #33 (lanjutan): field bebas-teks
     ];
   });
   const ws1 = XLSX.utils.aoa_to_sheet([
@@ -8500,7 +8757,7 @@ export default function App() {
     setRtStatus("connecting");
 
     /* ── Helper: apply delta dari postgres_changes ke local state ── */
-    const applyDelta = (table: string, payload: any) => {
+    const applyDelta = (table: string, payload: RtPayload) => {
       const ev    = payload.eventType as "INSERT"|"UPDATE"|"DELETE";
       const newRec = payload.new?.data ?? null;
       const newId  = payload.new?.id   ?? null;
@@ -9004,7 +9261,9 @@ export default function App() {
     const {ops:o} = latestDataRef.current;
     const wb = XLSX.utils.book_new();
     const h = ["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status","Dibuat"];
-    const rows = [...o].sort((a:any,b:any)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map((op:any,i:number)=>[i+1,op.date,op.time,op.patient||"",op.age||"",op.rm||"",op.opType||"",op.diagnosis||"",op.procedure||"",op.room||"",op.surgeon||"",op.anesthesiologist||"",op.assistantNurse||"",op.circulatingNurse||"",op.anesthesiaNurse||"",op.onloopNurse||"",op.rrKatim||"",op.status||"",op.createdAt||""]);
+    /* FIX AUDIT #33 (HIGH, lanjutan): sanitasi konsisten dengan export lain agar
+       tidak jadi celah formula injection yang luput di path backup manual ini. */
+    const rows = [...o].sort((a:any,b:any)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map((op:any,i:number)=>[i+1,op.date,op.time,sanitizeCellForExcel(op.patient||""),op.age||"",op.rm||"",op.opType||"",sanitizeCellForExcel(op.diagnosis||""),sanitizeCellForExcel(op.procedure||""),op.room||"",sanitizeCellForExcel(op.surgeon||""),sanitizeCellForExcel(op.anesthesiologist||""),sanitizeCellForExcel(op.assistantNurse||""),sanitizeCellForExcel(op.circulatingNurse||""),sanitizeCellForExcel(op.anesthesiaNurse||""),sanitizeCellForExcel(op.onloopNurse||""),sanitizeCellForExcel(op.rrKatim||""),op.status||"",op.createdAt||""]);
     const ws = XLSX.utils.aoa_to_sheet([h,...rows]);
     ws["!cols"]=[{wch:4},{wch:12},{wch:7},{wch:22},{wch:5},{wch:10},{wch:9},{wch:26},{wch:26},{wch:14},{wch:22},{wch:22},{wch:20},{wch:20},{wch:16},{wch:16},{wch:14},{wch:12},{wch:20}];
     XLSX.utils.book_append_sheet(wb, ws, "Jadwal Operasi");
@@ -9083,36 +9342,94 @@ export default function App() {
   const [pendingEditOp, setPendingEditOp] = useState<Operation|null>(null);
   /* ── AUTO-SAVE MULTI-PASIEN DARI OCR ──────────────────────────────────
      Dipanggil saat 1 scan formulir menghasilkan ≥2 kandidat pasien.
-     BERBEDA dari saveOpFn: TIDAK memvalidasi field wajib (nama/tanggal/dsb
+     BERBEDA dari saveOpFn: TIDAK memvalidasi field WAJIB (nama/tanggal/dsb
      boleh kosong) karena tujuannya supaya perawat tidak perlu isi form
      satu-satu untuk tiap pasien — cukup scan, semua langsung masuk daftar,
      lalu perawat TINGGAL EDIT baris yang kurang lengkap. Setiap baris
-     ditandai needsReview:true supaya tampil dengan border biru di daftar,
-     mengingatkan perawat untuk mengecek/melengkapi datanya. */
+     ditandai needsReview:true supaya tampil dengan border biru di daftar.
+
+     FIX AUDIT #30 (CRITICAL — sebelumnya field semi-terstruktur seperti
+     date/time/room/bloodType/age ditulis MENTAH tanpa validasi apa pun di
+     jalur ini, berbeda dengan applyOcrResult yang sudah divalidasi. Kalau
+     model salah baca opType jadi "cyto", banner darurat "EMERGENCY — SEGERA
+     DITANGANI" langsung tampil ke semua staf TANPA verifikasi manusia.
+     Sekarang: field semi-terstruktur divalidasi via validateOcrScalarFields
+     (sama seperti applyOcrResult), teks bebas dipotong via capOcrText, DAN
+     — kalau opType hasil scan adalah "cyto" — status TIDAK langsung dipasang
+     "cyto" ke database; disimpan dulu sebagai "elektif"+needsReview dengan
+     catatan dugaan CYTO di `keterangan`, supaya banner darurat/urutan-atas
+     hanya muncul setelah perawat memverifikasi & mengubahnya secara sadar
+     lewat form edit biasa. */
+  /* FIX AUDIT #40 (HIGH — Tidak Ada Pengecekan Duplikat pada Auto-Save Batch):
+     saveOpFn (jalur manual) sudah mengecek duplikat pasien+tanggal+jam
+     sebelum menyimpan (lihat `dup`/`dupSameDay` di bawah), tapi
+     autoSaveOcrBatch (jalur OCR ≥2 kandidat, tanpa review manusia)
+     SEBELUMNYA tidak mengecek sama sekali. Kalau formulir yang sama
+     ter-scan 2x (kamera lag, atau perawat mengira gagal lalu upload
+     ulang), data pasien bisa masuk GANDA ke jadwal produksi tanpa
+     peringatan apa pun. Sekarang dicek terhadap (a) jadwal yang sudah
+     ada di `ops`, dan (b) duplikat DI DALAM hasil scan itu sendiri
+     (kalau model vision membaca baris yang sama dua kali). Kandidat
+     duplikat DILEWATI (tidak disimpan), dan perawat diberi tahu lewat
+     toast supaya sadar ada entri yang sengaja tidak diproses. */
   const autoSaveOcrBatch = useCallback((results: OcrExtractResult[]) => {
-    const newOps: Operation[] = results.map((r) => ({
-      id: gId(),
-      patient: sanitize(r.patient || ""),
-      age: r.age || "",
-      ageMonths: r.ageMonths || "",
-      rm: sanitize(r.rm || ""),
-      opType: (r.opType || "elektif") as "elektif" | "semi" | "cyto",
-      status: "scheduled",
-      date: r.date || "",
-      time: r.time || "",
-      room: r.room || "",
-      surgeon: sanitize(r.surgeon || ""),
-      anesthesiologist: sanitize(r.anesthesiologist || ""),
-      procedure: sanitize(r.procedure || ""),
-      diagnosis: sanitize(r.diagnosis || ""),
-      allergy: sanitize(r.allergy || "Tidak Ada"),
-      bloodType: r.bloodType || "",
-      reminders: [],
-      requests: [],
-      createdAt: fNow(),
-      updated_at: new Date().toISOString(),
-      needsReview: true,
-    }));
+    /* Guard tambahan (belt-and-suspenders): batasi jumlah entri yang diproses
+       meskipun ScanFormulir sudah membatasi di sisi pemanggil. */
+    const capped = results.length > MAX_OCR_BATCH ? results.slice(0, MAX_OCR_BATCH) : results;
+
+    const dupKey = (patient: string, date: string, time: string) =>
+      `${patient.toLowerCase().trim()}|${date}|${time}`;
+    const existingKeys = new Set(
+      ops.map((o: any) => dupKey(o.patient || "", o.date || "", o.time || ""))
+    );
+    const seenInBatch = new Set<string>();
+    let skippedDup = 0;
+
+    const newOps: Operation[] = [];
+    for (const rRaw of capped) {
+      const r = rRaw;
+      const v = validateOcrScalarFields(r);
+      const suspectedCyto = r.opType === "cyto";
+      const patientClean = sanitize(capOcrText(r.patient || ""));
+      /* Hanya dianggap "cukup sinyal untuk dedup" kalau ketiga kunci
+         (nama, tanggal, jam) terisi — kalau salah satu kosong, terlalu
+         berisiko false-positive (mis. dua pasien beda yang sama-sama
+         belum ada jamnya kebaca "0000"), jadi tetap disimpan sebagai
+         entri baru dan biarkan perawat yang memutuskan saat review. */
+      const hasFullKey = !!(patientClean && v.date && v.time);
+      const key = dupKey(patientClean, v.date, v.time);
+      if (hasFullKey && (existingKeys.has(key) || seenInBatch.has(key))) {
+        skippedDup++;
+        continue;
+      }
+      if (hasFullKey) seenInBatch.add(key);
+      newOps.push({
+        id: gId(),
+        patient: patientClean,
+        age: v.age,
+        ageMonths: v.ageMonths,
+        rm: sanitize(capOcrText(r.rm || "", 50)),
+        /* FIX AUDIT #30: jangan pasang "cyto" otomatis tanpa verifikasi —
+           default ke "elektif" dan catat dugaan di specialNeeds/needsReview. */
+        opType: (suspectedCyto ? "elektif" : (r.opType || "elektif")) as "elektif" | "semi" | "cyto",
+        status: "scheduled",
+        date: v.date,
+        time: v.time,
+        room: v.room,
+        surgeon: sanitize(capOcrText(r.surgeon || "", 80)),
+        anesthesiologist: sanitize(capOcrText(r.anesthesiologist || "", 80)),
+        procedure: sanitize(capOcrText(r.procedure || "")),
+        diagnosis: sanitize(capOcrText(r.diagnosis || "")),
+        allergy: sanitize(capOcrText(r.allergy || "Tidak Ada", 120)),
+        bloodType: v.bloodType,
+        specialNeeds: suspectedCyto ? "⚠ OCR mendeteksi kemungkinan CYTO/EMERGENCY — WAJIB diverifikasi & diubah manual jika benar." : undefined,
+        reminders: [],
+        requests: [],
+        createdAt: fNow(),
+        updated_at: new Date().toISOString(),
+        needsReview: true,
+      } as Operation);
+    }
 
     newOps.forEach((newOp) => {
       logAudit("Tambah (OCR batch)", newOp);
@@ -9123,12 +9440,15 @@ export default function App() {
         `Tambah pasien dari scan OCR (auto-batch): ${newOp.patient || "(nama belum terisi)"} (RM: ${newOp.rm || "-"})`,
         { ...newOp }
       );
-      if (newOp.opType === "cyto") {
+      /* FIX AUDIT #30: log dugaan CYTO tetap dicatat untuk audit trail /
+         transparansi, TAPI tidak lagi memicu opType="cyto" langsung di data
+         (lihat komentar di atas) — verifikasi tetap ada jejaknya. */
+      if (newOp.specialNeeds?.includes("CYTO")) {
         AmbilLogMedis(
           "DAFTAR_PASIEN",
           role === "admin" ? "Admin" : "Perawat",
-          "UBAH_STATUS_CYTO",
-          `EMERGENCY CYTO DETECTED (OCR batch): NRM ${newOp.rm || "-"} — Pasien: ${newOp.patient || "-"}`,
+          "DUGAAN_CYTO_OCR",
+          `Dugaan CYTO dari scan OCR (BELUM diverifikasi): NRM ${newOp.rm || "-"} — Pasien: ${newOp.patient || "-"}`,
           { ...newOp }
         );
       }
@@ -9141,10 +9461,32 @@ export default function App() {
       });
     });
 
-    showToast(`✓ ${newOps.length} pasien otomatis tersimpan — mohon lengkapi & periksa data yang belum lengkap`, C.s);
-    setTab("jadwal");
+    if (skippedDup > 0) {
+      AmbilLogMedis(
+        "DAFTAR_PASIEN",
+        role === "admin" ? "Admin" : "Perawat",
+        "OCR_DUPLIKAT_DILEWATI",
+        `${skippedDup} entri hasil scan OCR dilewati karena sudah ada jadwal dengan pasien+tanggal+jam yang sama`,
+        { skippedDup, totalDiproses: capped.length }
+      );
+    }
+
+    const jumlahDugaanCyto = newOps.filter(o=>o.specialNeeds?.includes("CYTO")).length;
+    const bagianDup = skippedDup>0 ? ` (${skippedDup} entri dilewati karena sudah terdaftar sebelumnya)` : "";
+    if (newOps.length === 0 && skippedDup > 0) {
+      showToast(`⚠ Semua ${skippedDup} entri hasil scan sudah terdaftar sebelumnya — tidak ada yang disimpan (cegah duplikat).`, C.w);
+    } else {
+      showToast(
+        jumlahDugaanCyto>0
+          ? `✓ ${newOps.length} pasien otomatis tersimpan${bagianDup} — ⚠ ${jumlahDugaanCyto} di antaranya DIDUGA CYTO, segera verifikasi manual!`
+          : `✓ ${newOps.length} pasien otomatis tersimpan${bagianDup} — mohon lengkapi & periksa data yang belum lengkap`,
+        jumlahDugaanCyto>0 ? C.d : C.s
+      );
+    }
+    if(newOps.length>0) setTab("jadwal");
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  },[showToast, upsertOneToSupa, logAudit, role]);
+  },[showToast, upsertOneToSupa, logAudit, role, ops]);
+
 
   const saveOpFn = useCallback(({opForm, editingOp, setOpErrors, setDupWarn, resetOp}: SaveOpFnArgs) => {
     const e: Record<string,string>={};
