@@ -26,7 +26,11 @@ const OCR_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
 
 // Model teks Cloudflare Workers AI (jalur pertama untuk paste-teks —
 // gratis, dari kuota Neuron harian yang sama dengan OCR gambar).
-const TEXT_MODEL_CF = "@cf/meta/llama-3.1-8b-instruct";
+// CATATAN: "@cf/meta/llama-3.1-8b-instruct" DIDEPRECATE Cloudflare per
+// 30 Mei 2026 (error 5028 jika masih dipanggil). Diganti ke
+// "@cf/zai-org/glm-4.7-flash" — direkomendasikan Cloudflare sebagai
+// pengganti untuk tool-calling/ekstraksi teks cepat multilingual.
+const TEXT_MODEL_CF = "@cf/zai-org/glm-4.7-flash";
 
 // Model teks Groq (jalur validasi KEDUA, khusus paste-teks di Tab Daftar).
 // "gpt-oss-120b" adalah pengganti resmi Groq untuk llama-3.3-70b-versatile
