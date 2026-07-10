@@ -15,12 +15,35 @@
 export interface Env {
   AI: Ai;
   ASSETS: Fetcher;
+  // Secret — diisi lewat: npx wrangler secret put GROQ_API_KEY
+  GROQ_API_KEY?: string;
 }
 
 const OCR_MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
 // Model ini milik Meta — Cloudflare mewajibkan approve lisensi dulu lewat
 // Cloudflare Dashboard → Workers AI → cari model ini → setujui, sebelum
 // panggilan API berhasil.
+
+// Model teks Cloudflare Workers AI (jalur pertama untuk paste-teks —
+// gratis, dari kuota Neuron harian yang sama dengan OCR gambar).
+const TEXT_MODEL_CF = "@cf/meta/llama-3.1-8b-instruct";
+
+// Model teks Groq (jalur validasi KEDUA, khusus paste-teks di Tab Daftar).
+// "gpt-oss-120b" adalah pengganti resmi Groq untuk llama-3.3-70b-versatile
+// (yang akan di-shutdown 16 Agustus 2026) — performa setara/lebih baik,
+// inferensi lebih cepat. Kalau nanti ingin ganti model lain, cek daftar
+// model terkini di https://console.groq.com/docs/models sebelum mengubah.
+const TEXT_MODEL_GROQ = "openai/gpt-oss-120b";
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+
+// Field yang dianggap "kritis" secara klinis — kalau CF dan Groq TIDAK
+// sepakat pada field ini, field tsb DIKOSONGKAN (bukan ditebak salah satu)
+// supaya perawat wajib mengisi manual. Ini keputusan sadar: pada konteks
+// klinis, mengosongkan field yang meragukan jauh lebih aman daripada
+// menampilkan angka yang salah dengan percaya diri.
+const CRITICAL_FIELDS_FOR_CROSSCHECK: (keyof OcrResult)[] = [
+  "rm", "age", "ageMonths", "date", "bloodType",
+];
 
 const EXTRACTION_PROMPT = `Baca gambar ini. Gambar berisi data permintaan operasi pasien kamar bedah rumah sakit — bisa berupa formulir, tulisan tangan, atau daftar dari chat WhatsApp.
 
@@ -44,6 +67,32 @@ CONTOH: jika judul gambar bertuliskan "Jam 12.00 dr. Adhinanda dan dr. Timor" da
 
 ATURAN OUTPUT:
 Balas HANYA dengan array JSON, dimulai dengan "[" dan diakhiri dengan "]". Tidak ada teks lain sebelum atau sesudahnya — tidak ada judul, penjelasan, atau kesimpulan.`;
+
+// Prompt untuk jalur TEKS (Tab Daftar → paste teks). Sengaja dibuat mirip
+// EXTRACTION_PROMPT gambar (field & aturan sama) supaya kedua model teks
+// (CF & Groq) bisa dibandingkan hasilnya secara adil (apple-to-apple).
+const TEXT_EXTRACTION_PROMPT = `Baca teks ini. Teks berisi data permintaan operasi pasien kamar bedah rumah sakit — bisa berupa memo, instruksi dokter, atau daftar hasil salin-tempel dari chat WhatsApp.
+
+LANGKAH KERJA:
+1. Hitung dulu berapa jumlah pasien yang disebutkan (biasanya ditandai nomor urut 1, 2, 3, dst, atau nama "Ny./Tn./An." yang berbeda-beda).
+2. Untuk SETIAP pasien yang kamu temukan, buat SATU objek JSON terpisah. Jumlah objek dalam array HARUS SAMA DENGAN jumlah pasien yang kamu hitung di langkah 1.
+3. Untuk tiap pasien, isi field berikut apa adanya sesuai teks yang tertulis untuk pasien itu:
+   - "patient": nama pasien
+   - "age": HANYA angka umur, buang kata "th"/"tahun" dari teksnya.
+   - "procedure": nama tindakan/rencana operasi untuk pasien itu, TANPA angka umur di dalamnya.
+   - "diagnosis": kosongkan jika tidak ada info diagnosis terpisah dari prosedur.
+   - "surgeon": jika teks menyebutkan nama dokter, isi nama dokter PERTAMA yang disebut ke "surgeon".
+   - "anesthesiologist": isi nama dokter KEDUA (jika ada) ke field ini.
+   - "date", "time": HANYA isi jika benar-benar tertulis, format tanggal "YYYY-MM-DD" dan jam "HH:MM". JANGAN menebak tanggal/jam hari ini — kosongkan saja jika tidak tertulis.
+   - "opType": isi "elektif", "semi", atau "cyto" HANYA jika jelas disebutkan, selain itu kosongkan.
+   - Field lain ("rm", "room", "allergy", "bloodType") kosongkan jika tidak ada informasinya di teks.
+   - "confidence": "high" jika teks jelas & tidak ambigu, "low" jika ambigu/tidak lengkap.
+
+ATURAN OUTPUT:
+Balas HANYA dengan array JSON, dimulai dengan "[" dan diakhiri dengan "]". Tidak ada teks lain sebelum atau sesudahnya — tidak ada judul, penjelasan, atau kesimpulan.
+
+TEKS:
+`;
 
 // ── Sanitasi & validasi server-side (defense-in-depth, konsisten dengan
 //    toISODateStrict dkk di client) ──────────────────────────────────────
@@ -172,17 +221,212 @@ function extractJsonArrayFromText(text: string): unknown | null {
   }
 }
 
-// ── Handler OCR ───────────────────────────────────────────────────────
+// ── Jalur TEKS: CF text model (utama) + Groq (validator) ──────────────
+
+/** Panggil model teks Cloudflare Workers AI, urai balasannya jadi array
+ *  mentah (belum disanitasi). Melempar Error kalau gagal — pemanggil
+ *  wajib try/catch. */
+async function callCfTextModel(env: Env, text: string): Promise<unknown[]> {
+  const raw = await env.AI.run(TEXT_MODEL_CF as any, {
+    messages: [
+      { role: "user", content: TEXT_EXTRACTION_PROMPT + text },
+    ],
+    max_tokens: 3000,
+  } as any);
+
+  const responseText =
+    typeof raw === "string"
+      ? raw
+      : (raw && typeof (raw as any).response === "string")
+      ? (raw as any).response
+      : null;
+
+  if (responseText === null) {
+    throw new Error("Format respons CF text model tidak dikenali");
+  }
+  const extracted = extractJsonArrayFromText(
+    responseText.replace(/```json\s*|```/g, "").trim()
+  );
+  if (extracted === null) throw new Error("Gagal parse hasil CF text model");
+  return Array.isArray(extracted) ? extracted : [extracted];
+}
+
+/** Panggil Groq (OpenAI-compatible chat completions) sebagai validator
+ *  kedua untuk jalur paste-teks. Melempar Error kalau gagal — dianggap
+ *  NON-FATAL oleh pemanggil (lihat handleOcrScanText): kalau Groq gagal/
+ *  timeout, sistem tetap jalan dengan hasil CF saja + catatan bahwa
+ *  validasi kedua tidak tersedia, BUKAN menggagalkan seluruh request. */
+async function callGroqTextModel(env: Env, text: string): Promise<unknown[]> {
+  if (!env.GROQ_API_KEY) throw new Error("GROQ_API_KEY belum diset di secret Worker");
+
+  const res = await fetch(GROQ_API_URL, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${env.GROQ_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: TEXT_MODEL_GROQ,
+      messages: [
+        { role: "user", content: TEXT_EXTRACTION_PROMPT + text },
+      ],
+      max_tokens: 3000,
+      temperature: 0,
+    }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`Groq API error (${res.status}): ${errText.slice(0, 300)}`);
+  }
+
+  const json = (await res.json()) as any;
+  const responseText: string | undefined = json?.choices?.[0]?.message?.content;
+  if (typeof responseText !== "string") {
+    throw new Error("Format respons Groq tidak dikenali");
+  }
+  const extracted = extractJsonArrayFromText(
+    responseText.replace(/```json\s*|```/g, "").trim()
+  );
+  if (extracted === null) throw new Error("Gagal parse hasil Groq");
+  return Array.isArray(extracted) ? extracted : [extracted];
+}
+
+/** Bandingkan hasil CF vs Groq untuk PASIEN YANG SAMA (dicocokkan lewat
+ *  index array — asumsi: kedua model diberi teks yang sama & diminta
+ *  urutan yang sama, sesuai instruksi prompt). Untuk tiap field di
+ *  CRITICAL_FIELDS_FOR_CROSSCHECK yang TIDAK SEPAKAT antara CF & Groq,
+ *  field itu DIKOSONGKAN pada hasil akhir (bukan diganti salah satu),
+ *  dan confidence pasien tsb diturunkan ke "low" + catatan ditambahkan.
+ *
+ *  CATATAN JUJUR: pencocokan berbasis index, BUKAN nama pasien. Kalau CF
+ *  dan Groq mendeteksi JUMLAH pasien yang berbeda dari teks yang sama
+ *  (mis. CF baca 3 pasien, Groq baca 2), pasien di luar irisan index
+ *  tidak bisa dicross-check — untuk kasus ini seluruh field kritis pasien
+ *  tsb dikosongkan juga sebagai fail-safe, karena ketidaksesuaian JUMLAH
+ *  pasien adalah tanda parsing tidak dapat diandalkan. */
+function crossCheckResults(
+  cfRaw: unknown[],
+  groqRaw: unknown[] | null
+): { results: OcrResult[]; crossCheckNote: string } {
+  const cf = cfRaw.map(sanitizeResult);
+
+  if (groqRaw === null) {
+    // Groq gagal dipanggil (error jaringan, key belum diset, dll) —
+    // tetap kembalikan hasil CF apa adanya, dengan catatan transparan.
+    return {
+      results: cf,
+      crossCheckNote:
+        "⚠ Validasi kedua (Groq) tidak tersedia saat ini — hasil HANYA dari satu model. " +
+        "Periksa lebih teliti sebelum simpan.",
+    };
+  }
+
+  const groq = groqRaw.map(sanitizeResult);
+  const countMismatch = cf.length !== groq.length;
+
+  const merged: OcrResult[] = cf.map((cfItem, i) => {
+    const groqItem = groq[i];
+    if (!groqItem) {
+      // Tidak ada pasangan Groq untuk index ini → fail-safe: kosongkan
+      // semua field kritis, turunkan confidence.
+      const emptied = { ...cfItem };
+      for (const k of CRITICAL_FIELDS_FOR_CROSSCHECK) (emptied as any)[k] = "";
+      return { ...emptied, confidence: "low" };
+    }
+    let anyMismatch = false;
+    const out = { ...cfItem };
+    for (const k of CRITICAL_FIELDS_FOR_CROSSCHECK) {
+      const a = String((cfItem as any)[k] ?? "").trim();
+      const b = String((groqItem as any)[k] ?? "").trim();
+      // Sepakat kalau sama persis, ATAU salah satu kosong dan yang lain
+      // juga kosong. Kalau salah satu isi dan yang lain beda (termasuk
+      // salah satu kosong & satu lagi isi), dianggap TIDAK sepakat —
+      // lebih aman mengosongkan daripada memakai satu-satunya nilai yang
+      // tidak terverifikasi silang.
+      if (a !== b) {
+        anyMismatch = true;
+        (out as any)[k] = "";
+      }
+    }
+    if (anyMismatch) out.confidence = "low";
+    return out;
+  });
+
+  const noteParts: string[] = [];
+  if (countMismatch) {
+    noteParts.push(
+      `⚠ CF mendeteksi ${cf.length} pasien, Groq mendeteksi ${groq.length} pasien dari teks yang sama — ` +
+      `jumlah tidak sesuai, field kritis pasien terkait dikosongkan sebagai tindakan pencegahan.`
+    );
+  }
+  const hadFieldMismatch = merged.some(r => r.confidence === "low");
+  if (hadFieldMismatch && !countMismatch) {
+    noteParts.push(
+      "⚠ CF dan Groq TIDAK sepakat pada satu atau lebih field kritis (RM/umur/tanggal/gol.darah) " +
+      "untuk sebagian pasien — field tsb dikosongkan, WAJIB diisi manual."
+    );
+  }
+
+  return { results: merged, crossCheckNote: noteParts.join(" ") };
+}
+
+/** Handler untuk payload `{ text: string }` — jalur paste-teks di Tab
+ *  Daftar. CF text model = parser utama (selalu dipanggil). Groq =
+ *  validator kedua (best-effort: kalau gagal, tidak menggagalkan seluruh
+ *  request — lihat callGroqTextModel & crossCheckResults). */
+async function handleOcrScanText(text: string, env: Env): Promise<Response> {
+  let cfRaw: unknown[];
+  try {
+    cfRaw = await callCfTextModel(env, text);
+  } catch (e) {
+    return Response.json(
+      {
+        ok: false,
+        msg: "Gagal memproses teks dengan model utama: " + (e instanceof Error ? e.message : "unknown error"),
+      },
+      { status: 502 }
+    );
+  }
+
+  let groqRaw: unknown[] | null = null;
+  try {
+    groqRaw = await callGroqTextModel(env, text);
+  } catch {
+    // Best-effort — Groq gagal tidak menggagalkan request, lihat
+    // crossCheckResults untuk penanganannya.
+    groqRaw = null;
+  }
+
+  const { results, crossCheckNote } = crossCheckResults(cfRaw, groqRaw);
+
+  return Response.json({
+    ok: true,
+    data: results,
+    msg: crossCheckNote
+      ? `✓ ${results.length} data operasi terbaca. ${crossCheckNote}`
+      : `✓ ${results.length} data operasi terbaca (divalidasi silang CF + Groq)`,
+  });
+}
+
+
 
 async function handleOcrScan(request: Request, env: Env): Promise<Response> {
   try {
     const body = (await request.json().catch(() => null)) as
-      | { image_base64?: string; media_type?: string }
+      | { image_base64?: string; media_type?: string; text?: string }
       | null;
+
+    // Jalur BARU: paste-teks (Tab Daftar) → CF text model + Groq validator.
+    // Dicek duluan sebelum validasi image_base64 supaya tidak mewajibkan
+    // gambar saat payload memang berupa teks.
+    if (typeof body?.text === "string" && body.text.trim().length > 0) {
+      return handleOcrScanText(body.text.trim(), env);
+    }
 
     if (!body?.image_base64) {
       return Response.json(
-        { ok: false, msg: "image_base64 wajib diisi" },
+        { ok: false, msg: "image_base64 atau text wajib diisi" },
         { status: 400 }
       );
     }
