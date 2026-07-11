@@ -235,7 +235,7 @@ async function callCfTextModel(env: Env, text: string): Promise<unknown[]> {
     messages: [
       { role: "user", content: TEXT_EXTRACTION_PROMPT + text },
     ],
-    max_tokens: 3000,
+    max_tokens: 4096,
   } as any);
 
   const responseText =
@@ -274,7 +274,7 @@ async function callGroqTextModel(env: Env, text: string): Promise<unknown[]> {
       messages: [
         { role: "user", content: TEXT_EXTRACTION_PROMPT + text },
       ],
-      max_tokens: 3000,
+      max_tokens: 4096,
       temperature: 0,
     }),
   });
@@ -376,14 +376,19 @@ function crossCheckResults(
 }
 
 /** Handler untuk payload `{ text: string }` — jalur paste-teks di Tab
- *  Daftar. CF text model = parser utama (selalu dipanggil). Groq =
- *  validator kedua (best-effort: kalau gagal, tidak menggagalkan seluruh
- *  request — lihat callGroqTextModel & crossCheckResults). */
+ *  Daftar. CF text model = parser utama, Groq = validator kedua
+ *  (best-effort: kalau gagal, tidak menggagalkan seluruh request — lihat
+ *  crossCheckResults). CF dan Groq dipanggil PARALEL (bukan berurutan)
+ *  supaya total waktu tunggu = waktu yang paling lambat di antara
+ *  keduanya, bukan jumlah keduanya. */
 async function handleOcrScanText(text: string, env: Env): Promise<Response> {
-  let cfRaw: unknown[];
-  try {
-    cfRaw = await callCfTextModel(env, text);
-  } catch (e) {
+  const [cfSettled, groqSettled] = await Promise.allSettled([
+    callCfTextModel(env, text),
+    callGroqTextModel(env, text),
+  ]);
+
+  if (cfSettled.status === "rejected") {
+    const e = cfSettled.reason;
     return Response.json(
       {
         ok: false,
@@ -392,15 +397,11 @@ async function handleOcrScanText(text: string, env: Env): Promise<Response> {
       { status: 502 }
     );
   }
+  const cfRaw = cfSettled.value;
 
-  let groqRaw: unknown[] | null = null;
-  try {
-    groqRaw = await callGroqTextModel(env, text);
-  } catch {
-    // Best-effort — Groq gagal tidak menggagalkan request, lihat
-    // crossCheckResults untuk penanganannya.
-    groqRaw = null;
-  }
+  // Groq best-effort — kalau gagal, tidak menggagalkan request (lihat
+  // crossCheckResults untuk penanganan groqRaw === null).
+  const groqRaw = groqSettled.status === "fulfilled" ? groqSettled.value : null;
 
   const { results, crossCheckNote } = crossCheckResults(cfRaw, groqRaw);
 
@@ -458,7 +459,7 @@ async function handleOcrScan(request: Request, env: Env): Promise<Response> {
             ],
           },
         ],
-        max_tokens: 3000,
+        max_tokens: 4096,
       } as any);
     } catch (aiErr) {
       return Response.json(
