@@ -1,0 +1,65 @@
+/* src/services/dropbox.ts
+   Service backup/restore Dropbox — semua panggilan lewat Supabase Edge
+   Function "dropbox-proxy" (token Dropbox asli hanya hidup di server,
+   TIDAK PERNAH menyentuh browser). Dipindah dari App.tsx (langkah 4
+   refactor — pisah services), TIDAK ADA perubahan logika. */
+
+import * as XLSX from "xlsx";
+import type { DropboxConfig } from "../types";
+import { SUPA_CLIENT } from "./supabase";
+
+/* Semua backup/restore Dropbox TIDAK LAGI bicara langsung ke Dropbox API
+   dari client — melainkan lewat Supabase Edge Function "dropbox-proxy"
+   (lihat supabase/functions/dropbox-proxy/index.ts). Token asli hanya
+   hidup sebagai secret di server (Deno.env), tidak pernah dikirim ke /
+   disimpan di browser. Client hanya memegang DBX_PROXY_SECRET — sebuah
+   shared secret terbatas yang HANYA bisa memicu 2 aksi spesifik
+   (backup/restore 1 folder) lewat proxy ini, BUKAN kunci akses Dropbox
+   penuh. Lihat catatan di vite-env.d.ts / .env.local untuk cara isi nilainya. */
+export const DBX_PROXY_SECRET = (import.meta as any).env?.VITE_PROXY_SHARED_SECRET || "";
+export const DBX_PROXY_FN     = "dropbox-proxy";
+
+export const defaultDbxCfg: DropboxConfig = { path:"/KamarBedahPantiRini/backup.json", autoBackup:true, backupInterval:30, realtimeBackup:true, lastBackup:null, autoExcelBackup:true, lastExcelBackup:null, lastExcelBackupTs:null };
+
+/* Helper tunggal: semua panggilan ke proxy lewat sini agar konsisten
+   (header, error handling, parsing respons) */
+export async function callDbxProxy(body: Record<string, any>): Promise<{ok:boolean; data?:any; msg:string}> {
+  try {
+    const {data, error} = await SUPA_CLIENT.functions.invoke(DBX_PROXY_FN, {
+      body,
+      headers: {"x-proxy-secret": DBX_PROXY_SECRET},
+    });
+    if(error) return {ok:false, msg:"Proxy error: "+(error.message||"tidak diketahui")};
+    if(!data?.ok) return {ok:false, msg:data?.msg||"Gagal — proxy mengembalikan respons tidak sukses"};
+    return {ok:true, data:data.data, msg:data.msg||"✓ Berhasil"};
+  } catch(e:any){ return {ok:false, msg:"Gagal menghubungi proxy: "+(e?.message||"network error")}; }
+}
+
+export async function dropboxUpload(cfg: DropboxConfig, data: any): Promise<{ok:boolean;msg:string}> {
+  return callDbxProxy({action:"backup", path:cfg.path, payload:data});
+}
+
+export async function dropboxDownload(cfg: DropboxConfig): Promise<{ok:boolean;data?:any;msg:string}> {
+  return callDbxProxy({action:"restore", path:cfg.path});
+}
+
+/* Upload Excel per-kategori ke Dropbox (lewat proxy — payload dikirim base64) */
+export async function dropboxUploadExcel(path: string, wb: any): Promise<{ok:boolean;msg:string}> {
+  try {
+    const buf = XLSX.write(wb, {type:"array", bookType:"xlsx"}) as Uint8Array;
+    /* FIX AUDIT #13 (MEDIUM — O(n²) Base64 Encoding):
+       String concatenation per-byte dalam loop menciptakan O(n²) alokasi memori
+       karena setiap `+=` membuat string baru (JavaScript string immutable).
+       Untuk file Excel 500+ baris ini bisa menyebabkan browser freeze.
+       Fix: chunk-based approach — proses 8192 byte sekaligus menggunakan
+       spread operator + String.fromCharCode(), lalu gabungkan chunk-nya.
+       Ini mempertahankan keamanan btoa() sambil mengurangi alokasi ke O(n). */
+    const CHUNK = 8192;
+    let binary = "";
+    for (let i = 0; i < buf.length; i += CHUNK) {
+      binary += String.fromCharCode(...buf.subarray(i, i + CHUNK));
+    }
+    const base64 = btoa(binary);
+    return callDbxProxy({action:"upload_excel", path, base64});
+  } catch(e:any){ return {ok:false, msg:"Gagal menyiapkan file Excel: "+(e?.message||"unknown error")}; }
+}

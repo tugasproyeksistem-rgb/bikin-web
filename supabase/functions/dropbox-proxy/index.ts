@@ -27,7 +27,7 @@ Deno.serve(async (req) => {
       headers: {
         "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
         "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Authorization, Content-Type, x-proxy-secret",
+        "Access-Control-Allow-Headers": "Authorization, Content-Type, x-proxy-secret, x-client-info, apikey, x-supabase-api-version",
       },
     });
   }
@@ -66,6 +66,14 @@ Deno.serve(async (req) => {
       const arr = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
       dropboxBody = arr;
+    } else if (action === "upload_image") {
+      dropboxUrl = "https://content.dropboxapi.com/2/files/upload";
+      dropboxHeaders["Dropbox-API-Arg"] = JSON.stringify({ path: fullPath, mode: "overwrite", autorename: false });
+      dropboxHeaders["Content-Type"] = "application/octet-stream";
+      const bin = atob(base64);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      dropboxBody = arr;
     } else {
       return new Response(JSON.stringify({ error: "Invalid action" }), {
         status: 400,
@@ -78,7 +86,36 @@ Deno.serve(async (req) => {
       body: dropboxBody,
     });
     const result = await dropboxRes.text();
-    return new Response(JSON.stringify({ ok: true, result, debug_path: fullPath }), {
+
+    let directLink = "";
+    if (action === "upload_image" && dropboxRes.ok) {
+      try {
+        const shareRes = await fetch("https://api.dropboxapi.com/2/sharing/create_shared_link_with_settings", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ path: fullPath }),
+        });
+        const shareText = await shareRes.text();
+        let shareData: any = {};
+        try { shareData = JSON.parse(shareText); } catch {}
+        if (shareRes.ok && shareData.url) {
+          directLink = shareData.url.replace("?dl=0", "?raw=1").replace("&dl=0", "&raw=1");
+        } else if (shareData.error?.[".tag"] === "shared_link_already_exists") {
+          const existingUrl = shareData.error.shared_link_already_exists?.metadata?.url;
+          if (existingUrl) {
+            directLink = existingUrl.replace("?dl=0", "?raw=1").replace("&dl=0", "&raw=1");
+          }
+        }
+      } catch {
+        /* Link gagal dibuat (network/parse error) — upload file tetap dianggap
+           sukses, frontend menerima url:"" dan menangani kasus ini. */
+      }
+    }
+
+    return new Response(JSON.stringify({ ok: true, data: { url: directLink }, result, debug_path: fullPath }), {
       headers: {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": ALLOWED_ORIGIN,

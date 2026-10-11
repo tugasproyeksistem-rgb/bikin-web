@@ -8,7 +8,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, Component, Fragment 
 import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
 import html2canvas from "html2canvas";
-import { createClient, type RealtimeChannel } from "@supabase/supabase-js";
+import { type RealtimeChannel } from "@supabase/supabase-js";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
 
 /* ─── ENV TYPES (FIX #1 — AUDIT CRITICAL #1) ────────────────────────────
@@ -41,12 +41,7 @@ declare global {
 }
 
 /* ─── CONFIG ────────────────────────────────────────────────────────── */
-const CONFIG = {
-  HOSPITAL: "Rumah Sakit Panti Rini",
-  DEFAULT_PIN: "1234",
-};
-const HOSPITAL = CONFIG.HOSPITAL;
-const LOCK_MS  = 10 * 60 * 1000;
+// CONFIG, HOSPITAL, LOCK_MS sekarang diimpor dari ./constants (lihat import di atas)
 
 /* ─── TURSO AUDIT LOGGER — via Supabase Edge Function Proxy ──────────
    FIX AUDIT #29 (CRITICAL): sebelumnya modul ini membuat @libsql/client
@@ -81,17 +76,7 @@ const LOCK_MS  = 10 * 60 * 1000;
    / migrasi terpisah — bukan lagi otomatis dari client saat modul dimuat.
    ─────────────────────────────────────────────────────────────────── */
 
-/** fWIB — format Date ke string WIB: "YYYY-MM-DD HH:MM:SS" */
-function fWIB(d: Date = new Date()): string {
-  const wib = new Date(d.getTime() + 7 * 60 * 60 * 1000);
-  return wib.toISOString().replace("T"," ").slice(0, 19);
-}
-
-/** gHex8 — 16-char hex string sebagai ID audit unik (crypto.randomUUID fallback) */
-function gHex16(): string {
-  try { return crypto.randomUUID().replace(/-/g,"").slice(0,16); }
-  catch { return Math.random().toString(36).slice(2,10) + Math.random().toString(36).slice(2,10); }
-}
+// fWIB dan gHex16 sekarang diimpor dari ./utils (lihat import di atas)
 
 /**
  * AmbilLogMedis — Non-blocking real-time audit logger ke Turso.
@@ -106,303 +91,151 @@ function gHex16(): string {
  * PENTING: Fungsi ini TIDAK menggunakan await — eksekusi Turso berjalan
  * asinkronus di background, TIDAK memblokir event loop React.
  */
-const AmbilLogMedis = (
-  kategori: string,
-  operator: string,
-  aksi:     string,
-  detail:   string,
-  metadata: object = {}
-): void => {
-  /* FIX AUDIT #29: tidak lagi bicara ke Turso langsung dari client.
-     Payload dikirim ke Edge Function "turso-audit-proxy"; kredensial
-     Turso tidak pernah menyentuh browser. Tetap fire-and-forget agar
-     tidak memblokir UI, dan gagal-senyap (best-effort logging) — audit
-     log yang gagal terkirim TIDAK boleh menghalangi alur bisnis utama. */
-  try {
-    SUPA_CLIENT.functions.invoke("turso-audit-proxy", {
-      body: {
-        id: gHex16(),
-        waktu: fWIB(),
-        kategori,
-        operator,
-        aksi,
-        detail,
-        metadata,
-      },
-    }).catch((err: unknown) => console.error("[TURSO-PROXY] audit log error:", err));
-  } catch (err) {
-    console.error("[TURSO-PROXY] audit log invoke error:", err);
-  }
-};
+// AmbilLogMedis sekarang diimpor dari ./services (lihat import di atas)
 
-/* ─── CONSTANTS ─────────────────────────────────────────────────────── */
-const ROOMS = ["Kamar Operasi 1","Kamar Operasi 2","Kamar Operasi 3","Kamar Operasi 4","Kamar Operasi 5"];
-const BT    = ["A+","A-","B+","B-","AB+","AB-","O+","O-","Tidak Diketahui"];
-const ST    = { surgeon:"Dokter Bedah", anesthesiologist:"Dokter Anestesi", circulating:"PERAWAT Instrumen", anesthesia_nurse:"Perawat Anestesi", onloop:"Perawat Onloop", katim:"RR / Katim" };
-const OT    = { elektif:{label:"Elektif",c:"#1565C0",bg:"#E3F2FD"}, semi:{label:"Semi-Elektif",c:"#E65100",bg:"#FFF3E0"}, cyto:{label:"⚠ CYTO",c:"#B71C1C",bg:"#FFCDD2"} };
-const STS   = { scheduled:{l:"Terjadwal",c:"#1565C0",bg:"#E3F2FD"}, ongoing:{l:"Berlangsung",c:"#00897B",bg:"#E0F2F1"}, done:{l:"Selesai",c:"#2E7D32",bg:"#E8F5E9"}, batal:{l:"Batal/Tunda",c:"#C62828",bg:"#FFEBEE"} };
-const C     = {
-  /* ── Brand Blues (core gradient palette) ── */
-  p:"#0284c7",   pL:"#38bdf8",  pBg:"#e0f2fe",
-  /* ── Danger ── */
-  d:"#dc2626",   dBg:"#fef2f2", dL:"#fca5a5",
-  /* ── Warning ── */
-  w:"#d97706",   wBg:"#fffbeb",
-  /* ── Info / secondary blue ── */
-  i:"#1d4ed8",   iBg:"#eff6ff",
-  /* ── Success green ── */
-  s:"#16a34a",   sBg:"#f0fdf4",
-  /* ── WhatsApp ── */
-  wa:"#25D366",  waBg:"#dcfce7",
-  /* ── Neutrals ── */
-  g:"#475569",   gBg:"#f1f5f9",
-  t:"#0f172a",   tL:"#64748b",
-  b:"#e2e8f0",   white:"#ffffff",
-  bg:"#f8fafc",  gold:"#C9A961",
-};
-const EOP: Partial<Operation> = {patient:"",age:"",ageMonths:"",rm:"",opType:"elektif",diagnosis:"",procedure:"",ruangAsal:"",room:ROOMS[0],date:"",time:"",surgeon:"",anesthesiologist:"",assistantNurse:"",circulatingNurse:"",anesthesiaNurse:"",onloopNurse:"",rrKatim:"",allergy:"Tidak Ada",specialNeeds:"",bloodType:"O+"};
-const PAGE_SIZE = 10;
-const DEFAULT_RECIPIENT = "Suster Thresmiati CB, bu Niken, pak Jaka dan teman sejawat, mohon ijin laporan kamar bedah:";
+/* ROOMS, BT, ST, OT, STS, C, EOP, PAGE_SIZE, DEFAULT_RECIPIENT sekarang
+   diimpor dari ./constants (lihat import di atas) */
 
 /* ─── DOMAIN INTERFACES (FIX AUDIT #9 — HIGH: TypeScript any masif) ────
    Mendefinisikan kontrak tipe yang eksplisit untuk entitas domain inti.
    Dengan interface ini TypeScript dapat mendeteksi prop hilang, tipe salah,
    dan refactoring yang memecah kontrak — sebelumnya semua terbungkam 'any'. */
 
-export interface Operation {
-  id: string;
-  patient: string;
-  age?: string;
-  ageMonths?: string;
-  rm?: string;
-  opType: "elektif" | "semi" | "cyto";
-  status: "scheduled" | "ongoing" | "done" | "batal";
-  date: string;
-  time: string;
-  room: string;
-  surgeon: string;
-  anesthesiologist: string;
-  procedure: string;
-  diagnosis: string;
-  allergy: string;
-  bloodType: string;
-  ruangAsal?: string;
-  assistantNurse?: string;
-  circulatingNurse?: string;
-  anesthesiaNurse?: string;
-  onloopNurse?: string;
-  rrKatim?: string;
-  specialNeeds?: string;
-  createdAt?: string;
-  updated_at?: string;
-  reminders?: string[];
-  requests?: { id: string; text: string; time: string }[];
-  cancelReason?: string;
-  needsReview?: boolean;
-}
+/* REFACTOR (langkah 1 — pisah types): semua interface/type yang tadinya
+   didefinisikan langsung di file ini (Operation, StaffMember, RosterEntry,
+   Notif, ShowToastFn, UpsertOneFn, DeleteFromSupaFn, UpsertBulkFn,
+   RtPayload, SupabaseConfig, DropboxConfig, OcrExtractResult, AssistantMsg,
+   MonitoringEntry, MonitoringCfg, NurseType, RosterNurse, RosterGenProps,
+   NurseMaster, ViewJadwalProps, SaveOpFnArgs, ViewDaftarProps,
+   ViewLaporanProps, ViewKirimWAProps, ViewStafProps, ViewArsipProps,
+   ScanFormulirProps, OfflineQueueItem, BeforeInstallPromptEvent) sekarang
+   dipindah ke src/types/ (dikelompokkan per domain) — TIDAK ADA perubahan
+   definisi, murni pindah lokasi supaya App.tsx lebih ramping & types bisa
+   dipakai ulang dari file lain nanti (mis. saat komponen View dipisah di
+   langkah refactor berikutnya). */
+import type {
+  Operation, StaffMember, RosterEntry, Notif,
+  ShowToastFn, UpsertOneFn, DeleteFromSupaFn, UpsertBulkFn, RtPayload,
+  SupabaseConfig, DropboxConfig,
+  OcrExtractResult, AssistantMsg,
+  MonitoringEntry, MonitoringCfg,
+  NurseType, RosterNurse, RosterGenProps, NurseMaster,
+  ViewJadwalProps, SaveOpFnArgs, ViewDaftarProps, ViewLaporanProps,
+  ViewKirimWAProps, ViewStafProps, ViewArsipProps, ScanFormulirProps,
+  OfflineQueueItem, BeforeInstallPromptEvent,
+} from "./types";
 
-export interface StaffMember {
-  id: string;
-  name: string;
-  role: string;
-  phone?: string;
-  email?: string;
-  specialization?: string;
-  createdAt?: string;
-  updated_at?: string;
-}
+/* REFACTOR (langkah 2 — pisah constants): semua konstanta module-level yang
+   tadinya didefinisikan langsung di file ini sekarang dipindah ke
+   src/constants/ (dikelompokkan per domain) — TIDAK ADA perubahan nilai,
+   murni pindah lokasi. Konstanta yang TIDAK dipindah (mis. SUPA_CLIENT,
+   DBX_PROXY_SECRET) sengaja dibiarkan karena tergolong "services" (dibuat
+   dari pemanggilan fungsi runtime seperti createClient()), rencananya
+   dipindah di langkah refactor terpisah, bukan langkah constants ini. */
+import {
+  CONFIG, HOSPITAL, LOCK_MS, ROOMS, BT, ST, OT, STS, EOP, PAGE_SIZE, DEFAULT_RECIPIENT,
+  C, iS,
+  FORMULA_TRIGGER_CHARS, PIN_MAX_ATTEMPTS, PIN_LOCKOUT_MS, PIN_LOCK_STORAGE_KEY,
+  BATAS_SIANG_MENIT, BATAS_SORE_MENIT, BATAS_MALAM_MENIT, EXCEL_EPOCH, BULAN_ID, BULAN_NAMA_ID,
+  OCR_SCAN_ENDPOINT, MAX_OCR_BATCH, MAX_OCR_FILE_MB, MAX_OCR_PASTE_CHARS, LS_OFFLINE_QUEUE_KEY,
+  MON_JAMS, MON_ROOMS, MON_MONTHS_ID, MC, MON_ROOM_COLORS,
+  MASTER_PERAWAT_LIST, SHIFT_CODES, KB_ROSTER_MASTER_TABLE, SEED_MASTER, SUMMARY_COLS, LS_DRAFT_KEY,
+  ALL_TABS,
+  KB_INSTALL_DISMISS_KEY, KB_INSTALL_DISMISS_MS,
+} from "./constants";
 
-export interface RosterEntry {
-  id: string;
-  staffId: string;
-  date: string;
-  shift: string;
-  ruang?: string;
-  anestJagaList?: string[];
-  anestJaga?: string;
-  anestCytoList?: string[];
-  anestCyto?: string;
-  nurses?: string[];
-  pembawaHP?: string;
-  createdAt?: string;
-  updated_at?: string;
-}
+/* REFACTOR (langkah 3 — pisah utils, batch 1/beberapa: security & sanitasi):
+   fWIB, gHex16, safeJSONParse, hashPin, constantTimeEqual, verifyPin, gId,
+   isValidUUID, sanitize, maskName, maskRM, escHtml dipindah ke src/utils/ —
+   TIDAK ADA perubahan logika. Fungsi utils lain (format, CSV/Excel,
+   OCR-matching, dll) masih di App.tsx, menyusul di batch berikutnya. */
+import {
+  fWIB, gHex16, safeJSONParse, hashPin, constantTimeEqual, verifyPin,
+  gId, isValidUUID, sanitize, maskName, maskRM, escHtml,
+  sanitizeCellForExcel, withTimeout, ensureId,
+  toLocalISODate, todayDate, tmrwDate, fD, fDMY, fNow, fTR, gWord, timeOfDayLabel, fDLower,
+  formatUsia, usiaOp, titleCaseDokter, toISODateStrict,
+  normalizeStaffType, normalizePhone62, isValidPhone62, formatSupaError,
+  xlsxCell, xlsxSetCell, downloadBlob, sanitizeForCSV, parseCSV,
+  coerceOcrResult, capOcrText, normalizeDoctorName, levenshteinRatio,
+  looksLikeNonDoctorAnesthesiaValue, findBestStaffMatch,
+  validateOcrScalarFields, buildOcrSafeApply,
+  compressImageToBase64, rotateImageFile,
+  readPinLockState, writePinLockState,
+  readOfflineQueue, writeOfflineQueue, enqueueOfflineOp, dequeueOfflineOp, countOfflineQueue,
+  msgCyto,
+  monIsOK,
+} from "./utils";
 
-export interface Notif {
-  id: string;
-  type: string;
-  label: string;
-  patient: string;
-  procedure: string;
-  message: string;
-  sentAt: string;
-}
+/* REFACTOR (langkah 4 — pisah services): SUPA_CLIENT, AmbilLogMedis,
+   defaultSupaCfg (Supabase); DBX_PROXY_SECRET, DBX_PROXY_FN, defaultDbxCfg,
+   callDbxProxy, dropboxUpload, dropboxDownload, dropboxUploadExcel (Dropbox);
+   callOcrScanEndpoint, runWorkerOcrScan, runWorkerOcrScanText (OCR) sekarang
+   dipindah ke src/services/ — TIDAK ADA perubahan logika. Ini SATU-SATUNYA
+   tempat createClient() dipanggil sekarang (di services/supabase.ts). */
+import {
+  SUPA_URL, SUPA_ANON, SUPA_CLIENT, AmbilLogMedis, defaultSupaCfg,
+  DBX_PROXY_SECRET, DBX_PROXY_FN, defaultDbxCfg, callDbxProxy, dropboxUpload, dropboxDownload, dropboxUploadExcel,
+  callOcrScanEndpoint, runWorkerOcrScan, runWorkerOcrScanText,
+} from "./services";
 
-/** Fungsi umum untuk menampilkan toast */
-export type ShowToastFn = (msg: string, color?: string) => void;
+/* REFACTOR (langkah 5 — pisah components, batch 1: effects dekoratif):
+   AuroraBackground, MeteorsBackground, GlareHover, Marquee, SplitText,
+   TwinklingStars, RotatingText, SquaresBackground, AnimatedListItem,
+   MagneticButton, SpotlightCard, DecryptedText, TiltCard, ShinyText,
+   fireConfettiBurst, fireClickSpark dipindah ke src/components/effects.tsx
+   — TIDAK ADA perubahan logika. Semua komponen ini murni presentational,
+   tanpa dependency ke state/types/constants aplikasi. */
+import {
+  AuroraBackground, MeteorsBackground, GlareHover, Marquee, SplitText,
+  TwinklingStars, RotatingText, SquaresBackground, AnimatedListItem,
+  MagneticButton, SpotlightCard, DecryptedText, TiltCard, ShinyText,
+  fireConfettiBurst, fireClickSpark,
+} from "./components/effects";
 
-/** Upsert satu record ke Supabase */
-export type UpsertOneFn = (table: string, data: Record<string, unknown>) => Promise<{ok: boolean; error?: string}>;
-
-/** Hapus satu record dari Supabase */
-export type DeleteFromSupaFn = (table: string, id: string) => Promise<{ok: boolean; error?: string}>;
-
-/* FIX AUDIT #42 (LOW — Type Safety pada Payload Realtime): sebelumnya
-   applyDelta(table, payload:any) menerima payload Supabase Realtime tanpa
-   tipe sama sekali, sehingga kalau skema kolom berubah (mis. nama kolom
-   `data`/`updated_at` diganti saat migrasi DB), TypeScript tidak akan
-   memperingatkan apa pun saat build — error baru akan muncul diam-diam di
-   runtime production. RtPayload mendeskripsikan bentuk minimal payload
-   `postgres_changes` dari Supabase (baris disimpan sebagai jsonb di kolom
-   `data`, sesuai pola tabel kb_* di app ini). */
-export interface RtPayload {
-  eventType: "INSERT" | "UPDATE" | "DELETE";
-  new: { id: string; data?: any } | null;
-  old: { id: string } | null;
-}
-
-/** Upsert banyak record ke Supabase sekaligus */
-export type UpsertBulkFn = (table: string, rows: Record<string, unknown>[]) => Promise<{ok: boolean; error?: string}>;
-
-/* Props interfaces untuk komponen View utama */
-export interface ViewJadwalProps {
-  ops: Operation[];
-  setOps: React.Dispatch<React.SetStateAction<Operation[]>>;
-  startEditOp: (op: Operation) => void;
-  deleteOp: (id: string) => Promise<void>;
-  sendReminder: (op: Operation, type: string) => void;
-  reqOpId: string | null;
-  setReqOpId: React.Dispatch<React.SetStateAction<string | null>>;
-  reqText: string;
-  setReqText: React.Dispatch<React.SetStateAction<string>>;
-  addReq: (opId: string) => void;
-  delReq: (opId: string, rId: string) => void;
-  getPhone: (name: string) => string | null;
-  setNotifs: React.Dispatch<React.SetStateAction<Notif[]>>;
-  showToast: ShowToastFn;
-  privacyMode: boolean;
-  role: "admin" | "perawat";
-  upsertOneToSupa: UpsertOneFn;
-}
-
-export interface SaveOpFnArgs {
-  opForm: Partial<Operation>;
-  editingOp: Operation | null;
-  setOpErrors: React.Dispatch<React.SetStateAction<Record<string, string>>>;
-  setDupWarn: React.Dispatch<React.SetStateAction<boolean>>;
-  resetOp: () => void;
-  /* SARAN PENINGKATAN #3 (audit trail OCR): nilai ASLI hasil OCR untuk
-     field yang sempat di-auto-fill, dikumpulkan ViewDaftar (lihat
-     applyOcrResult). Opsional — undefined kalau entri ini tidak berasal
-     dari scan OCR sama sekali (input manual biasa), dalam hal ini
-     saveOpFn tidak mencatat log audit OCR apa pun. */
-  ocrOriginalValues?: Record<string,string>;
-}
-
-export interface ViewDaftarProps {
-  /* FIX AUDIT #24 (CRITICAL — Race condition saat Edit Jadwal):
-     SEBELUMNYA memakai `editOpRef` (ref-callback) yang di-assign oleh
-     ViewDaftar lewat useEffect SETELAH component mount. Karena ViewDaftar
-     hanya di-mount saat tab==="daftar", saat user klik Edit dari tab lain,
-     editOpRef.current MASIH NULL (atau menyimpan fungsi dari instance
-     LAMA yang sudah unmount) — pemanggilannya GAGAL SENYAP tanpa error,
-     dan form yang baru di-mount memakai state default KOSONG. Sekarang
-     diganti `pendingEditOp` (prop biasa) + `clearPendingEditOp` — pola
-     "state lifting" standar React, tidak bergantung timing mount/ref. */
-  pendingEditOp: Operation | null;
-  clearPendingEditOp: () => void;
-  saveOpFn: (args: SaveOpFnArgs) => void;
-  autoSaveOcrBatch: (results: OcrExtractResult[]) => void;
-  staff: StaffMember[];
-  setTab: React.Dispatch<React.SetStateAction<string>>;
-  templates: Operation[];
-  setTemplates: React.Dispatch<React.SetStateAction<Operation[]>>;
-  showToast: ShowToastFn;
-}
-
-export interface ViewLaporanProps {
-  ops: Operation[];
-  staff: StaffMember[];
-  roster: RosterEntry[];
-  showToast: ShowToastFn;
-  role: "admin" | "perawat";
-  privacyMode: boolean;
-}
-
-export interface ViewKirimWAProps {
-  ops: Operation[];
-  staff: StaffMember[];
-  setNotifs: React.Dispatch<React.SetStateAction<Notif[]>>;
-  showToast: ShowToastFn;
-}
-
-export interface ViewStafProps {
-  staff: StaffMember[];
-  setStaff: React.Dispatch<React.SetStateAction<StaffMember[]>>;
-  roster: RosterEntry[];
-  setRoster: React.Dispatch<React.SetStateAction<RosterEntry[]>>;
-  showToast: ShowToastFn;
-  upsertOneToSupa: UpsertOneFn;
-  deleteFromSupa: DeleteFromSupaFn;
-  upsertBulkToSupa: UpsertBulkFn;
-}
-
-/* FIX AUDIT #23 (CRITICAL — Prop Drilling: 36 props flat bertipe `any`):
-   Sebelumnya ViewArsip menerima 36 parameter independen tanpa tipe sama
-   sekali — risiko nyata: mudah lupa meneruskan 1 prop baru di pemanggil
-   (PERNAH BENAR-BENAR TERJADI pada bug `privacyMode` yang ditemukan &
-   diperbaiki di audit sebelumnya). Sekarang dikelompokkan berdasarkan
-   DOMAIN (data, privacy, supabase, dropbox, realtime) — compiler akan
-   MENOLAK compile kalau satu sub-objek lupa diisi di titik pemanggilan,
-   alih-alih baru ketahuan setelah user melaporkan bug. */
-export interface ViewArsipProps {
-  data: {
-    ops: Operation[];
-    archive: any[];
-    notifs: Notif[];
-    lemburData: Record<string, any>;
-    lemburPegawai: any[];
-    monitoringEntries: MonitoringEntry[];
-    monitoringCfg: MonitoringCfg;
-  };
-  setOps: React.Dispatch<React.SetStateAction<Operation[]>>;
-  showToast: ShowToastFn;
-  role: "admin" | "perawat";
-  upsertBulkToSupa: UpsertBulkFn;
-  auditLog: any[];
-  privacy: { mode: boolean; setMode: (v: boolean) => void; };
-  supabase: {
-    cfg: any; setCfg: (fn: any) => void;
-    status: {ok:boolean; msg:string} | null;
-    backingUp: boolean;
-    onBackup: () => Promise<void>;
-    onRestoreOps: () => Promise<void>;
-    onRestoreLembur: () => Promise<void>;
-    onRestoreMonitoring: () => Promise<void>;
-    onRestoreAll: () => Promise<void>;
-  };
-  dropbox: {
-    cfg: DropboxConfig; setCfg: React.Dispatch<React.SetStateAction<DropboxConfig>>;
-    status: {ok:boolean; msg:string} | null;
-    backingUp: boolean;
-    onBackup: () => Promise<void>;
-    onRestoreOps: () => Promise<void>;
-    onRestoreLembur: () => Promise<void>;
-    onBackupOpsXls: () => Promise<void>;
-    onBackupLemburXls: () => Promise<void>;
-    onBackupMonitoringXls: () => Promise<void>;
-  };
-  realtime: { status: string; enabled: boolean; setEnabled: (v:boolean) => void; };
-}
+/* REFACTOR (langkah 5 — pisah components, batch 2: primitives UI dasar):
+   LF, TF, TA, SF, Btn, WaBt, Card, ensureSkeletonCss, ensureCustomFontLink,
+   SkeletonCard, SkeletonList, AnimatedNumber, HomeParallaxBanner,
+   ScrollReveal, Row, Bdg, SH, Toggle, MiniBar, ErrorBoundary dipindah ke
+   src/components/primitives.tsx — TIDAK ADA perubahan logika. Ini dipakai
+   di HAMPIR SELURUH tab aplikasi, jadi blast radius-nya lebih besar dari
+   batch 1 (effects) — sudah diverifikasi diff 100% terhadap kode asli. */
+import {
+  LF, TF, TA, SF, Btn, WaBt, Card,
+  ensureSkeletonCss, ensureCustomFontLink, SkeletonCard, SkeletonList,
+  AnimatedNumber, HomeParallaxBanner, ScrollReveal,
+  Row, Bdg, SH, Toggle, MiniBar, ErrorBoundary,
+} from "./components/primitives";
+import { TabIcon, ActionIcon } from "./components/icons";
+import { HeaderClock } from "./components/header-clock";
+import { InstallPrompt } from "./components/install-prompt";
+import { FloatingAssistant } from "./components/floating-assistant";
+import { PinScreen } from "./components/pin-screen";
+import { DateTxt } from "./components/date-txt";
+import { ScanFormulir } from "./components/scan-formulir";
+import { ViewKirimWA } from "./components/view-kirim-wa";
+import { ViewStatistik } from "./components/view-statistik";
+import { ViewStaf } from "./components/view-staf";
+import { ImportExcel } from "./components/import-excel";
+import { ViewArsip } from "./components/view-arsip";
+import { ViewJadwal } from "./components/view-jadwal";
+import { ViewLaporan } from "./components/view-laporan";
+// Catatan: __ocrSelfTest tidak perlu diimpor eksplisit — mengimpor nama lain
+// dari ocr-matching.ts (file yang sama) sudah memicu window.__ocrSelfTest
+// terpasang otomatis saat modul itu dievaluasi.
 
 
 /* Exception jika data dari cloud terkorupsi (terpotong saat upload, dll).
    Tanpa guard ini seluruh aplikasi bisa Blank Screen sesaat setelah login.
    Helper ini selalu aman: mengembalikan fallback jika parse gagal. */
-const safeJSONParse = (data: any, fallback: any = {}): any => {
-  if (typeof data !== "string") return data ?? fallback;
-  try { return JSON.parse(data); } catch (e) { console.error("[safeJSONParse] Data JSON korup:", e); return fallback; }
-};
+/* FIX BUG #31 (audit lanjutan): SEBELUMNYA hasil parse dikembalikan apa
+   adanya tanpa validasi TIPE — kalau data yang tersimpan ternyata number,
+   boolean, atau string mentah (korup/salah simpan), fungsi ini tetap
+   mengembalikannya apa adanya, padahal SEMUA pemanggil di file ini
+   mengharapkan object/array. guard() menolak primitif (number/boolean/
+   string sisa) dan mengembalikan fallback — object & array (bentuk yang
+   memang diharapkan pemanggil) tetap lolos apa adanya. */
+// safeJSONParse sekarang diimpor dari ./utils (lihat import di atas)
 
 /* ─── PIN HASHING (FIX AUDIT #4 — CRITICAL: PIN Plaintext) ──────────────
    PIN sebelumnya disimpan plaintext di Supabase (kamar_bedah_config).
@@ -412,18 +245,7 @@ const safeJSONParse = (data: any, fallback: any = {}): any => {
    me-re-derive hash dari salt yang tersimpan lalu membandingkan hasilnya —
    PIN asli tidak pernah disimpan maupun dikirim dalam bentuk plaintext
    ke Supabase. */
-async function hashPin(pin: string, saltHex?: string): Promise<string> {
-  const salt = saltHex ?? Array.from(crypto.getRandomValues(new Uint8Array(16)))
-    .map(b => b.toString(16).padStart(2, "0")).join("");
-  const enc = new TextEncoder();
-  const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(pin), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt: enc.encode(salt), iterations: 100_000, hash: "SHA-256" },
-    keyMaterial, 256
-  );
-  const hashHex = Array.from(new Uint8Array(bits)).map(b => b.toString(16).padStart(2, "0")).join("");
-  return `${salt}:${hashHex}`;
-}
+// hashPin sekarang diimpor dari ./utils (lihat import di atas)
 /* verifyPin: bandingkan PIN polos yang diketik user terhadap string
    "<salt>:<hash>" yang tersimpan. Mendukung mode legacy (plaintext lama,
    tanpa format salt:hash) untuk migrasi mulus dari data existing. */
@@ -433,12 +255,13 @@ async function hashPin(pin: string, saltHex?: string): Promise<string> {
    berapa karakter awal yang cocok, membuka celah timing-attack teoretis.
    Sekarang memakai constantTimeEqual() yang selalu membandingkan SEMUA
    karakter tanpa early-exit, terlepas dari hasil sebagian. */
-function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let result = 0;
-  for (let i = 0; i < a.length; i++) result |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return result === 0;
-}
+/* FIX BUG #37 (audit lanjutan): early-return `if(a.length!==b.length)` di
+   versi lama membuat kasus panjang-beda SELALU lebih cepat daripada kasus
+   panjang-sama-tapi-isi-beda — perbedaan waktu ini tetap membocorkan info
+   (walau minor). Sekarang SELALU loop sampai panjang maksimum, memakai
+   0 sebagai pengganti char yang tidak ada di string lebih pendek, supaya
+   total waktu eksekusi tidak lagi bergantung pada apakah panjangnya sama. */
+// constantTimeEqual sekarang diimpor dari ./utils (lihat import di atas)
 /* FIX AUDIT #17 (CRITICAL — Timing Side-Channel pada Fallback Legacy):
    Percabangan `stored.includes(":")` sebelumnya membuat DUA JALUR EKSEKUSI
    dengan biaya komputasi sangat berbeda: PIN ter-hash menjalankan PBKDF2
@@ -450,24 +273,7 @@ function constantTimeEqual(a: string, b: string): boolean {
    penuh (walau hasilnya dibuang di jalur legacy), sehingga total waktu
    eksekusi kedua cabang seragam dan tidak lagi membocorkan format
    penyimpanan lewat timing. */
-async function verifyPin(pin: string, stored: string | undefined | null): Promise<boolean> {
-  if (!stored) return false;
-  const isLegacyPlaintext = !stored.includes(":");
-  /* Selalu derive PBKDF2 (pakai salt acak baru bila legacy) supaya biaya
-     komputasi seragam antara kedua cabang — hasil dummy ini TIDAK dipakai
-     untuk verifikasi legacy, hanya untuk menyamakan waktu eksekusi. */
-  const dummyDeriveForTiming = isLegacyPlaintext ? hashPin(pin) : Promise.resolve("");
-  if (isLegacyPlaintext) {
-    const [legacyMatch] = await Promise.all([
-      Promise.resolve(constantTimeEqual(pin, stored)),
-      dummyDeriveForTiming
-    ]);
-    return legacyMatch; // legacy plaintext fallback (auto-migrasi di pemanggil)
-  }
-  const [salt] = stored.split(":");
-  const rehashed = await hashPin(pin, salt);
-  return constantTimeEqual(rehashed, stored);
-}
+// verifyPin sekarang diimpor dari ./utils (lihat import di atas)
 /** Migrasi otomatis terjadi saat login: jika PIN di Supabase masih plaintext
  * (sebelum update ini diterapkan), verifyPin akan mendeteksinya via !includes(":")
  * dan membandingkan secara langsung. Saat admin berikutnya mengganti PIN,
@@ -480,17 +286,7 @@ async function verifyPin(pin: string, stored: string | undefined | null): Promis
    inilah salah satu pemicu paling umum dari notifikasi error Supabase saat
    upload. Fallback di bawah tetap valid UUID v4 walau crypto.randomUUID
    tidak tersedia (browser lama / konteks non-secure). */
-const gId = (): string => {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
-  const bytes = new Uint8Array(16);
-  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") crypto.getRandomValues(bytes);
-  else for (let i = 0; i < 16; i++) bytes[i] = Math.floor(Math.random() * 256);
-  bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
-  bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10
-  const hex = Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
-  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
-};
-const isValidUUID = (s: any): boolean => typeof s === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+// gId dan isValidUUID sekarang diimpor dari ./utils (lihat import di atas)
 
 /* ─── FIX AUDIT #18 (MEDIUM — CSV/Excel Formula Injection, CWE-1236) ────
    Field teks bebas dari user (keterangan, keperluan, nama, dsb) yang
@@ -505,37 +301,8 @@ const isValidUUID = (s: any): boolean => typeof s === "string" && /^[0-9a-f]{8}-
    kolom teks bebas yang diisi manual oleh perawat/admin (keterangan,
    keperluan lembur, nama/paraf TTD, dll), BUKAN pada kolom angka/tanggal
    yang sudah terkontrol formatnya. */
-const FORMULA_TRIGGER_CHARS = ["=", "+", "-", "@", "\t", "\r"];
-function sanitizeCellForExcel(value: any): any {
-  if (typeof value !== "string" || value.length === 0) return value;
-  return FORMULA_TRIGGER_CHARS.includes(value[0]) ? `'${value}` : value;
-}
-
-/* ─── FIX AUDIT #25 (MEDIUM — Query Tanpa Timeout, "Freeze" saat Network
-   Hang) ──────────────────────────────────────────────────────────────
-   Tanpa batas waktu eksplisit, sebuah query yang "menggantung" (jaringan
-   RS lambat/overload, BUKAN disconnect total) bisa membuat tombol Simpan/
-   Masuk/Pulang tetap disabled TANPA BATAS WAKTU — bagi perawat terasa
-   seperti aplikasi freeze, tanpa opsi retry. withTimeout() membungkus
-   sebuah Promise dan memaksanya reject setelah durasi tertentu, sehingga
-   UI selalu punya kepastian (sukses ATAU gagal-dengan-pesan-jelas) dalam
-   waktu wajar, bukan menunggu selamanya. */
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label}: waktu tunggu habis (>${ms/1000}s) — periksa koneksi internet`)), ms);
-    promise.then(v => { clearTimeout(timer); resolve(v); }, e => { clearTimeout(timer); reject(e); });
-  });
-}
-
-/* ensureId: pakai id yang sudah ada selama berupa string non-kosong (kolom `id`
-   di tabel kb_* bertipe text, BUKAN uuid — dibuktikan oleh row legacy
-   id="lembur_data" yang sudah berjalan). Sengaja TIDAK memaksa format UUID di
-   sini: beberapa tabel memakai id deterministik (mis. "roster_2026-06-17",
-   "mon_2026-06-17_07:00", "${pegId}_${period}") supaya re-upload/re-save dengan
-   kunci yang sama melakukan UPSERT (timpa baris yg sama) bukan menumpuk baris
-   duplikat baru — memaksa UUID di sini akan menghancurkan mekanisme itu.
-   Hanya id yang benar-benar kosong/rusak yang digantikan id baru. */
-const ensureId = (id: any): string => (typeof id === "string" && id.trim().length > 0) ? id : gId();
+// FORMULA_TRIGGER_CHARS sekarang diimpor dari ./constants (lihat import di atas)
+// sanitizeCellForExcel, withTimeout, ensureId sekarang diimpor dari ./utils (lihat import di atas)
 
 /* toLocalISODate: PENTING — JANGAN pakai `date.toISOString().split("T")[0]`
    untuk mendapatkan "tanggal hari ini" versi lokal. toISOString() selalu
@@ -547,60 +314,17 @@ const ensureId = (id: any): string => (typeof id === "string" && id.trim().lengt
    siaga H-1, dan reminder WA H-1 yang dikirim larut malam/dini hari.
    Fungsi ini memakai komponen tanggal LOKAL (getFullYear/getMonth/getDate)
    sehingga selalu konsisten dengan kalender yang dilihat pengguna. */
-const toLocalISODate = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-const todayDate = () => toLocalISODate(new Date());
-const tmrwDate  = () => { const d=new Date(); d.setDate(d.getDate()+1); return toLocalISODate(d); };
-const fD        = (d: string) => { if(!d)return"-"; try{ return new Date(d+"T00:00:00").toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long",year:"numeric"}); }catch{ return d; } };
-/* fDMY: format DD / MM / YYYY — dipakai di semua tab untuk display tanggal seragam */
-const fDMY      = (d: string): string => { if(!d)return"—"; try{ const [y,m,day]=d.split("-"); if(!y||!m||!day)return d; return `${day.padStart(2,"0")}/${m.padStart(2,"0")}/${y}`; }catch{ return d; } };
-/* fNowMY: tanggal+waktu sekarang, tanggal dalam format DD/MM/YYYY */
-const fNow      = () => { const n=new Date(); const day=String(n.getDate()).padStart(2,"0"); const mo=String(n.getMonth()+1).padStart(2,"0"); const y=n.getFullYear(); const hh=String(n.getHours()).padStart(2,"0"); const mm=String(n.getMinutes()).padStart(2,"0"); return `${day}/${mo}/${y} ${hh}:${mm}`; };
-const fTR       = (t: string) => t?t.replace(":",".") : "";
-/* FIX AUDIT #11 (MEDIUM): gWord sebelumnya memanggil new Date() dua kali —
-   jika dipanggil tepat saat jam berganti (mis. 11:59:59.999 → 12:00:00.000),
-   getHours() dan getMinutes() bisa berasal dari momen berbeda dan memberikan
-   hasil yang salah. Sekarang menggunakan satu instance Date yang sama. */
-const gWord     = (): string => { const now = new Date(); const t = now.getHours() * 60 + now.getMinutes(); return t < 660 ? "pagi" : t < 900 ? "siang" : t < 1110 ? "sore" : "malam"; };
-/* timeOfDayLabel: sama seperti gWord(), tapi berdasarkan jam OPERASI (bukan
-   waktu saat ini) — dipakai utk frasa "rencana operasi besok [pagi/siang/sore]"
-   di msgSurgeon, yang merujuk ke jam operasinya, bukan jam pengiriman pesan. */
-const timeOfDayLabel = (time: string): string => {
-  if(!time) return "";
-  const [h,m] = time.split(":").map(Number);
-  const t = (h||0)*60 + (m||0);
-  return t < 660 ? "pagi" : t < 900 ? "siang" : t < 1110 ? "sore" : "malam";
-};
-/* fDLower: varian fD() khusus utk template pesan WA Laporan/msgSurgeon/msgAnest
-   sesuai spesifikasi format ("sabtu 20 juni 2026" — lowercase, tanpa koma).
-   fD() ASLI TIDAK diubah supaya tempat lain yang sudah memakainya (cetak,
-   export, dsb) tidak terdampak/regresi. */
-const fDLower   = (d: string): string => fD(d).replace(",", "").toLowerCase();
-/* formatUsia: helper wajib sesuai spesifikasi — dipakai di seluruh modul
-   rendering teks Laporan & WA (buildLaporan, msgSurgeon, msgAnest). */
-function formatUsia(tahun: any, bulan: any): string {
-  const t = parseInt(tahun) || 0;
-  const b = parseInt(bulan) || 0;
-  if (t === 0 && b > 0) return `${b} bln`;
-  if (t > 0 && b > 0) return `${t} thn ${b} bln`;
-  return `${t} thn`;
-}
-/* usiaOp: wrapper formatUsia yang mengembalikan "" jika usia benar-benar
-   tidak diisi sama sekali (age maupun ageMonths kosong) — menjaga pola lama
-   `op.age?...:""` agar usia tidak muncul sebagai "0 thn" pada data lama yang
-   belum diisi sama sekali. */
-const usiaOp    = (o: any): string => (o.age || o.ageMonths) ? formatUsia(o.age, o.ageMonths) : "";
-/* titleCaseDokter: khusus utk SAPAAN/header pesan WA (contoh: "dokter Timor")
-   — menghapus prefix "dr"/"Dr" jika ada lalu Title Case huruf pertama.
-   Nama di BADAN pesan (mis. "dr timor" dalam daftar pasien) TETAP memakai
-   nilai asli dari database (hanya di-sanitize, tidak diubah case-nya) —
-   sesuai contoh output literal yang diberikan di spesifikasi. */
-const titleCaseDokter = (n: string): string => {
-  const c = sanitize(n).replace(/^dr\.?\s*/i, "").trim();
-  return c ? c.charAt(0).toUpperCase()+c.slice(1) : c;
-};
-const sanitize  = (s: any) => String(s||"").replace(/<[^>]*>/g,"").replace(/['"`;]/g,"").trim();
-const maskName  = (n: string,a: boolean) => !a||!n ? n??"" : String(n).replace(/\S+/g,(w:string)=>w[0]+"*".repeat(Math.max(1,w.length-1)));
-const maskRM    = (r: string,a: boolean) => !a||!r ? r??"" : String(r).slice(0,2)+"****"+String(r).slice(-2);
+// toLocalISODate, todayDate, tmrwDate, fD, fDMY, fNow, fTR, gWord,
+// timeOfDayLabel, fDLower, formatUsia, usiaOp, titleCaseDokter sekarang
+// diimpor dari ./utils (lihat import di atas)
+/* FIX BUG #34 (audit lanjutan): strip-tag SATU KALI (`replace(/<[^>]*>/g,"")`
+   sekali jalan) secara teoretis bisa lolos untuk pola tag bersarang yang
+   dikonstruksi khusus untuk "reformasi" tag setelah 1 pass dihapus. Sekarang
+   diulang (loop) sampai tidak ada lagi perubahan, menutup celah itu. Catatan:
+   ini pertahanan lapis KEDUA untuk teks bebas (nama, keterangan) — untuk
+   HTML yang benar-benar dirender (export Word), pertahanan UTAMA tetap
+   escHtml() yang sudah proper-escape sejak FIX AUDIT #3, bukan strip-tag. */
+// sanitize, maskName, maskRM sekarang diimpor dari ./utils (lihat import di atas)
 /* parseDateCSV dihapus — diganti toISODateStrict() yang menangani lebih banyak kasus
    (Date object, serial number Excel, DD/MM/YYYY, YYYY-MM-DD) dan dipakai konsisten
    di semua jalur impor Excel/CSV (staf, roster, jadwal operasi, jadwal lembur). */
@@ -615,61 +339,8 @@ const maskRM    = (r: string,a: boolean) => !a||!r ? r??"" : String(r).slice(0,2
    menangani SEMUA kasus di atas dan mengembalikan null jika benar2 tidak
    valid, sehingga baris tsb bisa ditolak SEBELUM dikirim ke DB (bukan
    ditangkap sebagai error generik dari server). ── */
-const EXCEL_EPOCH = Date.UTC(1899, 11, 30); // basis serial date Excel (termasuk leap-year bug 1900)
-const toISODateStrict = (value: any): string | null => {
-  if (value === null || value === undefined || value === "") return null;
-  if (value instanceof Date) {
-    if (isNaN(value.getTime())) return null;
-    /* FIX AUDIT #10 (MEDIUM — inkonsistensi lokal vs UTC): gunakan
-       toLocalISODate() secara konsisten untuk Date object, bukan
-       getFullYear/getMonth/getDate inline. Sebelumnya kode ini menggunakan
-       komponen lokal sedangkan cabang Excel serial number menggunakan UTC —
-       inkonsistensi ini menyebabkan tanggal yang sama ditampilkan berbeda
-       tergantung sumber input, khususnya di jam WIB 00:00–06:59. */
-    return toLocalISODate(value);
-  }
-  if (typeof value === "number" && isFinite(value)) {
-    const ms = EXCEL_EPOCH + Math.round(value) * 86400000;
-    const d = new Date(ms);
-    if (isNaN(d.getTime())) return null;
-    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,"0")}-${String(d.getUTCDate()).padStart(2,"0")}`;
-  }
-  const str = String(value).trim();
-  if (!str) return null;
-  /* FIX AUDIT #17 (HIGH — overflow tanggal senyap): SEBELUMNYA regex hanya
-     memvalidasi BENTUK (1-2 digit/1-2 digit/4 digit), bukan NILAI. Input
-     seperti "45/13/2024" lolos regex, lalu `new Date("2024-13-45...")`
-     overflow secara DIAM-DIAM (bulan 13→Januari tahun depan, hari
-     meluber ke bulan berikutnya) — isNaN(d.getTime()) tetap false karena
-     hasilnya Date object yang valid secara teknis, hanya bukan tanggal
-     yang dimaksud. Sekarang divalidasi range SEBELUM membentuk Date, dan
-     divalidasi BALIK (cek d.getDate()/getMonth() cocok dgn input) untuk
-     menangkap kasus seperti 31/02 yang lolos range tapi tak ada di
-     kalender (Date akan otomatis "menggelinding" ke awal Maret). */
-  let m = str.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-  if (m) {
-    const [_, y, mo, da] = m;
-    const dayNum = Number(da), monNum = Number(mo);
-    if (monNum < 1 || monNum > 12 || dayNum < 1 || dayNum > 31) return null;
-    const d = new Date(`${y}-${mo.padStart(2,"0")}-${da.padStart(2,"0")}T00:00:00`);
-    if (isNaN(d.getTime())) return null;
-    if (d.getDate() !== dayNum || d.getMonth()+1 !== monNum) return null;
-    return `${y}-${mo.padStart(2,"0")}-${da.padStart(2,"0")}`;
-  }
-  m = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-  if (m) {
-    const [_, da, mo, y] = m;
-    const dayNum = Number(da), monNum = Number(mo);
-    if (monNum < 1 || monNum > 12 || dayNum < 1 || dayNum > 31) return null;
-    const d = new Date(`${y}-${mo.padStart(2,"0")}-${da.padStart(2,"0")}T00:00:00`);
-    if (isNaN(d.getTime())) return null;
-    if (d.getDate() !== dayNum || d.getMonth()+1 !== monNum) return null;
-    return `${y}-${mo.padStart(2,"0")}-${da.padStart(2,"0")}`;
-  }
-  const asNum = Number(str);
-  if (!isNaN(asNum) && asNum > 1000) return toISODateStrict(asNum); // serial number terbaca sbg string
-  return null;
-};
+// EXCEL_EPOCH sekarang diimpor dari ./constants (lihat import di atas)
+// toISODateStrict sekarang diimpor dari ./utils (lihat import di atas)
 /* FIX AUDIT #21 (HIGH — Code Duplication): sebelumnya fungsi `cell()` &
    `setC()` untuk styling cell Excel (bold/center/border/background/font
    size) didefinisikan ULANG dengan logic SEDIKIT BERBEDA di 2 tempat
@@ -680,65 +351,23 @@ const toISODateStrict = (value: any): string | null => {
    versi (superset, tidak ada behavior yang dihilangkan) — dipakai oleh
    SEMUA fungsi export Excel di file ini, bukan hanya 2 yang ditemukan
    saat audit. Murni stateless, tidak bergantung closure apa pun. */
-function xlsxCell(v:any, bold?:boolean, center?:boolean, border?:boolean, bg?:string, fontSize?:number): XLSX.CellObject {
-  const s:any = {
-    font: { bold: !!bold, sz: fontSize||10, color: bg==="16685F" ? {rgb:"FFFFFF"} : undefined },
-    alignment: { horizontal: center?"center":"left", vertical:"center", wrapText:true },
-  };
-  if (border) s.border = { top:{style:"thin"}, bottom:{style:"thin"}, left:{style:"thin"}, right:{style:"thin"} };
-  if (bg) s.fill = { fgColor:{rgb:bg}, patternType:"solid" };
-  return { v, t:"s", s } as XLSX.CellObject;
-}
-/* xlsxSetCell: helper untuk menulis cell langsung ke worksheet pada
-   alamat (r,c), memakai xlsxCell() di atas untuk styling. */
-function xlsxSetCell(ws: XLSX.WorkSheet, r:number, c:number, v:any, bold?:boolean, center?:boolean, border?:boolean, bg?:string, fs?:number) {
-  ws[XLSX.utils.encode_cell({r,c})] = xlsxCell(v,bold,center,border,bg,fs);
-}
+// xlsxCell dan xlsxSetCell sekarang diimpor dari ./utils (lihat import di atas)
 /* normalizeStaffType: pemetaan label bebas (hasil ketik manual di Excel)
    ke key baku yang dipakai aplikasi (ST). Mencegah staf "hilang" dari
    pengelompokan UI karena typo/label berbeda, walau tersimpan di DB. */
-const normalizeStaffType = (raw: string): keyof typeof ST => {
-  const s = String(raw||"").toLowerCase().trim();
-  if (!s) return "circulating";
-  if (s in ST) return s as keyof typeof ST; // sudah berupa key baku (mis. dari template)
-  const isNurseLabel = s.includes("perawat") || s.includes("ns.") || s.startsWith("ns ");
-  if (s.includes("anestes") && isNurseLabel) return "anesthesia_nurse";
-  if (s.includes("anestes")) return "anesthesiologist"; // "dokter anestesi", "dr ... sp.an", dst
-  if (s.includes("onloop")) return "onloop";
-  if (s.includes("katim") || s.includes("rr")) return "katim";
-  if (s.includes("instrumen") || s.includes("circulating")) return "circulating";
-  if (s.includes("bedah") || s.includes("surgeon") || s.includes("operator") || s.startsWith("dr") || s.startsWith("dokter")) return "surgeon";
-  return "circulating";
-};
-/* normalizePhone62: samakan format dgn validasi form manual (^62\d{8,13}$).
-   0812... -> 62812...   +62812... -> 62812...   812... (tanpa awalan) dibiarkan
-   agar tervalidasi gagal & terlihat di laporan, bukan disimpan diam2 salah. */
-const normalizePhone62 = (raw: string): string => {
-  let d = String(raw||"").replace(/[^0-9]/g,"");
-  if (d.startsWith("0")) d = "62" + d.slice(1);
-  return d;
-};
-const isValidPhone62 = (p: string): boolean => /^62\d{8,13}$/.test(p);
-/* formatSupaError: ekstrak pesan deskriptif dari PostgrestError Supabase
-   (message/details/hint/code) — dipakai agar UI tidak hanya menampilkan
-   "gagal, coba lagi" generik melainkan alasan sebenarnya (tipe data salah,
-   kolom wajib null, RLS, FK, dsb). */
-const formatSupaError = (error: any): string => {
-  if (!error) return "Kesalahan tidak diketahui";
-  const parts = [error.message, error.details, error.hint].filter(Boolean);
-  const base = parts.length ? parts.join(" — ") : (error.toString?.() || "Kesalahan tidak diketahui");
-  return error.code ? `[${error.code}] ${base}` : base;
-};
+// normalizeStaffType, normalizePhone62, isValidPhone62, formatSupaError sekarang diimpor dari ./utils (lihat import di atas)
 
 /* ─── REAL FILE HELPERS ─────────────────────────────────────────────── */
-const downloadBlob = (content: string, filename: string, mime="text/csv") => {
-  const blob = new Blob(["\uFEFF"+content], {type:mime});
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement("a");
-  a.href=url; a.download=filename;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a); URL.revokeObjectURL(url);
-};
+/* FIX BUG #32 (audit lanjutan): SEBELUMNYA a.click() tidak dibungkus
+   try/catch — di sebagian browser (Safari/iOS lama, atau saat popup/
+   download diblokir kebijakan browser) pemanggilan ini bisa melempar
+   exception yang TIDAK tertangani, membuat elemen <a> & Object URL
+   tertinggal (memory leak kecil) dan pengguna tidak tahu unduhan gagal.
+   Sekarang dibungkus try/finally: cleanup (hapus elemen, revoke URL)
+   SELALU jalan baik sukses maupun gagal, dan kegagalan di-log + dikembalikan
+   sebagai boolean supaya pemanggil BISA (opsional) menampilkan pesan error
+   ke pengguna alih-alih gagal senyap. */
+// downloadBlob sekarang diimpor dari ./utils (lihat import di atas)
 /* FIX AUDIT #7 (HIGH — sanitizeForCSV Incomplete / CSV Injection Bypass):
    Implementasi lama hanya menangkap karakter berbahaya di AWAL string.
    Penyerang bisa menyisipkan "\n=cmd|..." di dalam field multi-line —
@@ -748,17 +377,7 @@ const downloadBlob = (content: string, filename: string, mime="text/csv") => {
    2. Strip karakter kontrol lain (U+0000–U+001F kecuali tab yang sudah dihandle)
    3. Neutralisasi formula prefix (=, +, -, @, |, \t, \r) di awal hasil bersih
    Dengan urutan ini, injeksi via embedded newline tidak bisa lolos. */
-const sanitizeForCSV = (val: any): string => {
-  // 1. Normalize newline ke spasi agar tidak membentuk baris baru di CSV
-  let s = String(val ?? "").replace(/\r?\n/g, " ").replace(/\r/g, " ");
-  // 2. Escape tanda kutip ganda
-  s = s.replace(/"/g, '""');
-  // 3. Strip karakter kontrol non-printable (kecuali spasi/tab)
-  s = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "");
-  // 4. Neutralisasi formula prefix di awal string hasil bersih
-  if (/^[=+\-@\t\r|]/.test(s)) s = "'" + s;
-  return `"${s}"`;
-};
+// sanitizeForCSV sekarang diimpor dari ./utils (lihat import di atas)
 
 /* parseCSV: parser CSV minimal tapi AMAN terhadap field yang dibungkus tanda
    kutip (mis. `"Doe, John"` atau keterangan yang mengandung koma) — kasus ini
@@ -769,36 +388,11 @@ const sanitizeForCSV = (val: any): string => {
    silent data corruption saat import staf/roster. Parser di bawah
    menangani: koma di dalam tanda kutip, tanda kutip ganda escaped (""),
    serta akhir baris CRLF/LF. */
-const parseCSV = (text: string): string[][] => {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let inQuotes = false;
-  const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  for (let i = 0; i < normalized.length; i++) {
-    const ch = normalized[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        if (normalized[i + 1] === '"') { field += '"'; i++; }
-        else inQuotes = false;
-      } else field += ch;
-    } else if (ch === '"') {
-      inQuotes = true;
-    } else if (ch === ",") {
-      row.push(field.trim()); field = "";
-    } else if (ch === "\n") {
-      row.push(field.trim()); rows.push(row); row = []; field = "";
-    } else {
-      field += ch;
-    }
-  }
-  if (field.length || row.length) { row.push(field.trim()); rows.push(row); }
-  return rows.filter(r => r.some(c => c !== ""));
-};
+// parseCSV sekarang diimpor dari ./utils (lihat import di atas)
 
 /* ─── SUPABASE BACKUP ───────────────────────────────────────────────── */
-interface SupabaseConfig { url: string; anonKey: string; autoBackup: boolean; backupInterval: number; lastBackup: string | null; realtimeBackup: boolean; autoExcelBackup: boolean; lastExcelBackup: string | null; lastExcelBackupTs: number | null; }
-const defaultSupaCfg: SupabaseConfig = { url:"", anonKey:"", autoBackup:true, backupInterval:60, lastBackup:null, realtimeBackup:true, autoExcelBackup:true, lastExcelBackup:null, lastExcelBackupTs:null };
+// SupabaseConfig sekarang diimpor dari ./types (lihat import type di atas)
+// defaultSupaCfg sekarang diimpor dari ./services (lihat import di atas)
 
 /* ─── DROPBOX BACKUP ────────────────────────────────────────────────── */
 /* PENTING (security): Token Dropbox TIDAK ADA di client sama sekali.
@@ -813,54 +407,8 @@ const defaultSupaCfg: SupabaseConfig = { url:"", anonKey:"", autoBackup:true, ba
    — sebuah shared secret terbatas yang HANYA bisa memicu 2 aksi spesifik
    (backup/restore 1 folder) lewat proxy ini, BUKAN kunci akses Dropbox
    penuh. Lihat catatan di vite-env.d.ts / .env.local untuk cara isi nilainya. */
-const DBX_PROXY_SECRET = (import.meta as any).env?.VITE_PROXY_SHARED_SECRET || "";
-const DBX_PROXY_FN     = "dropbox-proxy";
-
-interface DropboxConfig { path: string; autoBackup: boolean; backupInterval: number; realtimeBackup: boolean; lastBackup: string | null; autoExcelBackup: boolean; lastExcelBackup: string | null; lastExcelBackupTs: number | null; }
-const defaultDbxCfg: DropboxConfig = { path:"/KamarBedahPantiRini/backup.json", autoBackup:true, backupInterval:30, realtimeBackup:true, lastBackup:null, autoExcelBackup:true, lastExcelBackup:null, lastExcelBackupTs:null };
-
-/* Helper tunggal: semua panggilan ke proxy lewat sini agar konsisten
-   (header, error handling, parsing respons) */
-async function callDbxProxy(body: Record<string, any>): Promise<{ok:boolean; data?:any; msg:string}> {
-  try {
-    const {data, error} = await SUPA_CLIENT.functions.invoke(DBX_PROXY_FN, {
-      body,
-      headers: {"x-proxy-secret": DBX_PROXY_SECRET},
-    });
-    if(error) return {ok:false, msg:"Proxy error: "+(error.message||"tidak diketahui")};
-    if(!data?.ok) return {ok:false, msg:data?.msg||"Gagal — proxy mengembalikan respons tidak sukses"};
-    return {ok:true, data:data.data, msg:data.msg||"✓ Berhasil"};
-  } catch(e:any){ return {ok:false, msg:"Gagal menghubungi proxy: "+(e?.message||"network error")}; }
-}
-
-async function dropboxUpload(cfg: DropboxConfig, data: any): Promise<{ok:boolean;msg:string}> {
-  return callDbxProxy({action:"backup", path:cfg.path, payload:data});
-}
-
-async function dropboxDownload(cfg: DropboxConfig): Promise<{ok:boolean;data?:any;msg:string}> {
-  return callDbxProxy({action:"restore", path:cfg.path});
-}
-
-/* Upload Excel per-kategori ke Dropbox (lewat proxy — payload dikirim base64) */
-async function dropboxUploadExcel(path: string, wb: any): Promise<{ok:boolean;msg:string}> {
-  try {
-    const buf = XLSX.write(wb, {type:"array", bookType:"xlsx"}) as Uint8Array;
-    /* FIX AUDIT #13 (MEDIUM — O(n²) Base64 Encoding):
-       String concatenation per-byte dalam loop menciptakan O(n²) alokasi memori
-       karena setiap `+=` membuat string baru (JavaScript string immutable).
-       Untuk file Excel 500+ baris ini bisa menyebabkan browser freeze.
-       Fix: chunk-based approach — proses 8192 byte sekaligus menggunakan
-       spread operator + String.fromCharCode(), lalu gabungkan chunk-nya.
-       Ini mempertahankan keamanan btoa() sambil mengurangi alokasi ke O(n). */
-    const CHUNK = 8192;
-    let binary = "";
-    for (let i = 0; i < buf.length; i += CHUNK) {
-      binary += String.fromCharCode(...buf.subarray(i, i + CHUNK));
-    }
-    const base64 = btoa(binary);
-    return callDbxProxy({action:"upload_excel", path, base64});
-  } catch(e:any){ return {ok:false, msg:"Gagal menyiapkan file Excel: "+(e?.message||"unknown error")}; }
-}
+// DBX_PROXY_SECRET, DBX_PROXY_FN, defaultDbxCfg, callDbxProxy, dropboxUpload,
+// dropboxDownload, dropboxUploadExcel sekarang diimpor dari ./services (lihat import di atas)
 
 /* ═══════════════════════════════════════════════════════════════════
    FITUR: SCAN FORMULIR OPERASI (Kamera / Screenshot / Galeri) — GRATIS
@@ -905,37 +453,9 @@ async function dropboxUploadExcel(path: string, wb: any): Promise<{ok:boolean;ms
    disimpan lewat alur saveOpFn yang sudah ada.
    ═══════════════════════════════════════════════════════════════════ */
 
-const OCR_SCAN_ENDPOINT = "/api/ocr-scan"; // route baru di Worker yang sama — lihat worker_ocr_route.ts
+// OCR_SCAN_ENDPOINT sekarang diimpor dari ./constants (lihat import di atas)
 
-interface OcrExtractResult {
-  patient: string;
-  age: string;
-  ageMonths: string;
-  rm: string;
-  diagnosis: string;
-  procedure: string;
-  opType: "elektif" | "semi" | "cyto" | "";
-  date: string;
-  time: string;
-  surgeon: string;
-  anesthesiologist: string;
-  room: string;
-  allergy: string;
-  bloodType: string;
-  confidence: "high" | "low";
-  /* SARAN PENINGKATAN #6 (forward-compat): flag opsional untuk kasus foto
-     yang BUKAN formulir operasi sama sekali (salah foto, foto KTP, dsb).
-     CATATAN JUJUR: field ini baru berguna kalau Worker (/api/ocr-scan,
-     file terpisah — worker_ocr_route.ts, TIDAK ada di App.tsx ini) juga
-     diubah supaya prompt ke model vision meminta flag ini saat gambar
-     jelas bukan formulir. Sisi client di sini SUDAH siap menerimanya
-     (lihat coerceOcrResult & handleFile) — begitu Worker dikirim flag
-     `notAFormError:true`, UI otomatis menampilkan pesan yang lebih tepat
-     ("sepertinya ini bukan formulir operasi") daripada pesan gagal generik.
-     Sebelum Worker diubah, flag ini akan selalu falsy dan tidak berdampak
-     apa pun ke perilaku yang sudah ada. */
-  notAFormError?: boolean;
-}
+// OcrExtractResult sekarang diimpor dari ./types (lihat import type di atas)
 
 /* FIX AUDIT #34 (HIGH — Validasi Runtime pada Respons Eksternal):
    Sebelumnya `json.data as OcrExtractResult[]` langsung di-cast paksa tanpa
@@ -945,28 +465,54 @@ interface OcrExtractResult {
    akan throw dan bisa membuat komponen crash di tengah alur kerja perawat.
    coerceOcrResult() memaksa SEMUA field jadi string yang aman dipakai,
    apa pun tipe asli dari respons server. */
-function coerceOcrResult(raw: any): OcrExtractResult {
-  const s = (v: any): string => typeof v === "string" ? v : (v==null ? "" : String(v));
-  const ot = raw?.opType;
-  return {
-    patient: s(raw?.patient), age: s(raw?.age), ageMonths: s(raw?.ageMonths), rm: s(raw?.rm),
-    diagnosis: s(raw?.diagnosis), procedure: s(raw?.procedure),
-    opType: (ot==="elektif"||ot==="semi"||ot==="cyto") ? ot : "",
-    date: s(raw?.date), time: s(raw?.time), surgeon: s(raw?.surgeon),
-    anesthesiologist: s(raw?.anesthesiologist), room: s(raw?.room),
-    allergy: s(raw?.allergy), bloodType: s(raw?.bloodType),
-    confidence: raw?.confidence==="high" ? "high" : "low",
-    notAFormError: raw?.notAFormError === true, // saran #6 — lihat catatan di interface
-  };
-}
+// coerceOcrResult sekarang diimpor dari ./utils (lihat import di atas)
 
 /* FIX AUDIT #35 (MEDIUM — Tidak Ada Batas Panjang Teks Bebas): model vision
    yang berhalusinasi pada gambar buram/kompleks bisa mengembalikan teks
    sangat panjang. capOcrText() memotong ke panjang wajar untuk field
    nama/diagnosa/tindakan/dll sebelum disimpan ke form atau database. */
-function capOcrText(s: string, max = 200): string {
-  return s.length > max ? s.slice(0, max) + "…" : s;
-}
+/* FIX BUG #41 (audit lanjutan): `.slice(0,max)` beroperasi per unit UTF-16,
+   bukan per karakter — untuk emoji/karakter di luar BMP (dibentuk dari
+   SEPASANG unit UTF-16/"surrogate pair"), potongan bisa jatuh di TENGAH
+   pasangan, menghasilkan karakter rusak (mis. tampil sebagai "�"). Array.from
+   memecah string per code point (aman terhadap surrogate pair), jadi
+   pemotongan tidak akan pernah membelah satu karakter jadi dua. */
+// capOcrText sekarang diimpor dari ./utils (lihat import di atas)
+
+/* PENAMBAHAN #1 (fuzzy-match dokter ke Master Data Staf): hasil OCR untuk
+   nama dokter sering beda tipis dari yang terdaftar (typo kecil, gelar
+   tidak lengkap, dsb — mis. "dr. Adhinanda" hasil OCR vs "dr. Adhinanda,
+   Sp.B" yang terdaftar). Fungsi ini mencari nama staf TERDAFTAR yang
+   paling mirip dengan hasil OCR, dan HANYA mengganti kalau similarity-nya
+   sangat tinggi (>=0.72) — supaya tidak salah cocokkan ke dokter lain yang
+   namanya kebetulan agak mirip. Kalau tidak ada yang cukup mirip, nilai
+   OCR asli tetap dipakai apa adanya (fail-safe: tidak menebak). */
+/* FIX BUG #45 (audit lanjutan): SEBELUMNYA regex `\bsp\.?\s*[a-z]{1,4}\b`
+   cuma menangkap 1-4 huruf tepat setelah "sp" — untuk gelar subspesialis
+   dengan akhiran tanda kurung/strip (mis. "Sp.B(K)Onk", "Sp.An-KIC"), sisa
+   akhirannya ("(k)onk", "-kic") LOLOS tidak terhapus dan ikut masuk ke
+   nama yang dinormalisasi, menurunkan akurasi fuzzy-match (skor similarity
+   turun karena ada "sampah" karakter tambahan). Sekarang gelar spesialis
+   dipotong dari kemunculan pertama "sp" SAMPAI AKHIR STRING — karena gelar
+   selalu berada di BELAKANG nama, ini jauh lebih tahan terhadap variasi
+   format gelar apa pun (termasuk yang belum pernah dilihat sebelumnya)
+   dibanding mencoba menangkap tiap kemungkinan pola gelar satu-satu. */
+// normalizeDoctorName sekarang diimpor dari ./utils (lihat import di atas)
+
+// levenshteinRatio sekarang diimpor dari ./utils (lihat import di atas)
+
+/** Cari nama staf paling mirip dari `candidates` (sudah difilter role-nya
+ *  di pemanggil). Return nama TERDAFTAR (bentuk resmi) kalau similarity
+ *  cukup tinggi, atau `null` kalau tidak ada yang cukup mirip (pemanggil
+ *  harus tetap pakai nilai OCR asli dalam kasus ini). */
+/** Nilai anestesi yang BUKAN nama dokter (opsi valid di dropdown — lihat
+ *  SF label="Dokter Anestesi" di ViewDaftar) — kalau OCR mengembalikan
+ *  salah satu dari ini, JANGAN coba fuzzy-match ke nama dokter, karena
+ *  ini memang bukan nama orang dan bisa salah "dikoreksi" jadi nama
+ *  dokter yang kebetulan mirip hurufnya. */
+// looksLikeNonDoctorAnesthesiaValue sekarang diimpor dari ./utils (lihat import di atas)
+
+// findBestStaffMatch sekarang diimpor dari ./utils (lihat import di atas)
 
 /* FIX AUDIT #30 (CRITICAL, bagian OCR): validasi terpusat untuk field
    semi-terstruktur (umur, tanggal, jam, kamar, gol. darah) hasil OCR.
@@ -975,20 +521,7 @@ function capOcrText(s: string, max = 200): string {
    Supabase tanpa validasi apa pun. Sekarang kedua jalur memakai validator
    yang SAMA, supaya tidak ada lagi celah data tidak valid yang lolos ke
    database produksi hanya karena lewat jalur auto-save batch. */
-function validateOcrScalarFields(r: OcrExtractResult): {
-  age: string; ageMonths: string; date: string; time: string; room: string; bloodType: string;
-} {
-  const ageNum = Number(r.age);
-  const age = (r.age && !isNaN(ageNum) && ageNum>=0 && ageNum<=150) ? String(ageNum) : "";
-  const moNum = Number(r.ageMonths);
-  const ageMonths = (r.ageMonths && !isNaN(moNum) && moNum>=0 && moNum<=11) ? String(moNum) : "";
-  const date = r.date ? (toISODateStrict(r.date) || "") : "";
-  const time = (r.time && /^([01]\d|2[0-3]):([0-5]\d)$/.test(r.time)) ? r.time : "";
-  const roomMatch = r.room ? r.room.match(/\d+/) : null;
-  const room = roomMatch ? (ROOMS.find(rm2 => rm2.includes(roomMatch[0])) || "") : "";
-  const bloodType = r.bloodType ? (BT.find(bt => bt.toUpperCase()===r.bloodType.toUpperCase()) || "") : "";
-  return { age, ageMonths, date, time, room, bloodType };
-}
+// validateOcrScalarFields sekarang diimpor dari ./utils (lihat import di atas)
 
 /* SARAN PENINGKATAN #11 (unit test untuk validasi OCR) — CATATAN JUJUR:
    App.tsx ini adalah satu file komponen React, BUKAN proyek dengan test
@@ -1002,60 +535,7 @@ function validateOcrScalarFields(r: OcrExtractResult): {
    `window.__ocrSelfTest()`. Kalau nanti proyek ini benar-benar dipecah
    jadi beberapa file dengan Vitest, kasus-kasus di bawah ini tinggal
    dipindah jadi `it(...)` beneran. */
-function __ocrSelfTest(): void {
-  const results: {name: string; pass: boolean; detail?: string}[] = [];
-  const check = (name: string, cond: boolean, detail?: string) => results.push({name, pass: cond, detail});
-
-  // 1) coerceOcrResult harus tahan terhadap tipe tak terduga dari server.
-  const c1 = coerceOcrResult({ patient: 123, age: null, opType: "TIDAK_VALID", confidence: "medium" });
-  check("coerce: patient number→string", c1.patient === "123");
-  check("coerce: age null→empty string", c1.age === "");
-  check("coerce: opType tak dikenal→empty", c1.opType === "");
-  check("coerce: confidence tak dikenal→low (fail-safe)", c1.confidence === "low");
-
-  // 2) Umur 0 tahun (bayi baru lahir) harus tetap valid, bukan dianggap kosong.
-  const v1 = validateOcrScalarFields(coerceOcrResult({ age: "0", ageMonths: "6" }));
-  check("umur 0 tahun valid (bukan falsy)", v1.age === "0", `dapat: "${v1.age}"`);
-  check("umur bulan 6 valid", v1.ageMonths === "6");
-
-  // 3) Umur di luar batas wajar harus ditolak (dikosongkan), bukan disimpan mentah.
-  const v2 = validateOcrScalarFields(coerceOcrResult({ age: "999" }));
-  check("umur 999 (tidak wajar) ditolak", v2.age === "", `dapat: "${v2.age}"`);
-
-  // 4) Tanggal ambigu/tidak valid → dikosongkan, bukan disimpan mentah.
-  const v3 = validateOcrScalarFields(coerceOcrResult({ date: "35/13/2026" }));
-  check("tanggal mustahil ditolak", v3.date === "", `dapat: "${v3.date}"`);
-
-  // 5) Jam di luar format HH:MM 24-jam → ditolak.
-  const v4 = validateOcrScalarFields(coerceOcrResult({ time: "25:99" }));
-  check("jam tidak valid ditolak", v4.time === "", `dapat: "${v4.time}"`);
-
-  // 6) buildOcrSafeApply: CYTO harus terdeteksi & TIDAK auto-fill (lihat FIX AUDIT #47).
-  const safeCyto = buildOcrSafeApply(coerceOcrResult({ opType: "cyto" }));
-  check("cyto terdeteksi sebagai suspectedCyto", safeCyto.suspectedCyto === true);
-  check("cyto menghasilkan cautionNote", safeCyto.cautionNote.length > 0);
-
-  // 7) buildOcrSafeApply: golongan darah harus masuk criticalFieldKeys (saran #2).
-  const safeBT = buildOcrSafeApply(coerceOcrResult({ bloodType: "A" }));
-  check("bloodType terdaftar sebagai field kritis", safeBT.criticalFieldKeys.includes("bloodType"));
-  check("allergy ikut kritis walau kosong (satu paket dgn bloodType)", safeBT.criticalFieldKeys.includes("allergy"));
-
-  // 8) Kasus normal (bukan cyto, tanpa gol.darah/alergi) → tidak ada catatan ekstra.
-  const safeNormal = buildOcrSafeApply(coerceOcrResult({ opType: "elektif", patient: "Tn. Test" }));
-  check("kasus normal tidak memicu cautionNote", safeNormal.cautionNote === "");
-  check("kasus normal criticalFieldKeys hanya rm+date", safeNormal.criticalFieldKeys.length === 2);
-
-  const passed = results.filter(r=>r.pass).length;
-  const failed = results.filter(r=>!r.pass);
-  // eslint-disable-next-line no-console
-  console.log(`[__ocrSelfTest] ${passed}/${results.length} lulus.`);
-  results.forEach(r => console.log(`  ${r.pass ? "✓" : "✗"} ${r.name}${r.detail ? " — " + r.detail : ""}`));
-  if(failed.length>0){
-    // eslint-disable-next-line no-console
-    console.warn(`[__ocrSelfTest] ${failed.length} kasus GAGAL — cek validateOcrScalarFields/buildOcrSafeApply.`);
-  }
-}
-if(typeof window !== "undefined"){ (window as any).__ocrSelfTest = __ocrSelfTest; }
+// __ocrSelfTest sekarang diimpor dari ./utils (lihat import di atas) — window.__ocrSelfTest otomatis terpasang saat module ./utils di-import
 
 /* SARAN PENINGKATAN #10 + #2 (SATU sumber kebenaran untuk aturan
    kehati-hatian OCR — sebelumnya applyOcrResult & autoSaveOcrBatch
@@ -1082,96 +562,20 @@ if(typeof window !== "undefined"){ (window as any).__ocrSelfTest = __ocrSelfTest
      dokter, ruang asal, dll — salah di situ gampang ketahuan & gampang
      diperbaiki; salah gol.darah/alergi baru ketahuan saat tindakan
      medis berlangsung). */
-function buildOcrSafeApply(r: OcrExtractResult): {
-  scalars: ReturnType<typeof validateOcrScalarFields>;
-  suspectedCyto: boolean;
-  cautionNote: string;
-  criticalFieldKeys: string[];
-} {
-  const scalars = validateOcrScalarFields(r);
-  const suspectedCyto = r.opType === "cyto";
-  const notes: string[] = [];
-  if(suspectedCyto){
-    notes.push("⚠ OCR mendeteksi kemungkinan CYTO/EMERGENCY — WAJIB diverifikasi & dipilih manual di \"Jenis Operasi\" jika benar.");
-  }
-  if(r.bloodType || r.allergy){
-    notes.push("⚠ Golongan darah & riwayat alergi hasil OCR WAJIB dicek ulang terhadap formulir asli sebelum tindakan — jangan diandalkan sepenuhnya dari hasil scan.");
-  }
-  const criticalFieldKeys = ["rm","date", ...((r.bloodType||r.allergy) ? ["bloodType","allergy"] : [])];
-  return { scalars, suspectedCyto, cautionNote: notes.join("\n"), criticalFieldKeys };
-}
+// buildOcrSafeApply sekarang diimpor dari ./utils (lihat import di atas)
 
 /** Kompresi + resize gambar di client sebelum dikirim ke Worker.
  *  Mengecilkan payload — penting untuk jaringan RS yang lambat, dan
  *  mengurangi token/neuron yang dipakai model vision (lebih hemat
  *  kuota harian). */
-function compressImageToBase64(
-  file: File,
-  maxDim = 1400,
-  quality = 0.8
-): Promise<{ base64: string; mediaType: string }> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Gagal membaca file"));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error("Gagal memuat gambar"));
-      img.onload = () => {
-        let { width, height } = img;
-        if (width > maxDim || height > maxDim) {
-          const scale = maxDim / Math.max(width, height);
-          width = Math.round(width * scale);
-          height = Math.round(height * scale);
-        }
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return reject(new Error("Canvas tidak didukung"));
-        ctx.drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL("image/jpeg", quality);
-        const base64 = dataUrl.split(",")[1] || "";
-        resolve({ base64, mediaType: "image/jpeg" });
-      };
-      img.src = reader.result as string;
-    };
-    reader.readAsDataURL(file);
-  });
-}
+// compressImageToBase64 sekarang diimpor dari ./utils (lihat import di atas)
 
 /** SARAN PENINGKATAN #7: merotasi gambar 90°/180°/270° via canvas SEBELUM
  *  dikirim ke OCR. Dipakai di langkah preview ScanFormulir supaya foto yang
  *  miring/terbalik (kasus umum saat foto formulir kertas buru-buru) bisa
  *  diluruskan dulu tanpa perlu foto ulang dari awal — akurasi OCR untuk
  *  teks yang terbalik/miring 90° biasanya jauh lebih buruk. */
-function rotateImageFile(file: File, degrees: number): Promise<File> {
-  if(((degrees % 360) + 360) % 360 === 0) return Promise.resolve(file);
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Gagal membaca file untuk rotasi"));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error("Gagal memuat gambar untuk rotasi"));
-      img.onload = () => {
-        const swap = degrees % 180 !== 0;
-        const canvas = document.createElement("canvas");
-        canvas.width  = swap ? img.height : img.width;
-        canvas.height = swap ? img.width  : img.height;
-        const ctx = canvas.getContext("2d");
-        if(!ctx) return reject(new Error("Canvas tidak didukung"));
-        ctx.translate(canvas.width/2, canvas.height/2);
-        ctx.rotate((degrees * Math.PI) / 180);
-        ctx.drawImage(img, -img.width/2, -img.height/2);
-        canvas.toBlob((blob) => {
-          if(!blob) return reject(new Error("Gagal membuat gambar hasil rotasi"));
-          resolve(new File([blob], file.name || "formulir.jpg", {type:"image/jpeg"}));
-        }, "image/jpeg", 0.92);
-      };
-      img.src = reader.result as string;
-    };
-    reader.readAsDataURL(file);
-  });
-}
+// rotateImageFile sekarang diimpor dari ./utils (lihat import di atas)
 /** Kirim gambar ke route OCR di Worker sendiri (same-origin — tidak
  *  perlu CORS khusus, tidak perlu API key/secret di client karena
  *  request ini berjalan di domain yang sama seperti App di-serve). */
@@ -1181,62 +585,7 @@ function rotateImageFile(file: File, degrees: number): Promise<File> {
  *  identik (coerceOcrResult dkk) dan tidak bisa drift satu sama lain,
  *  sama semangatnya dengan buildOcrSafeApply() untuk validasi di sisi
  *  form (lihat SARAN PENINGKATAN #10). */
-async function callOcrScanEndpoint(
-  body: Record<string, any>
-): Promise<{ ok: boolean; data?: OcrExtractResult[]; msg: string; notAFormError?: boolean }> {
-  try {
-    const res = await fetch(OCR_SCAN_ENDPOINT, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const errText = await res.text().catch(() => "");
-      return { ok: false, msg: `Server OCR error (${res.status}): ${errText.slice(0, 200)}` };
-    }
-    const json = await res.json();
-    /* SARAN PENINGKATAN #6 (forward-compat, lihat catatan di interface
-       OcrExtractResult & OCR_SCAN_ENDPOINT di atas): kalau Worker SUATU
-       SAAT diubah untuk mengembalikan `notAFormError:true` (baik di level
-       respons top-level maupun disisipkan ke json.msg), diteruskan ke
-       sini apa adanya. Sebelum Worker diubah, field ini akan selalu
-       undefined/false dan tidak mengubah perilaku yang sudah ada. */
-    const notAFormError = json?.notAFormError === true;
-    if (!json?.ok) return { ok: false, msg: json?.msg || "Gagal — server mengembalikan respons tidak sukses", notAFormError };
-    /* FIX AUDIT #34: coerce semua item ke tipe string yang aman sebelum
-       diteruskan ke pemanggil (applyOcrResult / autoSaveOcrBatch). */
-    const rawData = Array.isArray(json.data) ? json.data : [];
-    return { ok: true, data: rawData.map(coerceOcrResult), msg: json.msg || "✓ Berhasil", notAFormError };
-  } catch (e: any) {
-    return { ok: false, msg: "Gagal menghubungi server OCR: " + (e?.message || "network error") };
-  }
-}
-
-async function runWorkerOcrScan(
-  file: File
-): Promise<{ ok: boolean; data?: OcrExtractResult[]; msg: string; notAFormError?: boolean }> {
-  const { base64, mediaType } = await compressImageToBase64(file);
-  return callOcrScanEndpoint({ image_base64: base64, media_type: mediaType });
-}
-
-/** Jalur 2 (Paste Teks): kirim TEKS MENTAH (mis. hasil copy-paste instruksi
- *  WhatsApp dokter) ke Worker yang SAMA — bukan endpoint terpisah, bukan
- *  pipeline terpisah. Worker perlu diperluas untuk membedakan payload
- *  `text` vs `image_base64` (lihat catatan lengkap & contoh kode di
- *  komentar OCR_SCAN_ENDPOINT di atas — bagian server TIDAK ada di
- *  App.tsx ini, jadi tidak bisa diubah langsung dari sini). Karena
- *  responsnya diurai lewat callOcrScanEndpoint yang SAMA dengan jalur
- *  gambar, hasilnya otomatis lewat coerceOcrResult juga — lalu di sisi
- *  form tetap lewat buildOcrSafeApply() sebelum boleh mengisi/menyimpan
- *  apa pun (gerbang CYTO/gol.darah/alergi tetap berlaku, TIDAK di-bypass
- *  seperti pada blueprint pipeline Gemini terpisah yang sempat diusulkan). */
-async function runWorkerOcrScanText(
-  text: string
-): Promise<{ ok: boolean; data?: OcrExtractResult[]; msg: string; notAFormError?: boolean }> {
-  const trimmed = (text || "").trim();
-  if (!trimmed) return { ok: false, msg: "Teks kosong — tempel dulu instruksi/memo sebelum diproses." };
-  return callOcrScanEndpoint({ text: trimmed.slice(0, MAX_OCR_PASTE_CHARS) });
-}
+// callOcrScanEndpoint, runWorkerOcrScan, runWorkerOcrScanText sekarang diimpor dari ./services (lihat import di atas)
 
 
 /* FIX AUDIT #3 (CRITICAL — XSS via downloadAsWord): semua data dinamis
@@ -1244,26 +593,10 @@ async function runWorkerOcrScanText(
    HTML. Tanpa ini, data pasien yang mengandung "<script>" atau atribut
    "onerror=" bisa tereksekusi saat file .doc dibuka di Word/LibreOffice
    (stored XSS). */
-const escHtml = (s: any): string =>
-  String(s ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+// escHtml sekarang diimpor dari ./utils (lihat import di atas)
 
 /* Download sebagai Word (.doc via HTML) */
-function downloadAsWord(title: string, rows: string[][], filename: string) {
-  const thead = rows[0].map(h=>`<th style="background:#16685F;color:#fff;padding:6px 10px;font-size:11px">${escHtml(h)}</th>`).join("");
-  const tbody = rows.slice(1).map((r,i)=>`<tr style="background:${i%2===0?"#F0FFF8":"#fff"}">${r.map(c=>`<td style="padding:5px 10px;border-bottom:1px solid #e0e0e0;font-size:11px">${escHtml(c)}</td>`).join("")}</tr>`).join("");
-  const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>${escHtml(title)}</title></head><body><h2 style="color:#16685F;font-family:Arial">${escHtml(title)}</h2><p style="color:#555;font-size:12px;font-family:Arial">Dicetak: ${escHtml(fNow())} — ${escHtml(HOSPITAL)}</p><table style="border-collapse:collapse;width:100%;font-family:Arial"><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table></body></html>`;
-  const blob = new Blob([html], {type:"application/msword"});
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement("a");
-  a.href=url; a.download=filename;
-  document.body.appendChild(a); a.click();
-  document.body.removeChild(a); URL.revokeObjectURL(url);
-}
+// downloadAsWord sekarang diimpor dari ./utils (lihat import di atas)
 
 /* supabaseBackup & supabaseRestore kini menerima SUPA_CLIENT sebagai parameter
    agar dapat digunakan sebelum modul App selesai di-mount. */
@@ -1309,84 +642,7 @@ async function supabaseRestore(_cfg: SupabaseConfig, client: any): Promise<{ok: 
      (kasus campuran, tidak disebutkan di spesifikasi), nama-nama itu
      digabung dengan "dan" agar informasi tidak hilang — bukan diasumsikan
      seragam begitu saja. */
-function msgSurgeon(name: string, ops: any[]) {
-  const s = [...ops].sort((a,b)=>a.time.localeCompare(b.time));
-  if(!s.length) return "";
-  const N = titleCaseDokter(name); // nama TARGET sapaan → Title Case, tanpa prefix "dr"
-  const uniqAnest = [...new Set(s.map(o=>o.anesthesiologist).filter(Boolean))];
-  const anestLabel = uniqAnest.length ? uniqAnest.map(a=>sanitize(a)).join(" dan ") : "-"; // nama pendukung → raw, sesuai database
-  const greet = gWord();
-  const shift = timeOfDayLabel(s[0]?.time);
-  const tanggal = fDLower(tmrwDate());
-  const jam = fTR(s[0]?.time);
-  const baris = (o:any) => {
-    const usia = usiaOp(o);
-    const diag = sanitize(o.diagnosis||"").trim();
-    return `${sanitize(o.patient)}${usia?` ${usia}`:""} rencana ${sanitize(o.procedure)}${diag?` ${diag}`:""}`;
-  };
-  if(s.length>1){
-    const lines = s.map((o,i)=>`${i+1}. ${baris(o)}`).join("\n\n");
-    const biusWord = anestLabel==="Lokal Anestesi" ? "" : "dr bius ";
-    return `selamat ${greet} dokter ${N} rencana operasi besok ${shift} , ${tanggal} mulai jam ${jam} ${biusWord}dengan ${anestLabel} ada ${s.length} pasien :\n${lines}\nterima kasih banyak dokter`;
-  }
-  const biusWordSingle = anestLabel==="Lokal Anestesi" ? "" : "bius ";
-  return `selamat ${greet} dokter ${N} rencana operasi besok ${shift} ${tanggal} mulai jam ${jam} ${biusWordSingle}dengan ${anestLabel} atas nama ${baris(s[0])}\nterima kasih banyak dokter`;
-}
-/* msgAnest — direfactor sesuai Spesifikasi Teknis & CONTOH OUTPUT LITERAL
-   yang diberikan. Signature (name, ops) TIDAK diubah.
-   Catatan keputusan implementasi:
-   - Spacing mengikuti CONTOH AKHIR secara harfiah (baris-baris rapat,
-     newline tunggal antar section — BUKAN double newline seperti disebut
-     di teks algoritma pipeline, yang ternyata tidak konsisten dgn contoh).
-   - Header "dokter [Nama]" pakai titleCaseDokter (Title Case, tanpa prefix
-     "dr"), sesuai contoh "dokter Timor". Nama dokter bedah & anestesi di
-     BADAN pesan tetap nilai asli dari database (mis. "dr dedi", "dr timor"),
-     sesuai contoh — tidak diubah case-nya. */
-function msgAnest(name: string, ops: any[]) {
-  const tanggal = fDLower(tmrwDate());
-  const greet = gWord();
-  const anestRaw = sanitize(name); // dipakai di badan pesan, format asli (mis. "dr timor")
-
-  const renderShift = (shiftOps: any[]): string => {
-    if(!shiftOps.length) return "";
-    const byTime: Record<string, any[]> = {};
-    shiftOps.forEach(o=>{ if(!byTime[o.time]) byTime[o.time]=[]; byTime[o.time].push(o); });
-    return Object.keys(byTime).sort((a,b)=>a.localeCompare(b)).map(time=>{
-      const opsAtTime = byTime[time];
-      const bySurgeon: Record<string, any[]> = {};
-      opsAtTime.forEach(o=>{ const k=(o.surgeon||"").trim().toLowerCase(); if(!bySurgeon[k]) bySurgeon[k]=[]; bySurgeon[k].push(o); });
-      return Object.values(bySurgeon).map((group:any[])=>{
-        const surgeonRaw = sanitize(group[0].surgeon);
-        const jam = fTR(time);
-        const baris = (o:any) => {
-          const usia = usiaOp(o);
-          const diag = sanitize(o.diagnosis||"").trim();
-          return `${sanitize(o.patient)}${usia?` ${usia}`:""} rencana ${sanitize(o.procedure)}${diag?` ${diag}`:""}`;
-        };
-        if(group.length>1){
-          const lines = group.map((o,i)=>`${i+1}. ${baris(o)}`).join("\n\n");
-          return `*jam ${jam}* ${surgeonRaw} dan ${anestRaw} ada ${group.length} pasien :\n${lines}`;
-        }
-        return `*jam ${jam}* ${surgeonRaw} dan ${anestRaw} atas nama ${baris(group[0])}`;
-      }).join("\n\n");
-    }).join("\n\n");
-  };
-
-  const pagi = ops.filter((o:any)=>o.time<"14:00");
-  const sore = ops.filter((o:any)=>o.time>="14:00");
-
-  let out = `Selamat ${greet} dokter ${titleCaseDokter(name)} ,Rencana operasi besok hari ${tanggal}`;
-  if(pagi.length) out += `\n*Pagi*\n${renderShift(pagi)}`;
-  if(sore.length) out += `\n*Sore*\n${renderShift(sore)}`;
-  if(!pagi.length && !sore.length) out += "\nBelum ada rencana operasi";
-  out += "\nterima kasih banyak dokter";
-  return out;
-}
-function msgCyto(op: any) {
-  const alg = op.allergy&&op.allergy!=="Tidak Ada" ? `⚠ ALERGI: ${sanitize(op.allergy)}\n` : "";
-  const ra  = op.ruangAsal ? `Ruang Asal : ${sanitize(op.ruangAsal)}\n` : "";
-  return `⚠️ LAPORAN ACARA OPERASI CYTO / EMERGENCY ⚠️\n━━━━━━━━━━━━━━━━━━━\nKamar Bedah ${HOSPITAL}\n━━━━━━━━━━━━━━━━━━━\n${fNow()}\n\nMOHON SEGERA KE KAMAR OPERASI\n\n${alg}${ra}Pasien   : ${sanitize(op.patient)}${op.age?` (${op.age} th)`:""}\nRM/Gol   : ${op.rm||"-"} / ${op.bloodType}\nDiagnosa : ${sanitize(op.diagnosis)}\nTindakan : ${sanitize(op.procedure)}\nJam      : ${op.time} WIB — ${op.room}\n\nOperator : ${op.surgeon||"-"}\nAnestesi : ${op.anesthesiologist||"-"}\nAsisten  : ${op.assistantNurse||"-"}\nInstrumen: ${op.circulatingNurse||"-"}\nOnloop   : ${op.onloopNurse||"-"}\nRR/Katim : ${op.rrKatim||"-"}\n━━━━━━━━━━━━━━━━━━━\n⚡ HARAP RESPON SEGERA ⚡\nKamar Bedah ${HOSPITAL}`;
-}
+// msgSurgeon, msgAnest, msgCyto sekarang diimpor dari ./utils (lihat import di atas)
 /* buildLaporan — direfactor sesuai Spesifikasi Teknis. Signature TIDAK diubah.
    Poin ③ (acara hari ini) & ④ (rencana besok) direstrukturisasi sesuai
    algoritma & format wajib di spesifikasi. Bagian Siaga Anestesi/Cyto/
@@ -1398,227 +654,12 @@ function msgCyto(op: any) {
      eksplisit meminta formatUsia).
    - Marker "⚠️[CYTO]⚠️" (dari implementasi sebelumnya) dipertahankan sebagai
      penanda visual penting yang tidak disebutkan utk dihapus di spesifikasi. */
-function buildLaporan({greeting,recipients,keterangan,todayOps,tomorrowOps,anestStandby,anestCyto,nurseStandby,pembawaHP}: any) {
-  const active = [...todayOps].filter((o:any)=>o.status!=="batal");
-  const batal  = todayOps.filter((o:any)=>o.status==="batal");
+// buildLaporan sekarang diimpor dari ./utils (lihat import di atas)
 
-  /* ── Poin ③: direstrukturisasi sesuai format contoh terbaru —
-     dikelompokkan PAGI (<14:00) / SORE (>=14:00) → per jam operasi →
-     per dokter bedah+anestesi (sama persis pola Poin ④), tapi untuk hari
-     ini ditambahkan info perawat (asisten/instrumen/onloop/rr-katim) di
-     akhir tiap baris pasien dalam tanda kurung miring, karena data
-     penugasan perawat hari ini sudah final (bukan rencana seperti besok). */
-  const renderShiftToday = (shiftOps: any[]): string => {
-    if(!shiftOps.length) return "";
-    const byTime: Record<string, any[]> = {};
-    shiftOps.forEach((o:any)=>{ if(!byTime[o.time]) byTime[o.time]=[]; byTime[o.time].push(o); });
-    return Object.keys(byTime).sort((a,b)=>a.localeCompare(b)).map(time=>{
-      const bySurgeon: Record<string, any[]> = {};
-      byTime[time].forEach((o:any)=>{ const k=(o.surgeon||"").trim().toLowerCase(); if(!bySurgeon[k]) bySurgeon[k]=[]; bySurgeon[k].push(o); });
-      return Object.values(bySurgeon).map((group:any[])=>{
-        const surgeonDisplay = sanitize(group[0].surgeon)||"-";
-        const anestDisplay = sanitize(group[0].anesthesiologist)||"-";
-        const jam = fTR(time);
-        const baris = (o:any) => {
-          const usia = usiaOp(o);
-          const diag = sanitize(o.diagnosis||"").trim();
-          const cytoMark = o.opType==="cyto" ? "⚠️[CYTO]⚠️ " : "";
-          const ass = sanitize(o.assistantNurse).trim();
-          const inst = sanitize(o.circulatingNurse).trim();
-          const onloop = sanitize(o.onloopNurse).trim();
-          const rr = sanitize(o.rrKatim).trim();
-          const parts: string[] = [];
-          if(ass) parts.push(`ass:${ass}`);
-          if(inst) parts.push(`inst:${inst}`);
-          if(onloop) parts.push(`onloop:${onloop}`);
-          if(rr) parts.push(`rr/katim:${rr}`);
-          const roles = parts.length ? ` (${parts.join(", ")})` : "";
-          return `_${cytoMark}${sanitize(o.patient)}${usia?` ${usia}`:""} rencana ${sanitize(o.procedure)}${diag?` ${diag}`:""}${roles}_`;
-        };
-        if(group.length>1){
-          const lines = group.map((o,i)=>`${i+1}. ${baris(o)}`).join("\n");
-          return `*jam ${jam}* ${surgeonDisplay} dan ${anestDisplay} ada ${group.length} pasien :\n${lines}`;
-        }
-        return `*jam ${jam}* ${surgeonDisplay} dan ${anestDisplay} atas nama ${baris(group[0])}`;
-      }).join("\n\n");
-    }).join("\n\n");
-  };
-  const sortedActive = [...active].sort((a:any,b:any)=>a.time.localeCompare(b.time));
-  const todayPagi = sortedActive.filter((o:any)=>o.time<"14:00");
-  const todaySore = sortedActive.filter((o:any)=>o.time>="14:00");
-  const batalLine = batal.length?`\n\n_Batal/Tunda: ${batal.map((o:any)=>sanitize(o.patient)+(o.cancelReason?` (${sanitize(o.cancelReason)})`:""  )).join("; ")}_`:"";
-  let todaySec = `Acara operasi hari ini ada ${active.length}.\n`;
-  if(todayPagi.length) todaySec += `\n*PAGI*\n${renderShiftToday(todayPagi)}`;
-  if(todaySore.length) todaySec += `\n\n*SORE*\n${renderShiftToday(todaySore)}`;
-  if(!todayPagi.length && !todaySore.length) todaySec += "\n_Hari Ini Tidak Ada Acara Operasi_";
-  todaySec += batalLine;
-
-  /* ── Poin ④: split shift Pagi (00:00-13:59) / Sore (14:00-23:59) → group
-     by jamOperasi → group by dokter bedah → IF jumlah>1 list bernumor,
-     ELSE kalimat inline. formatUsia WAJIB dipakai di bagian ini. ── */
-  const pagi = tomorrowOps.filter((o:any)=>o.time<"14:00");
-  const sore = tomorrowOps.filter((o:any)=>o.time>="14:00");
-  const renderShift = (shiftOps: any[]): string => {
-    if(!shiftOps.length) return "";
-    const byTime: Record<string, any[]> = {};
-    shiftOps.forEach((o:any)=>{ if(!byTime[o.time]) byTime[o.time]=[]; byTime[o.time].push(o); });
-    return Object.keys(byTime).sort((a,b)=>a.localeCompare(b)).map(time=>{
-      const bySurgeon: Record<string, any[]> = {};
-      byTime[time].forEach((o:any)=>{ const k=(o.surgeon||"").trim().toLowerCase(); if(!bySurgeon[k]) bySurgeon[k]=[]; bySurgeon[k].push(o); });
-      return Object.values(bySurgeon).map((group:any[])=>{
-        const surgeonDisplay = sanitize(group[0].surgeon)||"-";
-        const anestDisplay = sanitize(group[0].anesthesiologist)||"-";
-        const jam = fTR(time);
-        const baris = (o:any) => {
-          const usia = usiaOp(o);
-          const diag = sanitize(o.diagnosis||"").trim();
-          return `${sanitize(o.patient)}${usia?` ${usia}`:""} rencana ${sanitize(o.procedure)}${diag?` ${diag}`:""}`;
-        };
-        if(group.length>1){
-          const lines = group.map((o,i)=>`${i+1}. ${baris(o)}`).join("\n");
-          return `*jam ${jam}* ${surgeonDisplay} dan ${anestDisplay} ada ${group.length} pasien :\n${lines}`;
-        }
-        return `*jam ${jam}* ${surgeonDisplay} dan ${anestDisplay} atas nama ${baris(group[0])}`;
-      }).join("\n\n");
-    }).join("\n\n");
-  };
-  let tmrwSec = `Rencana operasi besok tanggal ${fDMY(tmrwDate())}:\n`;
-  if(pagi.length) tmrwSec += `\n*PAGI*\n${renderShift(pagi)}`;
-  if(sore.length) tmrwSec += `\n\n*SORE*\n${renderShift(sore)}`;
-  if(!pagi.length&&!sore.length) tmrwSec += "\nBelum ada rencana operasi";
-
-  /* ── Bagian berikut TIDAK diubah dari implementasi sebelumnya ── */
-  const aSec  = anestStandby.filter(Boolean).length ? `\n*Siaga Anaesthesi*\n${anestStandby.filter(Boolean).map((n:string,i:number)=>`${i+1}. ${n}`).join("\n")}` : "";
-  const cSec  = anestCyto.filter(Boolean).length    ? `\n\n*Siaga Anaesthesi Cyto*\n${anestCyto.filter(Boolean).map((n:string,i:number)=>`${i+1}. ${n}`).join("\n")}` : "";
-  const nSec  = nurseStandby.filter(Boolean).length ? `\n\n*Perawat siaga*\n${nurseStandby.filter(Boolean).map((n:string,i:number)=>`${i+1}. ${n}`).join("\n")}` : "";
-  const phSec = pembawaHP?.trim() ? `\n\nPembawa HP: ${pembawaHP}` : "";
-  const ket   = keterangan?.trim() ? `\n${keterangan}\n` : "";
-  return `Selamat ${greeting} ${recipients}\n${ket}\n${todaySec}\n\n\n${tmrwSec}\n${aSec}${cSec}${nSec}${phSec}\n\nDemikian laporan kamar bedah, terima kasih🙏`;
-}
-
-/* ─── UI PRIMITIVES ─────────────────────────────────────────────────── */
-const iS: React.CSSProperties = { width:"100%", padding:"11px 14px", borderRadius:10, border:`1.5px solid ${C.b}`, fontSize:14, lineHeight:1.6, background:"#FAFBFD", boxSizing:"border-box", fontFamily:"inherit", color:C.t, outline:"none" };
-
-function LF({label,req,err,children}: {label?: string; req?: boolean; err?: string; children: React.ReactNode}) {
-  return (
-    <div style={{marginBottom:14}}>
-      {label && <div style={{fontSize:12,fontWeight:700,color:C.g,marginBottom:5,textTransform:"uppercase",letterSpacing:.4}}>
-        {label}{req&&<span style={{color:C.d}}> ✱</span>}
-      </div>}
-      {children}
-      {err && <div style={{fontSize:11,color:C.d,marginTop:4}}>⚠ {err}</div>}
-    </div>
-  );
-}
-function TF({label,req,err,foc,onFoc,onBlr,...p}: any) {
-  return (
-    <LF label={label} req={req} err={err}>
-      <input style={{...iS, borderColor:err?C.d:foc?C.p:C.b, boxShadow:foc?`0 0 0 3px ${C.p}22`:err?`0 0 0 3px ${C.d}22`:"none"} as React.CSSProperties}
-        onFocus={onFoc} onBlur={onBlr} autoComplete="off" spellCheck={false} {...p}/>
-    </LF>
-  );
-}
-function TA({label,minH=72,...p}: any) {
-  const [f,sf] = useState(false);
-  return (
-    <LF label={label}>
-      <textarea style={{...iS,resize:"vertical",minHeight:minH,lineHeight:1.7, borderColor:f?C.p:C.b, boxShadow:f?`0 0 0 3px ${C.p}22`:""} as React.CSSProperties}
-        onFocus={()=>sf(true)} onBlur={()=>sf(false)} spellCheck={false} {...p}/>
-    </LF>
-  );
-}
-function SF({label,req,err,options,empty="-- Pilih --",...p}: any) {
-  const [f,sf] = useState(false);
-  return (
-    <LF label={label} req={req} err={err}>
-      <div style={{position:"relative"}}>
-        <select style={{...iS,appearance:"none",cursor:"pointer",paddingRight:32, borderColor:err?C.d:f?C.p:C.b, boxShadow:f?`0 0 0 3px ${C.p}22`:""} as React.CSSProperties}
-          onFocus={()=>sf(true)} onBlur={()=>sf(false)} {...p}>
-          <option value="">{empty}</option>
-          {options.map((o: any,i: number)=><option key={i} value={typeof o==="string"?o:o.v}>{typeof o==="string"?o:o.l}</option>)}
-        </select>
-        <div style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",color:C.g,fontSize:11}}>▼</div>
-      </div>
-    </LF>
-  );
-}
-const Btn = ({children,onClick,color=C.p,outline,sm,full,disabled,style={}}: any) => {
-  const isGrad = typeof color==="string" && color.startsWith("linear-gradient");
-  const borderCol = isGrad ? "rgba(30,58,138,.4)" : (disabled?"#ccc":color);
-  const bgStyle = outline ? C.white : disabled ? "#eee" : color;
-  return (
-    <button onClick={onClick} disabled={disabled} style={{padding:sm?"7px 12px":"10px 18px",borderRadius:10,border:`1.5px solid ${borderCol}`,background:bgStyle,color:outline?color:C.white,fontSize:sm?12:14,fontWeight:700,cursor:disabled?"not-allowed":"pointer",opacity:disabled?.45:1,width:full?"100%":"auto",fontFamily:"inherit",transition:"opacity .15s",boxShadow:isGrad&&!disabled?"0 2px 8px rgba(30,58,138,.25)":"none",...style}}>{children}</button>
-  );
-};
-const WaBt = ({children,onClick,sm,full,disabled,style={}}: any) => (
-  <button onClick={onClick} disabled={disabled} style={{padding:sm?"7px 12px":"10px 18px",borderRadius:10,border:`1.5px solid ${disabled?"#ccc":C.wa}`,background:disabled?"#eee":C.wa,color:C.white,fontSize:sm?12:14,fontWeight:700,cursor:disabled?"not-allowed":"pointer",width:full?"100%":"auto",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:5,...style}}>✓ {children}</button>
-);
-const Card = ({children,style={},hi}: any) => (
-  <div style={{background:"#ffffff",borderRadius:14,padding:"18px 20px",marginBottom:12,boxShadow:"0 4px 6px -1px rgba(0,0,0,0.05),0 2px 4px -1px rgba(59,130,246,0.06)",border:`1px solid ${hi||C.b}`,...style}}>{children}</div>
-);
-const Row  = ({title,right}: any) => (
-  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-    <div style={{fontSize:16,fontWeight:800,color:C.t}}>{title}</div>
-    {right}
-  </div>
-);
-const Bdg  = ({label,color,bg}: any) => <span style={{background:bg,color,fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:20,border:`1px solid ${color}33`,whiteSpace:"nowrap"}}>{label}</span>;
-const SH   = ({label,color=C.p}: any) => <div style={{fontSize:12,fontWeight:800,color,letterSpacing:.6,marginBottom:14,paddingBottom:8,borderBottom:`2px solid ${color}22`,textTransform:"uppercase"}}>{label}</div>;
-const Toggle = ({value,onChange,label,sub,color=C.p}: any) => (
-  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${C.b}`}}>
-    <div><div style={{fontSize:14,fontWeight:700,color:C.t}}>{label}</div>{sub&&<div style={{fontSize:11,color:C.tL,marginTop:2}}>{sub}</div>}</div>
-    <button onClick={()=>onChange(!value)} style={{width:50,height:28,borderRadius:14,background:value?color:"#DDE3EA",border:"none",cursor:"pointer",position:"relative",transition:"background .2s",flexShrink:0}}>
-      <div style={{position:"absolute",top:4,left:value?24:4,width:20,height:20,borderRadius:10,background:"#fff",boxShadow:"0 1px 4px rgba(0,0,0,.25)",transition:"left .2s"}}/>
-    </button>
-  </div>
-);
-
-/* ─── MINI BAR CHART ─────────────────────────────────────────────────── */
-function MiniBar({data, colorFn, maxVal}: {data: {label: string; value: number; color?: string}[]; colorFn?: (i: number) => string; maxVal?: number}) {
-  const max = maxVal ?? Math.max(...data.map(d=>d.value), 1);
-  return (
-    <div style={{display:"flex",flexDirection:"column",gap:6}}>
-      {data.map((d,i)=>(
-        <div key={i} style={{display:"flex",alignItems:"center",gap:8}}>
-          <div style={{width:110,fontSize:11,color:C.tL,textAlign:"right",flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.label}</div>
-          <div style={{flex:1,background:"#F0F4F8",borderRadius:6,height:20,position:"relative",overflow:"hidden"}}>
-            <div style={{position:"absolute",left:0,top:0,bottom:0,width:`${Math.round((d.value/max)*100)}%`,background:d.color||(colorFn?colorFn(i):C.p),borderRadius:6,transition:"width .4s"}}/>
-          </div>
-          <div style={{width:28,fontSize:12,fontWeight:700,color:C.t,textAlign:"left",flexShrink:0}}>{d.value}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ─── ERROR BOUNDARY ────────────────────────────────────────────────── */
-/* FIX AUDIT #14 (MEDIUM — ErrorBoundary tidak me-reset state setelah error):
-   Sebelumnya "Coba Lagi" hanya men-set err:false, tanpa me-remount komponen
-   child yang error. React akan mencoba merender ulang child yang sama persis
-   yang sudah error — kemungkinan besar akan error lagi dan pengguna terjebak.
-   Fix: tambahkan field `key` yang di-increment setiap reset. Perubahan `key`
-   pada React.Fragment memaksa seluruh subtree di-unmount lalu remount bersih,
-   sehingga state internal child ikut direset. */
-class ErrorBoundary extends Component<{children: React.ReactNode},{err:boolean;msg:string;key:number}> {
-  state = {err:false, msg:"", key:0};
-  static getDerivedStateFromError(e: any){ return {err:true, msg:e?.message||"Error"}; }
-
-  handleReset = () => {
-    this.setState(prev => ({err:false, msg:"", key: prev.key + 1}));
-  };
-
-  render(){
-    if(this.state.err) return (
-      <div style={{padding:24,textAlign:"center",background:C.dBg,borderRadius:14,margin:"8px 0",border:`1px solid ${C.dL}`}}>
-        <div style={{fontSize:32,marginBottom:8}}>⚠️</div>
-        <div style={{fontSize:14,color:C.d,fontWeight:600,marginBottom:8}}>{this.state.msg}</div>
-        <Btn onClick={this.handleReset}>Coba Lagi</Btn>
-      </div>
-    );
-    /* key change forces full remount of children — state internal child ikut direset */
-    return <Fragment key={this.state.key}>{this.props.children}</Fragment>;
-  }
-}
+// LF, TF, TA, SF, Btn, WaBt, Card, ensureSkeletonCss, ensureCustomFontLink,
+// SkeletonCard, SkeletonList, AnimatedNumber, HomeParallaxBanner, ScrollReveal,
+// Row, Bdg, SH, Toggle, MiniBar, ErrorBoundary sekarang diimpor dari
+// ./components/primitives (lihat import di atas)
 
 /* ─── PIN SCREEN ────────────────────────────────────────────────────── */
 /* ── PIN Screen dengan 2-role (Admin & Perawat) ── */
@@ -1634,8 +675,7 @@ class ErrorBoundary extends Component<{children: React.ReactNode},{err:boolean;m
    script langsung ke endpoint Supabase. Mitigasi sesungguhnya WAJIB ada
    di Row Level Security & rate-limiting sisi server Supabase — di luar
    kendali kode App.tsx ini. */
-const PIN_MAX_ATTEMPTS = 5;
-const PIN_LOCKOUT_MS   = 60_000;
+// PIN_MAX_ATTEMPTS, PIN_LOCKOUT_MS sekarang diimpor dari ./constants (lihat import di atas)
 /* FIX AUDIT #31 (HIGH — Bypass Lockout via Refresh): sebelumnya `attempts`
    dan `lockedUntil` HANYA berupa useState React biasa, sehingga refresh
    halaman (F5) langsung mereset percobaan ke 0 dan lockout ke null. Ini
@@ -1646,642 +686,32 @@ const PIN_LOCKOUT_MS   = 60_000;
    yang benar adalah enforce rate-limit di server (Supabase Edge Function
    / tabel kb_login_attempts dengan RLS), karena client tidak pernah bisa
    dipercaya sepenuhnya untuk self-enforce security control. */
-const PIN_LOCK_STORAGE_KEY = "kb_pin_lock_state_v1";
-function readPinLockState(): {attempts:number; lockedUntil:number|null} {
-  try {
-    const raw = sessionStorage.getItem(PIN_LOCK_STORAGE_KEY);
-    if(!raw) return {attempts:0, lockedUntil:null};
-    const parsed = JSON.parse(raw);
-    /* buang lockout yang sudah lewat waktunya supaya tidak nyangkut permanen */
-    if(parsed.lockedUntil && Date.now() >= parsed.lockedUntil) return {attempts:0, lockedUntil:null};
-    return { attempts: Number(parsed.attempts)||0, lockedUntil: parsed.lockedUntil||null };
-  } catch { return {attempts:0, lockedUntil:null}; }
-}
-function writePinLockState(attempts:number, lockedUntil:number|null){
-  try { sessionStorage.setItem(PIN_LOCK_STORAGE_KEY, JSON.stringify({attempts,lockedUntil})); } catch {}
-}
-function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime,lemburPegawai}: any) {
-  const [pin,setPin]   = useState("");
-  const [err,setErr]   = useState("");
-  const [shake,setShk] = useState(false);
-  const [checking,setChecking] = useState(false);
-  const initialLock = readPinLockState();
-  const [attempts,setAttempts]     = useState(initialLock.attempts);
-  const [lockedUntil,setLockedUntil] = useState<number|null>(initialLock.lockedUntil);
-  /* Sinkron otomatis ke sessionStorage setiap kali salah satu berubah —
-     pakai useEffect (bukan wrapper setter) agar selalu menulis nilai TERBARU
-     dari kedua state, tidak ada risiko closure basi menimpa nilai yang lain. */
-  useEffect(()=>{ writePinLockState(attempts, lockedUntil); }, [attempts, lockedUntil]);
-  // Force setup state (first time: PIN 0000)
-  const [setupMode,setSetupMode] = useState(false);
-  const [newAdmin,setNewAdmin]   = useState("");
-  const [cfAdmin,setCfAdmin]     = useState("");
-  const [newPerawat,setNewPerawat] = useState("");
-  const [cfPerawat,setCfPerawat]   = useState("");
-  const [setupErr,setSetupErr]   = useState("");
-  const [quickLembur,setQuickLembur] = useState(false);
-  /* UPDATE TAMPILAN AWAL: dua kartu pilihan (Login biasa / Input Lembur)
-     ditampilkan dulu sebelum field PIN muncul. entryMode null = tampilkan
-     kartu pilihan; "login" atau "lembur" = tampilkan form PIN sesuai mode
-     yang dipilih. quickLembur otomatis disetel sesuai kartu yang diklik. */
-  const [entryMode,setEntryMode] = useState<null|"login"|"lembur">(null);
-  /* OPSI A: step alur lembur — "pilih_pegawai" dulu, baru "pin" */
-  const [lemburStep,setLemburStep] = useState<"pilih_pegawai"|"pin">("pilih_pegawai");
-  const [pegawaiDipilih,setPegawaiDipilih] = useState<string>("");
-  const pinInputRef = useRef<HTMLInputElement>(null);
+// PIN_LOCK_STORAGE_KEY sekarang diimpor dari ./constants (lihat import di atas)
+// readPinLockState dan writePinLockState sekarang diimpor dari ./utils (lihat import di atas)
+/* PENAMBAHAN — efek visual terinspirasi ReactBits.dev (reactbits.dev),
+   direkonstruksi pure CSS/JS TANPA menambah dependency baru (tidak perlu
+   pnpm install apa pun) — supaya bisa langsung ditempel & jalan. Warna
+   disesuaikan dengan palet teal/biru yang sudah dipakai di app.
 
-  const chooseEntry = (mode:"login"|"lembur") => {
-    setEntryMode(mode);
-    setQuickLembur(mode==="lembur");
-    setPin(""); setErr("");
-    if(mode==="login"){
-      setTimeout(()=>pinInputRef.current?.focus(), 50);
-    } else {
-      setLemburStep("pilih_pegawai");
-      /* default ke pegawai pertama kalau ada */
-      setPegawaiDipilih((lemburPegawai||[])[0]?.id||"");
-    }
-  };
-  const backToChoice = () => {
-    setEntryMode(null); setPin(""); setErr("");
-    setLemburStep("pilih_pegawai"); setPegawaiDipilih("");
-  };
-  const lanjutKePIN = () => {
-    if(!pegawaiDipilih){ setErr("Pilih nama pegawai dulu"); return; }
-    setErr(""); setLemburStep("pin");
-    setTimeout(()=>pinInputRef.current?.focus(), 50);
-  };
+   1) AuroraBackground — mirip komponen "Aurora" ReactBits: beberapa blob
+      gradient besar yang bergerak lambat & saling tumpang tindih, memberi
+      kesan cerah & hidup dibanding gradient statis.
+   2) ShinyText — teks dengan highlight yang "berjalan" melintas (mirip
+      komponen "Shiny Text" ReactBits), dipakai untuk judul.
+   3) fireClickSpark — percikan kecil di titik klik tombol (mirip
+      komponen "ClickSpark" ReactBits), dipakai saat tombol utama ditekan. */
+// AuroraBackground, MeteorsBackground, GlareHover, Marquee, SplitText,
+// TwinklingStars, RotatingText, SquaresBackground, AnimatedListItem,
+// MagneticButton, SpotlightCard, DecryptedText, TiltCard, ShinyText,
+// fireClickSpark sekarang diimpor dari ./components/effects (lihat import di atas)
 
-  /* FIX AUDIT #4: PIN sekarang bisa berbentuk hash ("salt:hash") atau
-     legacy plaintext (data lama sebelum migrasi). verifyPin menangani
-     keduanya secara transparan. */
-  const check = async () => {
-    if(checking) return;
-    if(lockedUntil && Date.now() < lockedUntil){
-      const sisaDetik = Math.ceil((lockedUntil - Date.now())/1000);
-      setErr(`Terlalu banyak percobaan gagal. Coba lagi dalam ${sisaDetik} detik.`); setShk(true);
-      setTimeout(()=>{setShk(false);},400);
-      return;
-    }
-    /* FIX AUDIT #32 (MEDIUM — Hardcoded Bypass PIN "0000"): sebelumnya
-       bypass ini HANYA dijaga oleh `isFirstTime` (dihitung dari ada/tidaknya
-       PIN di Supabase). Kalau suatu saat pinFromCloud ter-null-kan lagi
-       akibat bug lain (mis. gagal parse config), "0000" jadi backdoor
-       de-facto ke mode setup admin. Sekarang ditambah flag terpisah di
-       localStorage yang HANYA di-set sekali setelah setup benar-benar
-       selesai (lihat doSetup) — begitu flag ini ada, bypass "0000" tidak
-       akan aktif lagi apa pun nilai isFirstTime dari cloud. */
-    const setupSudahSelesai = (()=>{ try { return localStorage.getItem("kb_setup_done_v1")==="1"; } catch { return false; } })();
-    if(isFirstTime && !setupSudahSelesai && pin==="0000"){
-      setSetupMode(true); setPin(""); setErr(""); return;
-    }
-    setChecking(true);
-    try{
-      if(await verifyPin(pin, pinAdmin)){
-        setAttempts(0); setLockedUntil(null);
-        AmbilLogMedis("KEAMANAN","Admin","LOGIN_SUKSES","Login Admin berhasil via PIN screen",{role:"admin", mode: quickLembur?"lembur_only":"penuh"});
-        onVerify("admin", undefined, undefined, quickLembur, quickLembur?pegawaiDipilih:undefined); return;
-      }
-      if(await verifyPin(pin, pinPerawat)){
-        setAttempts(0); setLockedUntil(null);
-        AmbilLogMedis("KEAMANAN","Perawat","LOGIN_SUKSES","Login Perawat berhasil via PIN screen",{role:"perawat", mode: quickLembur?"lembur_only":"penuh"});
-        onVerify("perawat", undefined, undefined, quickLembur, quickLembur?pegawaiDipilih:undefined); return;
-      }
-      const nextAttempts = attempts + 1;
-      setAttempts(nextAttempts);
-      AmbilLogMedis("KEAMANAN","Unknown","LOGIN_GAGAL",
-        `PIN salah — percobaan ke-${nextAttempts}/${PIN_MAX_ATTEMPTS}`,
-        { attempt: nextAttempts, locked: nextAttempts >= PIN_MAX_ATTEMPTS }
-      );
-      const willLock = nextAttempts >= PIN_MAX_ATTEMPTS;
-      if(willLock){
-        setLockedUntil(Date.now() + PIN_LOCKOUT_MS);
-        setErr(`Terlalu banyak percobaan gagal. Coba lagi dalam ${Math.ceil(PIN_LOCKOUT_MS/1000)} detik.`);
-      } else {
-        setErr(`PIN salah. Coba lagi. (${nextAttempts}/${PIN_MAX_ATTEMPTS})`);
-      }
-      setShk(true);
-      /* BUG FIX: sebelumnya setErr("") di sini SELALU dipanggil setelah 1.5 detik,
-         termasuk saat baru saja masuk status terkunci (willLock=true) — akibatnya
-         pesan "Coba lagi dalam 60 detik" hilang dari layar hanya 1.5 detik setelah
-         muncul, padahal input masih terkunci selama sisa ~58.5 detik berikutnya.
-         User jadi bingung kenapa tombol "🔒 Terkunci" tanpa keterangan apa pun.
-         Sekarang: pesan lockout HANYA dihapus oleh efek countdown di bawah (yang
-         memperbarui hitungan mundur tiap detik lalu membersihkannya begitu waktu
-         kunci benar-benar habis) — bukan oleh timer 1.5 detik ini. */
-      setTimeout(()=>{ setShk(false); setPin(""); if(!willLock) setErr(""); },1500);
-    } finally {
-      setChecking(false);
-    }
-  };
-  /* Countdown live untuk pesan lockout: memperbarui sisa detik tiap 1 detik
-     selama lockedUntil aktif, lalu otomatis membuka kunci & membersihkan
-     pesan begitu waktunya habis — tanpa perlu user menekan tombol lagi. */
-  useEffect(()=>{
-    if(!lockedUntil) return;
-    const iv = setInterval(()=>{
-      const sisa = lockedUntil - Date.now();
-      if(sisa<=0){
-        setLockedUntil(null); setErr(""); setAttempts(0); clearInterval(iv);
-      } else {
-        setErr(`Terlalu banyak percobaan gagal. Coba lagi dalam ${Math.ceil(sisa/1000)} detik.`);
-      }
-    },1000);
-    return ()=>clearInterval(iv);
-  },[lockedUntil]);
-  const doSetup = () => {
-    if(newAdmin.length<4){setSetupErr("PIN Admin minimal 4 digit");return;}
-    if(newAdmin!==cfAdmin){setSetupErr("PIN Admin tidak cocok");return;}
-    if(newPerawat.length<4){setSetupErr("PIN Perawat minimal 4 digit");return;}
-    if(newPerawat!==cfPerawat){setSetupErr("PIN Perawat tidak cocok");return;}
-    if(newAdmin===newPerawat){setSetupErr("PIN Admin & Perawat tidak boleh sama");return;}
-    /* FIX AUDIT #32: kunci permanen bypass "0000" begitu setup pertama selesai */
-    try { localStorage.setItem("kb_setup_done_v1","1"); } catch {}
-    onVerify("admin",newAdmin,newPerawat);
-  };
 
-  if(setupMode) return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#5FA39A,#3FA897,#16685F)",padding:16}}>
-      <style>{`@keyframes lgFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}`}</style>
-      <div style={{background:C.white,borderRadius:24,padding:"32px 28px",width:"100%",maxWidth:380,boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
-        <div style={{textAlign:"center",marginBottom:20}}>
-          <img src="/logo.jpeg" alt="Logo" style={{width:72,height:72,borderRadius:"50%",objectFit:"cover",display:"block",margin:"0 auto 12px",animation:"lgFloat 3s ease-in-out infinite"}}/>
-          <div style={{fontSize:16,fontWeight:800,color:C.p}}>Setup PIN Pertama Kali</div>
-          <div style={{fontSize:12,color:C.tL,marginTop:4}}>Buat PIN Admin dan PIN Perawat baru</div>
-        </div>
-        <div style={{background:C.wBg,border:`1px solid ${C.w}`,borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:12,color:C.w,fontWeight:600}}>
-          ⚠ Setelah setup, PIN <b>0000</b> tidak bisa digunakan lagi.
-        </div>
-        <div style={{fontSize:13,fontWeight:700,color:C.p,marginBottom:8}}>🔐 PIN Admin</div>
-        <LF label="PIN Admin Baru (min. 4 digit)"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="PIN admin baru" value={newAdmin} onChange={e=>setNewAdmin(e.target.value)}/></LF>
-        <LF label="Konfirmasi PIN Admin"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="Ulangi PIN admin" value={cfAdmin} onChange={e=>setCfAdmin(e.target.value)}/></LF>
-        <div style={{fontSize:13,fontWeight:700,color:C.g,margin:"12px 0 8px"}}>👤 PIN Perawat</div>
-        <LF label="PIN Perawat Baru (min. 4 digit)"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="PIN perawat baru" value={newPerawat} onChange={e=>setNewPerawat(e.target.value)}/></LF>
-        <LF label="Konfirmasi PIN Perawat"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="Ulangi PIN perawat" value={cfPerawat} onChange={e=>setCfPerawat(e.target.value)}/></LF>
-        {setupErr && <div style={{fontSize:12,color:C.d,marginBottom:10,fontWeight:600}}>⚠ {setupErr}</div>}
-        <Btn full onClick={doSetup} style={{marginTop:8,padding:"13px",fontSize:15,background:C.p}}>✓ Simpan PIN & Masuk</Btn>
-      </div>
-    </div>
-  );
+// PinScreen sekarang diimpor dari ./components/pin-screen (lihat import di atas)
 
-  return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#5FA39A,#3FA897,#16685F)",padding:16}}>
-      <style>{`@keyframes shk{0%,100%{transform:translateX(0)}25%,75%{transform:translateX(-7px)}50%{transform:translateX(7px)}} @keyframes lgFloat{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-8px) scale(1.06)}} @keyframes lgGlow{0%,100%{box-shadow:0 4px 18px rgba(22,104,95,.3),0 0 0 3px #16685F55}50%{box-shadow:0 12px 38px rgba(22,104,95,.65),0 0 0 4px #2D9A87aa}}`}</style>
-      <div style={{background:C.white,borderRadius:24,padding:"32px 28px",width:"100%",maxWidth:360,boxShadow:"0 20px 60px rgba(0,0,0,.3)",animation:shake?"shk .4s":"none"}}>
-        <div style={{textAlign:"center",marginBottom:24}}>
-          <img src="/logo.jpeg" alt="Logo Kamar Bedah" style={{width:104,height:104,borderRadius:"50%",objectFit:"cover",display:"block",margin:"0 auto 14px",animation:"lgFloat 3s ease-in-out infinite, lgGlow 3s ease-in-out infinite"}}/>
-          <div style={{fontSize:11,fontWeight:700,color:C.g,letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>RS Panti Rini</div>
-          <div style={{fontSize:20,fontWeight:900,color:C.p,letterSpacing:.5,lineHeight:1.2}}>SISTEM KOORDINASI<br/>KAMAR BEDAH</div>
-          <div style={{fontSize:11,color:C.tL,marginTop:6}}>{HOSPITAL}</div>
-        </div>
-
-        {entryMode===null ? (
-          /* UPDATE TAMPILAN AWAL: 2 kartu pilihan ditampilkan dulu sebelum PIN.
-             Klik salah satu kartu akan menampilkan form PIN dengan mode yang
-             sesuai (quickLembur otomatis disetel). Tidak ada perubahan pada
-             logika verifikasi PIN/role itu sendiri — murni urutan tampilan. */
-          <>
-            <div style={{fontSize:13,fontWeight:600,color:C.t,textAlign:"center",marginBottom:16}}>Pilih Menu</div>
-            <button
-              type="button"
-              onClick={()=>chooseEntry("login")}
-              style={{
-                width:"100%",display:"flex",alignItems:"center",gap:14,textAlign:"left",
-                background:C.pBg,border:`1.5px solid ${C.p}`,borderRadius:16,
-                padding:"18px 16px",marginBottom:12,cursor:"pointer",fontFamily:"inherit"
-              }}
-            >
-              <span style={{fontSize:28}}>🔐</span>
-              <span>
-                <div style={{fontSize:15,fontWeight:800,color:C.p}}>Masuk / Login</div>
-                <div style={{fontSize:11,color:C.tL,marginTop:2}}>Akses penuh — Admin atau Perawat</div>
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={()=>chooseEntry("lembur")}
-              style={{
-                width:"100%",display:"flex",alignItems:"center",gap:14,textAlign:"left",
-                background:"#FFF7E6",border:"1.5px solid #F2A93B",borderRadius:16,
-                padding:"18px 16px",marginBottom:6,cursor:"pointer",fontFamily:"inherit"
-              }}
-            >
-              <span style={{fontSize:28}}>⏰</span>
-              <span>
-                <div style={{fontSize:15,fontWeight:800,color:"#B8740A"}}>Input Lembur</div>
-                <div style={{fontSize:11,color:C.tL,marginTop:2}}>Langsung ke Catat Lembur saja</div>
-              </span>
-            </button>
-          </>
-        ) : entryMode==="lembur" && lemburStep==="pilih_pegawai" ? (
-          /* OPSI A STEP 1: pilih nama pegawai sebelum PIN ditampilkan */
-          <>
-            <button type="button" onClick={backToChoice} style={{display:"flex",alignItems:"center",gap:4,background:"none",border:"none",color:C.tL,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",marginBottom:14,padding:0}}>
-              ← Kembali ke Pilihan Menu
-            </button>
-            <div style={{fontSize:13,fontWeight:700,color:"#B8740A",textAlign:"center",marginBottom:6}}>⏰ Input Lembur</div>
-            <div style={{fontSize:11,color:C.tL,textAlign:"center",marginBottom:14}}>Pilih nama kamu terlebih dahulu</div>
-            {(lemburPegawai||[]).length===0 ? (
-              <div style={{fontSize:12,color:C.d,background:"#FFF3CD",borderRadius:10,padding:"12px 14px",marginBottom:14,textAlign:"center"}}>
-                ⚠ Belum ada data pegawai.<br/>Minta Admin untuk menambahkan data pegawai di tab Staf → Lembur terlebih dahulu.
-              </div>
-            ) : (
-              <>
-                <select
-                  style={{...iS,marginBottom:12,fontSize:14,fontWeight:600,height:48}}
-                  value={pegawaiDipilih}
-                  onChange={e=>setPegawaiDipilih(e.target.value)}
-                >
-                  <option value="">— Pilih nama kamu —</option>
-                  {(lemburPegawai||[]).map((p:any)=>(
-                    <option key={p.id} value={p.id}>{p.name}{p.nik?` — ${p.nik}`:""}</option>
-                  ))}
-                </select>
-                {err && <div style={{fontSize:12,color:C.d,textAlign:"center",marginBottom:10}}>⚠ {err}</div>}
-                <Btn full onClick={lanjutKePIN} style={{padding:"13px",fontSize:15,marginBottom:8}}>Lanjut →</Btn>
-              </>
-            )}
-          </>
-        ) : (
-          /* STEP 2 (lembur) atau mode login: form PIN */
-          <>
-            <button type="button" onClick={entryMode==="lembur"?()=>{setLemburStep("pilih_pegawai");setErr("");}:backToChoice} style={{display:"flex",alignItems:"center",gap:4,background:"none",border:"none",color:C.tL,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",marginBottom:14,padding:0}}>
-              ← {entryMode==="lembur"?"Kembali Pilih Nama":"Kembali ke Pilihan Menu"}
-            </button>
-            {entryMode==="lembur" && pegawaiDipilih && (
-              <div style={{background:"#FFF7E6",border:"1px solid #F2A93B",borderRadius:10,padding:"8px 14px",marginBottom:12,fontSize:13,fontWeight:700,color:"#B8740A",textAlign:"center"}}>
-                👤 {(lemburPegawai||[]).find((p:any)=>p.id===pegawaiDipilih)?.name||pegawaiDipilih}
-              </div>
-            )}
-            <div style={{fontSize:13,fontWeight:700,color:entryMode==="lembur"?"#B8740A":C.p,textAlign:"center",marginBottom:6}}>
-              {entryMode==="lembur" ? "⏰ Masukkan PIN" : "🔐 Masukkan PIN Akses"}
-            </div>
-            <div style={{fontSize:11,color:C.tL,textAlign:"center",marginBottom:10}}>Gunakan PIN Admin atau PIN Perawat</div>
-            <input ref={pinInputRef} style={{...iS,textAlign:"center",fontSize:28,letterSpacing:12,height:56,marginBottom:12,borderRadius:12}} type="password" inputMode="numeric" maxLength={6} placeholder="••••" value={pin} disabled={checking||!!(lockedUntil&&Date.now()<lockedUntil)} onChange={e=>setPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&check()}/>
-            {err && <div style={{fontSize:12,color:C.d,textAlign:"center",marginBottom:10}}>⚠ {err}</div>}
-            <Btn full onClick={check} disabled={checking||!!(lockedUntil&&Date.now()<lockedUntil)} style={{marginBottom:12,padding:"13px",fontSize:15}}>{checking?"Memeriksa...":(lockedUntil&&Date.now()<lockedUntil)?"🔒 Terkunci":"Masuk"}</Btn>
-            <div style={{display:"flex",justifyContent:"center"}}>
-              <button onClick={()=>{}} style={{background:"none",border:"none",color:C.tL,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Hubungi Admin jika lupa PIN</button>
-            </div>
-            <div style={{display:"flex",gap:6,marginTop:12,justifyContent:"center"}}>
-              <span style={{background:C.pBg,color:C.p,fontSize:10,padding:"3px 10px",borderRadius:12,fontWeight:700}}>🔐 Admin</span>
-              <span style={{background:C.gBg,color:C.g,fontSize:10,padding:"3px 10px",borderRadius:12,fontWeight:700}}>👤 Perawat</span>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
 
 /* ─── VIEW JADWAL ────────────────────────────────────────────────────── */
-function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReqOpId,reqText,setReqText,addReq,delReq,getPhone,setNotifs,showToast,privacyMode,role,upsertOneToSupa}: ViewJadwalProps) {
-  const [cId,setCId]     = useState<string|null>(null);
-  const [cR,setCR]       = useState("");
-  const [cytoM,setCytoM] = useState<any>(null);
-  const [delC,setDelC]   = useState<string|null>(null);
-  const [page,setPage]   = useState(0);
-  const [fSt,setFSt]     = useState("all");
-  const [q,setQ]         = useState("");
-  const [showRiwayat,setShowRiwayat] = useState(false);
+// ViewJadwal sekarang diimpor dari ./components/view-jadwal (lihat import di atas)
 
-  /* ── FITUR BARU: Auto-filter jadwal yang sudah berlalu ke "Riwayat" ──
-     Tanggal pembanding di-reset ke 00:00:00 ("start of day") — jadwal HARI
-     INI tetap tampil PENUH dari pagi sampai malam (apa pun statusnya,
-     termasuk yang sudah "done"), baru pindah ke Riwayat TEPAT SAAT
-     berganti hari ke esok. Ini murni FILTER TAMPILAN di komponen ini —
-     TIDAK mengubah/memindahkan struktur data `ops` maupun `archive`
-     (snapshot backup yang sudah ada, dipakai fitur lain yang terpisah),
-     sehingga nol risiko terhadap fitur backup/restore/audit yang sudah
-     established. `cytoActive` di bawah SENGAJA tetap membaca dari `ops`
-     penuh (bukan activeOpsBase) — alert Cyto/Emergency harus tetap
-     terdeteksi terlepas dari tanggalnya. */
-  const todayStr = todayDate(); // sudah format YYYY-MM-DD, aman dibandingkan sebagai string
-  const activeOpsBase = ops.filter((o:any)=>o.date>=todayStr);
-  const pastOps = ops.filter((o:any)=>o.date<todayStr).sort((a:any,b:any)=>b.date.localeCompare(a.date)||b.time.localeCompare(a.time));
-
-  const sorted = [...activeOpsBase]
-    .filter((op:any) => {
-      if(fSt!=="all"&&op.status!==fSt) return false;
-      if(q.trim()){ const lq=q.toLowerCase(); return (op.patient||"").toLowerCase().includes(lq)||(op.procedure||"").toLowerCase().includes(lq)||(op.surgeon||"").toLowerCase().includes(lq); }
-      return true;
-    })
-    .sort((a:any,b:any)=>{
-      // Prioritas 1: cyto hari ini selalu paling atas
-      const at=a.date===todayStr, bt=b.date===todayStr;
-      if(at&&a.opType==="cyto"&&!(bt&&b.opType==="cyto")) return -1;
-      if(bt&&b.opType==="cyto"&&!(at&&a.opType==="cyto")) return 1;
-      // Prioritas 2: yang belum selesai naik, yang done turun
-      const aDone = a.status==="done"||a.status==="batal";
-      const bDone = b.status==="done"||b.status==="batal";
-      if(!aDone && bDone) return -1;
-      if(aDone && !bDone) return 1;
-      // Prioritas 3: kronologis tanggal & jam
-      return a.date.localeCompare(b.date)||a.time.localeCompare(b.time);
-    });
-  const total  = Math.ceil(sorted.length/PAGE_SIZE);
-  const paged  = sorted.slice(page*PAGE_SIZE,(page+1)*PAGE_SIZE);
-  const hF = (v: string)=>{ setFSt(v); setPage(0); };
-  const hQ = (v: string)=>{ setQ(v);   setPage(0); };
-
-  const cytoActive = ops.filter((o:any)=>o.opType==="cyto"&&o.status!=="batal"&&o.status!=="done");
-  const openCyto   = (op:any) => { const ph=getPhone(op.surgeon); const msg=msgCyto(op); if(!ph){showToast("Nomor WA Dokter Bedah belum terdaftar di Staf",C.d);return;} setCytoM({op,msg,ph,ts:fNow()}); };
-  const confirmCyto= () => {
-    if(!cytoM)return;
-    /* FIX AUDIT #46 (HIGH — Link WhatsApp Darurat CYTO Tidak Ternormalisasi):
-       SEBELUMNYA nomor telepon dokter bedah (cytoM.ph, dari staff.phone apa
-       adanya) hanya dibersihkan karakter non-digit, TANPA memakai
-       normalizePhone62() yang sudah ada di file ini (baris ~710) — helper
-       itu justru dibuat khusus untuk mengubah "0812..." menjadi "62812..."
-       karena wa.me MEWAJIBKAN format internasional tanpa angka 0 di depan.
-       Karena staf lazim mengisi nomor HP dengan awalan "0" (format umum di
-       Indonesia) lewat form Staf biasa (bukan hanya lewat impor Excel yang
-       sudah pakai normalizePhone62), link wa.me yang terbentuk bisa TIDAK
-       VALID — WhatsApp menampilkan "nomor telepon tidak valid" alih-alih
-       membuka chat. Untuk notifikasi EMERGENCY CYTO ini risikonya tinggi:
-       staf mengira sudah mengirim peringatan darurat ke dokter bedah,
-       padahal link-nya gagal terbuka. Sekarang selalu dinormalisasi lebih
-       dulu lewat normalizePhone62() — sama seperti jalur impor Excel. */
-    window.open(`https://wa.me/${normalizePhone62(cytoM.ph)}?text=${encodeURIComponent(cytoM.msg)}`,"_blank");
-    /* FIX AUDIT #24 (CRITICAL — Unbounded Array Growth, Endurance Test):
-       dashboard ini dijalankan 24/7 tanpa refresh (TV monitor kamar bedah).
-       Tanpa cap, array notifs bertambah selamanya setiap kali WA dikirim —
-       ratusan/ribuan entri dalam beberapa hari akan membebani memori
-       browser secara progresif (memory bloat), berisiko tab crash/reload
-       paksa di tengah jam operasi. Dibatasi ke 200 entri TERBARU saja —
-       cukup untuk keperluan log/audit trail jangka pendek di UI, sisanya
-       tetap aman tersimpan permanen di Supabase (bukan hilang, hanya tidak
-       lagi ditampilkan di memori client). */
-    setNotifs((p:any)=>[{id:gId(),type:"cyto",label:"⚡ WA Cyto → "+cytoM.op.surgeon,patient:cytoM.op.patient,procedure:cytoM.op.procedure,message:cytoM.msg,sentAt:cytoM.ts},...p].slice(0,200));
-    showToast("✓ WhatsApp dibuka — tekan Kirim di WA","#25D366");
-    setCytoM(null);
-  };
-
-  return (
-    <div>
-      {privacyMode && <div style={{background:"#4A148C",borderRadius:10,padding:"8px 14px",marginBottom:8,fontSize:12,fontWeight:700,color:"#fff"}}>🔒 Mode Privasi — Nama & RM disamarkan</div>}
-      {cytoActive.length>0 && (
-        <div style={{background:"#FFCDD2",borderRadius:10,padding:"10px 14px",marginBottom:12,border:"2px solid #F44336"}}>
-          <div style={{fontSize:13,fontWeight:800,color:"#B71C1C",marginBottom:4}}>⚠️ OPERASI CYTO / EMERGENCY AKTIF</div>
-          {cytoActive.map((o:any)=><div key={o.id} style={{fontSize:12,color:"#B71C1C"}}>• {maskName(o.patient,privacyMode)} — {o.procedure} ({o.time} WIB)</div>)}
-        </div>
-      )}
-      <div style={{marginBottom:12}}>
-        <div style={{display:"flex",gap:8,marginBottom:8}}>
-          <input style={{...iS,flex:1,padding:"9px 14px",fontSize:13}} placeholder="🔍 Cari pasien, tindakan, dokter..." value={q} onChange={e=>hQ(e.target.value)}/>
-          {q&&<button onClick={()=>hQ("")} style={{background:"none",border:`1px solid ${C.b}`,borderRadius:8,color:C.g,padding:"0 14px",cursor:"pointer",fontSize:16}}>✕</button>}
-        </div>
-        <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
-          {[{v:"all",l:"Semua"},{v:"scheduled",l:"Terjadwal"},{v:"ongoing",l:"Berlangsung"},{v:"done",l:"Selesai"},{v:"batal",l:"Batal"}].map(f=>(
-            <button key={f.v} onClick={()=>hF(f.v)} style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${fSt===f.v?C.p:C.b}`,background:fSt===f.v?C.p:"#FAFBFD",color:fSt===f.v?"#fff":C.g,fontSize:12,fontWeight:fSt===f.v?700:400,cursor:"pointer",fontFamily:"inherit"}}>
-              {f.l}
-            </button>
-          ))}
-          <span style={{marginLeft:"auto",fontSize:12,color:C.tL}}>{sorted.length} jadwal</span>
-          <button onClick={()=>{
-            const printDate = prompt("Cetak jadwal tanggal (format YYYY-MM-DD, mis. 2026-06-29 — kosongkan untuk semua):");
-            const filtered = printDate ? ops.filter((o:any)=>o.date===printDate) : sorted;
-            if(!filtered.length){showToast("Tidak ada jadwal untuk dicetak",C.w);return;}
-            const rows = filtered.map((op:any,i:number)=>`<tr><td>${i+1}</td><td>${fDMY(op.date)} ${op.time}</td><td><b>${op.patient}</b></td><td>${op.procedure}</td><td>${op.room}</td><td>${op.surgeon}</td><td>${op.anesthesiologist||"—"}</td><td style="text-align:center"><span style="background:${STS[op.status as keyof typeof STS]?.c||C.g};color:#fff;padding:2px 8px;border-radius:10px;font-size:10px">${STS[op.status as keyof typeof STS]?.l||op.status}</span></td></tr>`).join("");
-            const w=window.open("","_blank","width=900,height=700")!;
-            w.document.write(`<!DOCTYPE html><html><head><title>Jadwal Operasi ${printDate||"Semua"} — ${HOSPITAL}</title><style>body{font-family:Arial,sans-serif;font-size:12px;margin:20px}h2{color:#16685F;margin-bottom:4px}p{color:#555;margin-bottom:12px}table{width:100%;border-collapse:collapse}th{background:#16685F;color:#fff;padding:7px 10px;text-align:left;font-size:11px}td{padding:6px 10px;border-bottom:1px solid #e0e0e0;vertical-align:top}tr:nth-child(even)td{background:#f5f5f5}@media print{button{display:none}}</style></head><body><h2>🏥 Jadwal Operasi — ${HOSPITAL}</h2><p>${printDate?`Tanggal: ${printDate}`:"Semua jadwal"} · Dicetak: ${fNow()}</p><button onclick="window.print()" style="margin-bottom:12px;background:#16685F;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:13px">🖨 Cetak / Simpan PDF</button><table><thead><tr><th>#</th><th>Tanggal/Jam</th><th>Pasien</th><th>Tindakan</th><th>Kamar</th><th>Dr. Bedah</th><th>Dr. Anestesi</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table></body></html>`);
-            w.document.close();
-          }} style={{padding:"5px 12px",borderRadius:20,border:`1px solid ${C.p}`,background:C.pBg,color:C.p,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
-            🖨 Cetak
-          </button>
-        </div>
-      </div>
-      {sorted.length===0 && (
-        <Card><div style={{textAlign:"center",padding:28,color:C.tL}}>
-          <div style={{fontSize:36,marginBottom:8}}>📋</div>
-          <div style={{fontSize:14,fontWeight:600}}>{activeOpsBase.length===0?"Tidak ada jadwal operasi yang akan datang.":"Tidak ada hasil pencarian"}</div>
-          {activeOpsBase.length===0&&<div style={{fontSize:12,marginTop:4}}>Klik tab 📝 Daftar untuk mendaftarkan</div>}
-        </div></Card>
-      )}
-      {paged.map((op:any)=>{
-        const sc=STS[op.status as keyof typeof STS]||STS.scheduled, ot=OT[op.opType as keyof typeof OT||"elektif"];
-        const hasAlg=op.allergy&&op.allergy!=="Tidak Ada", isBatal=op.status==="batal";
-        const isDone   = op.status==="done";
-        const isToday  = op.date===todayStr;
-        const isTomorrow = op.date === tmrwDate();
-        const isActive = isToday && !isDone && !isBatal; // blinking dot condition
-
-        /* ── Auto-minimize: pasien selesai hari ini — tampilkan mini card TAPI tetap ada tombol Edit ── */
-        if(isDone && isToday) return (
-          <Card key={op.id} style={{opacity:.75,transition:"opacity .3s",marginBottom:6}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <span style={{fontSize:11,color:C.s,fontWeight:700,flexShrink:0}}>✅</span>
-              <span style={{fontSize:12,color:"#475569",flex:1,textDecoration:"line-through",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{maskName(op.patient,privacyMode)} — {op.time} — {op.procedure}</span>
-              <Bdg label="Selesai" color={C.s} bg={C.sBg}/>
-              <Btn sm outline color={C.p} onClick={()=>startEditOp(op)}>✏ Edit</Btn>
-            </div>
-          </Card>
-        );
-
-        return (
-          <Card key={op.id}
-            hi={op.opType==="cyto"&&!isBatal?"#F44336":hasAlg&&!isBatal?C.dL:undefined}
-            style={{
-              opacity:isBatal?.72:1,
-              background:isActive?"#fef2f2":(isTomorrow&&!isBatal&&!isDone)?"#F3E8FF":undefined,
-              border:isActive?"1.5px solid #fca5a5":(isTomorrow&&!isBatal&&!isDone)?"1.5px solid #D8B4FE":undefined,
-              transition:"all .3s"
-            }}
-          >
-            {/* ── Alert banners ── */}
-            {op.opType==="cyto"&&!isBatal && <div style={{background:"#FFCDD2",borderRadius:8,padding:"6px 12px",marginBottom:8,fontSize:12,fontWeight:700,color:"#B71C1C"}}>⚠️ CYTO / EMERGENCY — SEGERA DITANGANI</div>}
-            {hasAlg&&op.opType!=="cyto"&&!isBatal && <div style={{background:C.dBg,borderRadius:8,padding:"5px 12px",marginBottom:8,fontSize:12,fontWeight:700,color:C.d}}>⚠ ALERGI: {op.allergy}</div>}
-            {isTomorrow&&!isBatal&&!isDone && <div style={{background:"#EDE9FE",borderRadius:8,padding:"5px 12px",marginBottom:8,fontSize:12,fontWeight:700,color:"#6B21A8",display:"flex",alignItems:"center",gap:6}}>📅 OPERASI BESOK (H+1) — Siapkan persiapan sebelum shift selesai</div>}
-            {isBatal && <div style={{background:C.dBg,borderRadius:8,padding:"5px 12px",marginBottom:8,fontSize:12,fontWeight:700,color:C.d}}>✕ {op.cancelReason?"BATAL: "+op.cancelReason:"BATAL/DITUNDA"}</div>}
-
-            {/* ── Header row: nama + badge + Mulai/Selesai di kanan ── */}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8,gap:8}}>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:2}}>
-                  {/* Blinking red dot — hanya untuk pasien aktif hari ini */}
-                  {isActive && (
-                    <span style={{width:10,height:10,borderRadius:"50%",background:"#ef4444",flexShrink:0,display:"inline-block",animation:"redPulse 1.2s ease-in-out infinite"}}/>
-                  )}
-                  <div style={{fontSize:15,fontWeight:800,color:(isTomorrow&&!isBatal&&!isDone)?"#6B21A8":C.t,textDecoration:isBatal?"line-through":"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{maskName(op.patient,privacyMode)||"—"}</div>
-                </div>
-                <div style={{fontSize:12,color:C.tL}}>{op.age?op.age+"th  ":""}{op.rm?"RM "+maskRM(op.rm,privacyMode)+"  ":""}{op.bloodType}</div>
-              </div>
-              {/* Badges */}
-              <div style={{display:"flex",flexDirection:"column",gap:4,alignItems:"flex-end",flexShrink:0}}>
-                <Bdg label={ot?.label||"Elektif"} color={ot?.c||C.i} bg={ot?.bg||C.iBg}/>
-                <Bdg label={sc.l} color={sc.c} bg={sc.bg}/>
-              </div>
-              {/* Tombol Mulai / Selesai — ujung kanan, besar & terang */}
-              {!isBatal && (
-                <div style={{display:"flex",gap:6,flexShrink:0,alignItems:"center"}}>
-                  {op.status==="scheduled" && (
-                    <button onClick={()=>{
-                      const upd={...op,status:"ongoing",updated_at:new Date().toISOString()};
-                      setOps((p:any)=>p.map((o:any)=>o.id===op.id?upd:o));
-                      AmbilLogMedis("JADWAL_OPERASI","Admin","MULAI_OPERASI",
-                        `Operasi dimulai: ${op.patient||"-"} — ${op.procedure||"-"}`,{id:op.id,patient:op.patient,room:op.room});
-                      upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal: ${res?.error||"error"}`,C.d); } });
-                    }} style={{background:"#22c55e",color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(34,197,94,.4)"}}>
-                      ▶ Mulai
-                    </button>
-                  )}
-                  {op.status==="ongoing" && (
-                    <button onClick={()=>{
-                      const upd={...op,status:"done",updated_at:new Date().toISOString()};
-                      setOps((p:any)=>p.map((o:any)=>o.id===op.id?upd:o));
-                      AmbilLogMedis("JADWAL_OPERASI","Admin","SELESAI_OPERASI",
-                        `Operasi selesai: ${op.patient||"-"} — ${op.procedure||"-"}`,{id:op.id,patient:op.patient,room:op.room});
-                      upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal: ${res?.error||"error"}`,C.d); } });
-                    }} style={{background:"#ef4444",color:"#fff",border:"none",borderRadius:10,padding:"10px 18px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(239,68,68,.4)"}}>
-                      ✓ Selesai
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* ── Procedure block ── */}
-            <div style={{background:"#F8FBF0",border:"1px solid #D4E6A0",borderRadius:10,padding:"10px 12px",marginBottom:8}}>
-              <div style={{fontSize:14,fontWeight:700,color:"#33691E"}}>{op.procedure}</div>
-              <div style={{fontSize:12,color:"#558B2F",marginTop:2}}>{op.diagnosis}</div>
-              <div style={{fontSize:12,color:"#558B2F",marginTop:3}}>📅 {fDMY(op.date)} · {op.time} WIB · {op.room}</div>
-            </div>
-
-            {/* ── Staff detail ── */}
-            <div style={{fontSize:12,color:C.tL,lineHeight:1.9,marginBottom:8}}>
-              <div><b>Operator:</b> {op.surgeon||"—"}</div>
-              <div><b>Anestesi:</b> {op.anesthesiologist||"—"}</div>
-              <div><b>Asisten:</b> {op.assistantNurse||"—"} · <b>Instrumen:</b> {op.circulatingNurse||"—"}</div>
-              <div><b>Onloop:</b> {op.onloopNurse||"—"} · <b>RR:</b> {op.rrKatim||"—"}</div>
-            </div>
-
-            {op.specialNeeds && <div style={{background:C.wBg,borderRadius:8,padding:"6px 12px",marginBottom:8,fontSize:12,color:C.w}}>📌 {op.specialNeeds}</div>}
-            {op.ruangAsal&&op.opType==="cyto" && <div style={{background:"#FFCDD2",borderRadius:8,padding:"5px 12px",marginBottom:8,fontSize:12,color:"#B71C1C"}}>📍 Ruang Asal: {op.ruangAsal}</div>}
-            {(op.requests||[]).length>0 && (
-              <div style={{background:C.wBg,borderRadius:8,padding:"8px 12px",marginBottom:8}}>
-                <div style={{fontSize:12,fontWeight:700,color:C.w,marginBottom:3}}>PERMINTAAN OPERATOR</div>
-                {op.requests.map((r:any)=>(
-                  <div key={r.id||r} style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <div style={{fontSize:12,color:C.w}}>• {typeof r==="string"?r:r.text}</div>
-                    {typeof r!=="string" && <button onClick={()=>delReq(op.id,r.id)} style={{background:"none",border:"none",color:C.d,cursor:"pointer",fontSize:16,padding:"0 4px"}}>×</button>}
-                  </div>
-                ))}
-              </div>
-            )}
-            {(op.reminders||[]).length>0 && <div style={{marginBottom:8}}>{op.reminders.map((r:string,i:number)=><span key={i} style={{background:C.sBg,color:C.s,fontSize:11,padding:"3px 10px",borderRadius:10,fontWeight:700,marginRight:4}}>✓ {r==="H-1"?"H-1":"1 Jam"}</span>)}</div>}
-
-            {/* ── Secondary action row (edit, reminder, batal, hapus) ── */}
-            {!isBatal && (
-              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:6}}>
-                {op.opType==="cyto"
-                  ? <WaBt sm onClick={()=>openCyto(op)}>⚡ WA Cyto</WaBt>
-                  : <><Btn sm outline color={C.i} disabled={(op.reminders||[]).includes("H-1")} onClick={()=>sendReminder(op,"H-1")}>H-1</Btn><Btn sm outline color={C.w} disabled={(op.reminders||[]).includes("H-1jam")} onClick={()=>sendReminder(op,"H-1jam")}>1 Jam</Btn></>
-                }
-                <Btn sm outline color={C.p} onClick={()=>startEditOp(op)}>✏ Edit</Btn>
-                <Btn sm outline color={C.w} onClick={()=>{setReqOpId(op.id);setReqText("");}}>+ Permintaan</Btn>
-                <Btn sm outline color={C.d} onClick={()=>{setCId(op.id);setCR("");}}>Batal/Tunda</Btn>
-              </div>
-            )}
-            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              {isBatal && <Btn sm outline color={C.g} onClick={()=>{
-                const upd={...op,status:"scheduled",cancelReason:"",updated_at:new Date().toISOString()};
-                setOps((p:any)=>p.map((o:any)=>o.id===op.id?upd:o));
-                AmbilLogMedis("JADWAL_OPERASI","Admin","AKTIFKAN_OPERASI",
-                  `Operasi diaktifkan kembali: ${op.patient||"-"}`,{id:op.id,patient:op.patient});
-                upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal: ${res?.error||"error"}`,C.d); } });
-              }}>Aktifkan</Btn>}
-              <Btn sm outline color={C.d} onClick={()=>setDelC(op.id)}>Hapus</Btn>
-            </div>
-            {cId===op.id && (
-              <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.b}`}}>
-                <div style={{fontSize:13,fontWeight:700,color:C.d,marginBottom:8}}>Alasan Pembatalan / Penundaan</div>
-                <input style={{...iS,marginBottom:8}} placeholder="Cth: Pasien belum puasa, kondisi tidak stabil" value={cR} onChange={e=>setCR(e.target.value)}/>
-                <div style={{display:"flex",gap:8}}><Btn full color={C.d} onClick={()=>{
-                  const upd={...op,status:"batal",cancelReason:sanitize(cR),updated_at:new Date().toISOString()};
-                  setOps((p:any)=>p.map((o:any)=>o.id===op.id?upd:o));
-                  setCId(null);setCR("");showToast("Operasi ditandai batal",C.w);
-                  AmbilLogMedis("JADWAL_OPERASI","Admin","BATAL_OPERASI",
-                    `Operasi dibatalkan: ${op.patient||"-"} — alasan: ${cR||"-"}`,
-                    {id:op.id,patient:op.patient,cancelReason:cR});
-                  upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any)=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal: ${res?.error||"error"}`,C.d); } });
-                }}>Konfirmasi Batal</Btn><Btn full outline color={C.g} onClick={()=>setCId(null)}>Tutup</Btn></div>
-              </div>
-            )}
-            {reqOpId===op.id && (
-              <div style={{marginTop:12,paddingTop:12,borderTop:`1px solid ${C.b}`}}>
-                <div style={{fontSize:13,fontWeight:700,color:C.t,marginBottom:8}}>Tambah Permintaan Operator</div>
-                <textarea value={reqText} onChange={(e:any)=>setReqText(e.target.value)} placeholder="Cth: Siapkan retractor khusus, warming blanket..." style={{...iS,resize:"vertical",minHeight:68,marginBottom:8} as React.CSSProperties}/>
-                <div style={{display:"flex",gap:8}}><Btn full onClick={()=>addReq(op.id)}>Simpan</Btn><Btn full outline color={C.g} onClick={()=>setReqOpId(null)}>Batal</Btn></div>
-              </div>
-            )}
-          </Card>
-        );
-      })}
-      {total>1 && (
-        <div style={{display:"flex",justifyContent:"center",alignItems:"center",gap:8,padding:"12px 0 6px"}}>
-          <button onClick={()=>setPage((p:number)=>Math.max(0,p-1))} disabled={page===0} style={{padding:"8px 16px",borderRadius:10,border:`1.5px solid ${page===0?C.b:C.p}`,background:"#FAFBFD",cursor:page===0?"not-allowed":"pointer",color:page===0?C.b:C.p,fontSize:13,fontWeight:700,fontFamily:"inherit",opacity:page===0?.4:1}}>← Prev</button>
-          {Array.from({length:total},(_,i)=>(
-            <button key={i} onClick={()=>setPage(i)} style={{width:36,height:36,borderRadius:10,border:`1.5px solid ${i===page?C.p:C.b}`,background:i===page?C.p:"#FAFBFD",color:i===page?"#fff":C.t,cursor:"pointer",fontSize:13,fontWeight:i===page?700:400,fontFamily:"inherit"}}>{i+1}</button>
-          ))}
-          <button onClick={()=>setPage((p:number)=>Math.min(total-1,p+1))} disabled={page===total-1} style={{padding:"8px 16px",borderRadius:10,border:`1.5px solid ${page===total-1?C.b:C.p}`,background:"#FAFBFD",cursor:page===total-1?"not-allowed":"pointer",color:page===total-1?C.b:C.p,fontSize:13,fontWeight:700,fontFamily:"inherit",opacity:page===total-1?.4:1}}>Next →</button>
-        </div>
-      )}
-      {/* ── FITUR BARU: Riwayat (jadwal yang tanggalnya sudah berlalu) ──
-         Read-only — sengaja TIDAK ada tombol Edit/Hapus/Mulai/Selesai,
-         sesuai instruksi: data lewat hanya untuk dilihat, bukan diubah.
-         Collapsible & default tertutup supaya tidak membuat tab Jadwal
-         tetap ringan secara visual; data hanya di-render saat dibuka. */}
-      {pastOps.length>0 && (
-        <details style={{marginTop:16}} onToggle={(e:any)=>setShowRiwayat(e.target.open)}>
-          <summary style={{background:"#F0F4F8",borderRadius:12,padding:"12px 16px",cursor:"pointer",border:`1px solid ${C.b}`,listStyle:"none",fontWeight:700,fontSize:13,color:C.g}}>
-            📜 Riwayat — {pastOps.length} jadwal sudah berlalu
-          </summary>
-          {showRiwayat && (
-            <div style={{paddingTop:10}}>
-              {pastOps.map((op:any)=>{
-                const sc=STS[op.status as keyof typeof STS]||STS.scheduled;
-                return (
-                  <Card key={op.id} style={{padding:"10px 14px",marginBottom:6,opacity:.85}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
-                      <div>
-                        <div style={{fontSize:13,fontWeight:700,color:C.t}}>{maskName(op.patient,privacyMode)}</div>
-                        <div style={{fontSize:12,color:C.tL,marginTop:2}}>{op.procedure} · {op.room}</div>
-                        <div style={{fontSize:11,color:C.tL,marginTop:2}}>{fDMY(op.date)} · {op.time} WIB · {op.surgeon}</div>
-                      </div>
-                      <span style={{background:sc.c,color:"#fff",fontSize:10,padding:"3px 9px",borderRadius:10,fontWeight:700,whiteSpace:"nowrap"}}>{sc.l}</span>
-                    </div>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
-        </details>
-      )}
-      {delC && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.55)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-          <div style={{background:C.white,borderRadius:18,padding:"24px 20px",maxWidth:320,width:"100%",boxShadow:"0 12px 40px rgba(0,0,0,.25)"}}>
-            <div style={{textAlign:"center",marginBottom:14}}><div style={{fontSize:36}}>🗑</div><div style={{fontSize:15,fontWeight:700,color:C.d,marginTop:6}}>Hapus Jadwal?</div><div style={{fontSize:12,color:C.tL,marginTop:4}}>Tindakan ini tidak dapat dibatalkan.</div></div>
-            <div style={{display:"flex",gap:8}}><Btn full outline color={C.g} onClick={()=>setDelC(null)} style={{flex:1}}>Batal</Btn><Btn full color={C.d} onClick={()=>{deleteOp(delC);setDelC(null);}} style={{flex:1}}>Hapus</Btn></div>
-          </div>
-        </div>
-      )}
-      {cytoM && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.65)",zIndex:500,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-          <div style={{background:C.white,borderRadius:"22px 22px 0 0",padding:"22px 20px",width:"100%",maxWidth:520,maxHeight:"88vh",display:"flex",flexDirection:"column",boxShadow:"0 -10px 40px rgba(0,0,0,.3)"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
-              <div><div style={{fontSize:15,fontWeight:800,color:"#B71C1C"}}>⚡ Pratinjau WA Cyto / Emergency</div><div style={{fontSize:11,color:C.tL,marginTop:2}}>🕐 {cytoM.ts}</div></div>
-              <button onClick={()=>setCytoM(null)} style={{background:"none",border:`1px solid ${C.b}`,borderRadius:8,padding:"4px 12px",cursor:"pointer",fontSize:20,lineHeight:1,flexShrink:0}}>×</button>
-            </div>
-            <div style={{background:"#FFF3E0",borderRadius:8,padding:"8px 14px",marginBottom:10,fontSize:12,color:C.w,fontWeight:600}}>📨 Penerima: <b>{cytoM.op.surgeon}</b> (+{cytoM.ph})</div>
-            <div style={{flex:1,overflowY:"auto",background:"#FFF8F8",borderRadius:8,padding:"12px 14px",fontSize:12,lineHeight:1.9,whiteSpace:"pre-wrap",border:"2px solid #F44336",fontFamily:"inherit",marginBottom:14}}>{cytoM.msg}</div>
-            <div style={{fontSize:11,color:"#B71C1C",marginBottom:12,fontWeight:600,textAlign:"center"}}>⚠ Periksa isi pesan. WhatsApp akan terbuka — tekan Kirim secara manual.</div>
-            <div style={{display:"flex",gap:10}}><Btn full outline color={C.g} onClick={()=>setCytoM(null)} style={{flex:1}}>Batal</Btn><WaBt full onClick={confirmCyto} style={{flex:2}}>⚡ Konfirmasi & Buka WA</WaBt></div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* ─── DATE TEXT INPUT ────────────────────────────────────────────────── */
 /* Menggantikan <input type="date"> di semua tab.
@@ -2290,317 +720,57 @@ function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId,setReq
    Komponen ini pakai type="text" + auto-insert slash sehingga format
    DD/MM/YYYY selalu konsisten di semua OS/browser.
    Nilai internal tetap YYYY-MM-DD (kompatibel DB & perbandingan string). */
-function DateTxt({value,onChange,style,...rest}: {value:string;onChange:(v:string)=>void;style?:React.CSSProperties;[k:string]:any}) {
-  const [raw,setRaw] = useState(()=>value?fDMY(value):"");
-  const prevVal = useRef(value);
-  const pickerRef = useRef<HTMLInputElement>(null);
-  useEffect(()=>{
-    if(value!==prevVal.current){
-      prevVal.current=value;
-      setRaw(value?fDMY(value):"");
-    }
-  },[value]);
-  const handleChange=(e:React.ChangeEvent<HTMLInputElement>)=>{
-    let v=e.target.value.replace(/[^0-9/]/g,"");
-    /* auto-insert slash setelah DD dan MM */
-    if(v.length===2&&raw.length===1&&!v.includes("/")) v+="/";
-    if(v.length===5&&raw.length===4&&v.split("/").length===2) v+="/";
-    if(v.length>10) v=v.slice(0,10);
-    setRaw(v);
-    if(v.length===10){const iso=toISODateStrict(v);if(iso)onChange(iso);}
-    else if(v==="")onChange("");
-  };
-  /* Buka dropdown kalender native browser. <input type="date"> disembunyikan
-     (opacity 0, menumpuk di atas tombol 📅) sehingga tidak menampilkan
-     format MM/DD/YYYY yang jadi masalah — kalender ini hanya dipakai untuk
-     MEMILIH tanggal lewat dropdown, bukan untuk menampilkan teksnya. */
-  const openPicker = () => {
-    const el = pickerRef.current;
-    if(!el) return;
-    if(typeof (el as any).showPicker === "function"){
-      try{ (el as any).showPicker(); return; }catch{ /* fallback di bawah */ }
-    }
-    el.focus();
-    el.click();
-  };
-  const handlePickerChange=(e:React.ChangeEvent<HTMLInputElement>)=>{
-    const iso = e.target.value;
-    if(iso){
-      setRaw(fDMY(iso));
-      onChange(iso);
-    }
-  };
-  return (
-    <div style={{position:"relative",display:"inline-block",width:style?.width||"100%"}}>
-      <input
-        {...rest}
-        type="text"
-        inputMode="numeric"
-        value={raw}
-        onChange={handleChange}
-        placeholder="DD/MM/YYYY"
-        maxLength={10}
-        style={{...style,width:"100%",paddingRight:30,boxSizing:"border-box"}}
-      />
-      <input
-        ref={pickerRef}
-        type="date"
-        value={value||""}
-        onChange={handlePickerChange}
-        tabIndex={-1}
-        aria-hidden="true"
-        style={{position:"absolute",right:2,top:"50%",transform:"translateY(-50%)",width:24,height:24,opacity:0,cursor:"pointer"}}
-      />
-      <button
-        type="button"
-        onClick={openPicker}
-        tabIndex={-1}
-        aria-label="Buka kalender"
-        style={{position:"absolute",right:4,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",padding:4,lineHeight:0,color:"#666",pointerEvents:"none"}}
-      >📅</button>
-    </div>
-  );
-}
+// DateTxt sekarang diimpor dari ./components/date-txt (lihat import di atas)
 
 /* ─── SCAN FORMULIR OPERASI (Kamera / Screenshot / Galeri) ──────────────
    Komponen tombol yang dipakai di dalam ViewDaftar. Mengirim foto ke
    Edge Function "ocr-proxy", menerima array hasil ekstraksi (bisa >1
    entri jika 1 screenshot berisi banyak pasien), lalu meneruskan ke
    callback onResults milik ViewDaftar untuk auto-fill form. ────────── */
-interface ScanFormulirProps {
-  onResults: (results: OcrExtractResult[]) => void;
-  showToast: ShowToastFn;
-}
+// ScanFormulirProps sekarang diimpor dari ./types (lihat import type di atas)
 /* FIX AUDIT #36 (MEDIUM — Resource Exhaustion): batas jumlah kandidat yang
    diproses dari 1 scan, mencegah auto-save massal kalau server/model
    mengembalikan array besar akibat bug atau respons cacat. */
-const MAX_OCR_BATCH = 20;
-/* FIX AUDIT #37 (LOW — Client-Side DoS): batas ukuran file sebelum decode
-   canvas, mencegah browser HP hang saat memproses foto beresolusi sangat
-   tinggi (mis. RAW/HEIC besar). */
-const MAX_OCR_FILE_MB = 15;
-/* Batas panjang teks yang boleh ditempel di Jalur 2 (Paste Teks) — mencegah
-   payload raksasa ke Worker (mis. tidak sengaja paste seluruh isi WhatsApp
-   sehari penuh) dan tetap masuk akal untuk 1 instruksi/memo operasi. */
-const MAX_OCR_PASTE_CHARS = 4000;
-function ScanFormulir({onResults, showToast}: ScanFormulirProps) {
-  const [loading, setLoading] = useState(false);
-  const cameraInputRef  = useRef<HTMLInputElement>(null);
-  const galleryInputRef = useRef<HTMLInputElement>(null);
-  /* FIX AUDIT #38 (LOW — Double-Submit): guard sinkron via ref, pola yang
-     sama seperti isSubmittingAbsenRef di modul lembur — `loading` (state
-     React) saja tidak cukup karena ada celah singkat sebelum re-render di
-     mana tap ganda cepat masih bisa lolos memicu 2 scan bersamaan. */
-  const isProcessingRef = useRef(false);
+// MAX_OCR_BATCH, MAX_OCR_FILE_MB, MAX_OCR_PASTE_CHARS sekarang diimpor dari ./constants (lihat import di atas)
 
-  /* SARAN PENINGKATAN #9: tahapan proses yang lebih informatif daripada
-     satu spinner generik — berguna terutama karena request ke Worker
-     (upload + jalankan model vision/teks) bisa makan waktu beberapa detik
-     di jaringan RS yang lambat, dan diam saja bikin user ragu apakah
-     app-nya nge-hang atau memang masih memproses. */
-  const [stage, setStage] = useState<""|"rotate"|"upload"|"retry">("");
-  const stageLabel =
-    stage==="rotate" ? "Menyesuaikan orientasi gambar…" :
-    stage==="upload" ? "Mengirim & membaca dengan AI…" :
-    stage==="retry"  ? "Koneksi lambat — mencoba sekali lagi…" : "";
+/* ════════════════════════════════════════════════════════════════════
+   PENAMBAHAN #8 — Offline queue untuk entri pasien (kb_operasi)
+   ════════════════════════════════════════════════════════════════════
+   Modul roster jadwal (lihat syncToCloudSilent di ViewLembur/generator
+   roster) SUDAH punya pola offline-first: simpan ke localStorage dulu,
+   baru sync ke Supabase, dengan auto-retry saat koneksi kembali. Modul
+   input pasien (ViewDaftar → saveOpFn/autoSaveOcrBatch) BELUM — kalau
+   offline atau upsert gagal karena network, data pasien HANYA ada di
+   state React (hilang kalau tab ditutup/di-refresh sebelum sempat sync).
 
-  /* SARAN PENINGKATAN #7: preview + rotate SEBELUM gambar dikirim ke OCR.
-     Sebelumnya foto langsung terkirim begitu dipilih — kalau miring/
-     terbalik, satu-satunya cara memperbaiki adalah foto ulang dari nol.
-     Sekarang ada jeda konfirmasi: user bisa memutar gambar dulu (kasus
-     paling umum: foto formulir yang tidak tegak lurus) sebelum benar-benar
-     mengirim ke AI, TANPA perlu mengulang proses ambil-foto/pilih-file. */
-  const [previewFile, setPreviewFile] = useState<File|null>(null);
-  const [previewUrl,  setPreviewUrl]  = useState<string|null>(null);
-  const [rotation,    setRotation]    = useState(0);
+   Utility di bawah ini menambal celah itu: setiap upsert kb_operasi yang
+   gagal (offline atau error network) otomatis masuk antrean localStorage
+   yang PERSISTEN (bertahan meski tab ditutup), dan dicoba lagi otomatis
+   begitu browser mendeteksi koneksi kembali online — pola yang sama
+   persis semangatnya dengan yang sudah dipakai di roster generator. */
+// LS_OFFLINE_QUEUE_KEY sekarang diimpor dari ./constants (lihat import di atas)
 
-  /* Jalur 2 (Paste Teks): kotak untuk menempel instruksi/memo teks (mis.
-     copy-paste chat WhatsApp dokter) sebagai alternatif dari foto/scan.
-     BUKAN pipeline terpisah — hasilnya lewat callback onResults yang
-     SAMA dengan Jalur 1, sehingga otomatis melewati coerceOcrResult di
-     runWorkerOcrScanText DAN buildOcrSafeApply di ViewDaftar (gerbang
-     CYTO/gol.darah/alergi tetap berlaku, sama seperti hasil scan foto). */
-  const [showTextPaste, setShowTextPaste] = useState(false);
-  const [pasteText, setPasteText] = useState("");
+// OfflineQueueItem sekarang diimpor dari ./types (lihat import type di atas)
 
-  const clearPreview = useCallback(() => {
-    setPreviewFile(null);
-    setRotation(0);
-    setPreviewUrl(prev => { if(prev) URL.revokeObjectURL(prev); return null; });
-  },[]);
-  // Cegah kebocoran object URL kalau komponen unmount selagi preview aktif.
-  useEffect(() => () => { setPreviewUrl(prev => { if(prev) URL.revokeObjectURL(prev); return null; }); }, []);
+// readOfflineQueue, writeOfflineQueue, enqueueOfflineOp, dequeueOfflineOp,
+// countOfflineQueue sekarang diimpor dari ./utils (lihat import di atas)
 
-  const onFilePicked = useCallback((file: File | undefined) => {
-    if(!file) return;
-    if(isProcessingRef.current) return;
-    if(!file.type.startsWith("image/")){ showToast("File harus berupa gambar (foto/screenshot)",C.d); return; }
-    if(file.size > MAX_OCR_FILE_MB*1024*1024){
-      showToast(`Ukuran file terlalu besar (maks ${MAX_OCR_FILE_MB}MB) — coba screenshot atau kompres dulu.`, C.d);
-      return;
-    }
-    clearPreview();
-    setPreviewFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
-  },[showToast, clearPreview]);
+/* PENAMBAHAN — Live Camera Scan: buka kamera live (getUserMedia) langsung
+   di browser, tampilkan preview real-time, perawat arahkan ke formulir
+   lalu tekan tombol "Ambil" saat sudah pas fokusnya — TIDAK auto-capture
+   otomatis (sengaja): deteksi "gambar sudah fokus/stabil" itu kompleks dan
+   rawan salah jepret di kondisi cahaya kamar bedah yang bervariasi: lebih
+   aman & dapat diandalkan kalau perawat sendiri yang menentukan kapan
+   gambar sudah pas, baru menekan tombol.
 
-  type OcrResp = { ok: boolean; data?: OcrExtractResult[]; msg: string; notAFormError?: boolean };
+   Frame yang di-capture diubah jadi `File` lalu diteruskan ke
+   `onCapture(file)` — pemanggil (ScanFormulir) meneruskannya ke
+   `onFilePicked` yang SAMA PERSIS dipakai jalur "Ambil Foto"/"Upload
+   Screenshot" — jadi TIDAK ADA duplikasi logika kompresi/preview/rotate/
+   kirim-ke-OCR sama sekali, cuma sumber gambarnya saja yang berbeda. */
+// LiveCameraScanModal dan ScanFormulir sekarang diimpor dari
+// ./components/scan-formulir (lihat import di atas)
 
-  /* SARAN PENINGKATAN #4 (retry timeout) — diekstrak jadi helper generik
-     supaya Jalur 1 (gambar) & Jalur 2 (teks) berbagi PERSIS logika yang
-     sama, tidak ada risiko satu jalur diperbaiki lalu jalur lain
-     tertinggal (kelas bug yang sama seperti FIX AUDIT #47 pada CYTO). */
-  const attemptWithRetry = useCallback(async (attemptFn: () => Promise<OcrResp>, timeoutLabel: string): Promise<OcrResp> => {
-    setStage("upload");
-    try{
-      return await withTimeout(attemptFn(), 60000, timeoutLabel);
-    }catch(err:any){
-      const isTimeout = typeof err?.message === "string" && err.message.includes("waktu tunggu habis");
-      if(isTimeout){
-        setStage("retry");
-        try{
-          return await withTimeout(attemptFn(), 60000, timeoutLabel);
-        }catch(err2:any){
-          return { ok:false, msg: "Gagal setelah 2x percobaan (koneksi lambat/putus): " + (err2?.message || "network error") };
-        }
-      }
-      return { ok:false, msg: err?.message || "Gagal memproses" };
-    }
-  },[]);
-
-  /* Penanganan hasil respons — SAMA untuk Jalur 1 & Jalur 2, supaya toast,
-     cap MAX_OCR_BATCH, log audit, dan penanganan notAFormError konsisten
-     apa pun sumber datanya (foto atau teks). */
-  const handleOcrResponse = useCallback((res: OcrResp, sourceLabel: string, genericFailMsg: string) => {
-    if(!res.ok || !res.data || res.data.length===0){
-      /* SARAN PENINGKATAN #6: pesan yang lebih tepat sasaran kalau Worker
-         (setelah diubah — lihat catatan di interface OcrExtractResult)
-         mendeteksi input bukan formulir/instruksi operasi sama sekali. */
-      if(res.notAFormError){
-        showToast("📄 Sepertinya isi ini bukan formulir/instruksi operasi — pastikan datanya lengkap & jelas, lalu coba lagi.", C.d);
-      } else {
-        showToast(res.msg || genericFailMsg, C.d);
-      }
-      return;
-    }
-    const dataCapped = res.data.length > MAX_OCR_BATCH ? res.data.slice(0, MAX_OCR_BATCH) : res.data;
-    /* FIX AUDIT #39: onResults() SENDIRI yang menampilkan toast akhir yang
-       akurat (lihat applyOcrResult & autoSaveOcrBatch) — di sini sengaja
-       TIDAK ada toast "✓ berhasil" generik yang bisa menimpa & menyesatkan. */
-    onResults(dataCapped);
-    AmbilLogMedis("DAFTAR_PASIEN","Perawat","OCR_SCAN_FORMULIR",`${sourceLabel} berhasil — ${dataCapped.length} entri terbaca (Cloudflare Workers AI)`,{jumlahEntri:dataCapped.length, sumber:sourceLabel});
-    const totalTerbaca = res.data.length;
-    if(totalTerbaca > MAX_OCR_BATCH){
-      setTimeout(()=>{
-        showToast(`⚠ Sebelumnya terbaca ${totalTerbaca} entri — hanya ${MAX_OCR_BATCH} pertama yang diproses. Proses ulang per bagian untuk sisanya.`, C.w);
-      }, 3400);
-    }
-  },[onResults, showToast]);
-
-  const processConfirmedFile = useCallback(async (file: File, deg: number) => {
-    isProcessingRef.current = true;
-    setLoading(true);
-    try{
-      let toSend = file;
-      if(deg % 360 !== 0){
-        setStage("rotate");
-        try{ toSend = await rotateImageFile(file, deg); }
-        catch{ /* Kalau rotasi gagal (mis. gambar korup), tetap lanjut pakai
-                   file asli apa adanya — jangan sampai fitur rotate yang
-                   sifatnya bantu-bantu malah memblokir seluruh alur scan. */ }
-      }
-      // Dikirim ke route /api/ocr-scan di Worker yang sama (Cloudflare
-      // Workers AI, model vision) — gratis s.d. 10.000 Neuron/hari,
-      // tidak ada API key eksternal, tidak ada Supabase Edge Function.
-      const res = await attemptWithRetry(() => runWorkerOcrScan(toSend), "OCR scan formulir (gambar)");
-      handleOcrResponse(res, "Scan formulir (foto)", "Tidak ada data yang berhasil dibaca dari gambar");
-    }catch(e:any){
-      showToast("Gagal memproses gambar: "+(e?.message||"unknown error"), C.d);
-    }finally{
-      isProcessingRef.current = false;
-      setLoading(false);
-      setStage("");
-      clearPreview();
-      if(cameraInputRef.current) cameraInputRef.current.value = "";
-      if(galleryInputRef.current) galleryInputRef.current.value = "";
-    }
-  },[attemptWithRetry, handleOcrResponse, showToast, clearPreview]);
-
-  const processPastedText = useCallback(async () => {
-    if(isProcessingRef.current) return;
-    const trimmed = pasteText.trim();
-    if(!trimmed){ showToast("Kotak teks masih kosong — tempel dulu instruksi/memo-nya.", C.d); return; }
-    isProcessingRef.current = true;
-    setLoading(true);
-    try{
-      const res = await attemptWithRetry(() => runWorkerOcrScanText(trimmed), "OCR proses teks");
-      handleOcrResponse(res, "Proses teks (paste)", "Tidak ada data yang berhasil diekstrak dari teks");
-    }catch(e:any){
-      showToast("Gagal memproses teks: "+(e?.message||"unknown error"), C.d);
-    }finally{
-      isProcessingRef.current = false;
-      setLoading(false);
-      setStage("");
-      setPasteText("");
-      setShowTextPaste(false);
-    }
-  },[pasteText, attemptWithRetry, handleOcrResponse, showToast]);
-
-  return (
-    <div style={{marginBottom:14}}>
-      <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={(ev)=>{ onFilePicked(ev.target.files?.[0]); ev.target.value=""; }}/>
-      <input ref={galleryInputRef} type="file" accept="image/*" style={{display:"none"}} onChange={(ev)=>{ onFilePicked(ev.target.files?.[0]); ev.target.value=""; }}/>
-      {previewFile && previewUrl ? (
-        <Card style={{marginBottom:10, background:"#FAFBFD"}}>
-          <div style={{fontSize:12,fontWeight:700,color:C.t,marginBottom:8}}>🔍 Periksa foto sebelum dibaca AI</div>
-          <div style={{display:"flex",justifyContent:"center",alignItems:"center",background:"#111",borderRadius:10,overflow:"hidden",marginBottom:10,minHeight:180,maxHeight:320}}>
-            <img src={previewUrl} alt="Preview formulir" style={{maxWidth:"100%",maxHeight:320,objectFit:"contain",transform:`rotate(${rotation}deg)`,transition:"transform .2s"}}/>
-          </div>
-          {!loading && (
-            <div style={{display:"flex",gap:8,marginBottom:8}}>
-              <Btn outline sm onClick={()=>setRotation(r=>(r+270)%360)} style={{flex:1}}>↺ Putar Kiri</Btn>
-              <Btn outline sm onClick={()=>setRotation(r=>(r+90)%360)} style={{flex:1}}>↻ Putar Kanan</Btn>
-            </div>
-          )}
-          {loading ? (
-            <div style={{fontSize:12,color:C.tL,textAlign:"center",padding:"10px 0",fontWeight:600}}>⏳ {stageLabel || "Memproses…"}</div>
-          ) : (
-            <div style={{display:"flex",gap:8}}>
-              <Btn outline color={C.g} onClick={clearPreview} style={{flex:1}}>🔄 Ambil Ulang</Btn>
-              <Btn onClick={()=>processConfirmedFile(previewFile, rotation)} style={{flex:2}}>✓ Gunakan Foto Ini, Baca dengan AI</Btn>
-            </div>
-          )}
-        </Card>
-      ) : showTextPaste ? (
-        <Card style={{marginBottom:10, background:"#FAFBFD"}}>
-          <div style={{fontSize:12,fontWeight:700,color:C.t,marginBottom:8}}>📝 Jalur 2: Paste Instruksi/Memo (mis. chat WA dokter)</div>
-          <textarea
-            value={pasteText}
-            onChange={(ev)=>setPasteText(ev.target.value.slice(0, MAX_OCR_PASTE_CHARS))}
-            disabled={loading}
-            placeholder={`Contoh: "Tolong jadwalkan operasi cito malam ini jam 22.00 untuk pasien Tn. Sitorus No RM 998811, diagnosis Apendiks Perforasi. Operator dr. Setiawan SpB."`}
-            style={{width:"100%",minHeight:110,padding:10,borderRadius:8,border:`1px solid ${C.b}`,fontSize:13,resize:"vertical",fontFamily:"inherit",boxSizing:"border-box",marginBottom:6}}
-          />
-          <div style={{fontSize:11,color:C.tL,marginBottom:8,textAlign:"right"}}>{pasteText.length}/{MAX_OCR_PASTE_CHARS}</div>
-          {loading ? (
-            <div style={{fontSize:12,color:C.tL,textAlign:"center",padding:"10px 0",fontWeight:600}}>⏳ {stageLabel || "Memproses…"}</div>
-          ) : (
-            <div style={{display:"flex",gap:8}}>
-              <Btn outline color={C.g} onClick={()=>{setShowTextPaste(false); setPasteText("");}} style={{flex:1}}>Batal</Btn>
-              <Btn onClick={processPastedText} style={{flex:2}}>⚙️ Proses Teks dengan AI</Btn>
-            </div>
-          )}
-        </Card>
-      ) : (
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          <Btn outline disabled={loading} onClick={()=>cameraInputRef.current?.click()}>📷 Ambil Foto</Btn>
-          <Btn outline disabled={loading} onClick={()=>galleryInputRef.current?.click()}>🖼️ Upload Screenshot/Galeri</Btn>
-          <Btn outline disabled={loading} onClick={()=>setShowTextPaste(true)}>📝 Paste Teks Chat/Memo</Btn>
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* ─── VIEW DAFTAR ────────────────────────────────────────────────────── */
 /* FIX #1: opForm state dipindah ke dalam ViewDaftar sebagai local state.
@@ -2806,8 +976,21 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
       if(v.date)            { next.date = v.date; filled.add("date"); originalVals.date = v.date; }
       else if(r.date)        { next.date = ""; }
       if(v.time)            { next.time = v.time; filled.add("time"); originalVals.time = v.time; }
-      if(r.surgeon)         { next.surgeon = capOcrText(r.surgeon, 80); filled.add("surgeon"); originalVals.surgeon = next.surgeon; }
-      if(r.anesthesiologist){ next.anesthesiologist = capOcrText(r.anesthesiologist, 80); filled.add("anesthesiologist"); originalVals.anesthesiologist = next.anesthesiologist; }
+      if(r.surgeon)         {
+        const rawName = capOcrText(r.surgeon, 80);
+        const matched = findBestStaffMatch(rawName, byT("surgeon"));
+        next.surgeon = matched || rawName;
+        filled.add("surgeon"); originalVals.surgeon = next.surgeon;
+      }
+      if(r.anesthesiologist){
+        const rawName = capOcrText(r.anesthesiologist, 80);
+        // FIX BUG: "Lokal Anestesi" BUKAN nama dokter (opsi valid di
+        // dropdown) — jangan coba fuzzy-match, bisa salah "dikoreksi"
+        // jadi nama dokter yang kebetulan mirip hurufnya.
+        const matched = looksLikeNonDoctorAnesthesiaValue(rawName) ? null : findBestStaffMatch(rawName, byT("anesthesiologist"));
+        next.anesthesiologist = matched || rawName;
+        filled.add("anesthesiologist"); originalVals.anesthesiologist = next.anesthesiologist;
+      }
       if(r.allergy)         { next.allergy = capOcrText(r.allergy, 120); filled.add("allergy"); originalVals.allergy = next.allergy; }
       // FIX BUG: "Golongan Darah" juga dropdown dengan opsi tetap (BT).
       if(v.bloodType)       { next.bloodType = v.bloodType; filled.add("bloodType"); originalVals.bloodType = v.bloodType; }
@@ -2843,7 +1026,24 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
     } else if(dateWasInvalid){
       showToast("⚠ Tanggal hasil scan tidak valid — mohon isi tanggal secara manual, lalu tekan \"Simpan\"", C.d);
     } else if(r.confidence==="low"){
-      showToast("📝 Data terbaca (keyakinan AI rendah — tulisan/teks kurang jelas, atau dua model AI tidak sepakat pada sebagian field) — PERIKSA TELITI setiap field sebelum \"Simpan\".", C.w);
+      /* FIX BUG (audit menyeluruh): SEBELUMNYA lowConfidenceFields sudah
+         dihitung & dikirim server, tapi TIDAK PERNAH sampai dipakai di
+         UI — perawat cuma dapat pesan generik "periksa teliti SEMUA
+         field" tanpa tahu field MANA yang sebenarnya perlu dicek. Sekarang
+         sebutkan field spesifiknya (kalau tersedia), pakai label yang
+         mudah dipahami perawat — bukan nama key teknis seperti "date". */
+      const fieldLabels: Record<string,string> = {
+        patient:"Nama Pasien", age:"Usia (Tahun)", ageMonths:"Usia (Bulan)", rm:"No. RM",
+        diagnosis:"Diagnosa", procedure:"Tindakan", opType:"Jenis Operasi",
+        date:"Tanggal", time:"Jam", surgeon:"Dokter Operator",
+        anesthesiologist:"Dokter Anestesi", room:"Kamar Operasi",
+        allergy:"Riwayat Alergi", bloodType:"Golongan Darah",
+      };
+      const fieldNames = (r.lowConfidenceFields||[]).map(f=>fieldLabels[f]||f).filter(Boolean);
+      const fieldHint = fieldNames.length>0
+        ? ` Terutama: ${fieldNames.join(", ")}.`
+        : "";
+      showToast(`📝 Data terbaca (keyakinan AI rendah — tulisan/teks kurang jelas).${fieldHint} PERIKSA TELITI sebelum "Simpan".`, C.w);
     } else {
       showToast("📝 Data terbaca & form terisi otomatis — GULIR KE BAWAH, periksa, lalu tekan \"Simpan\" agar masuk ke Jadwal.", C.w);
     }
@@ -2883,7 +1083,7 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
     <div>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:18}}>
         {editingOp && <button onClick={()=>{resetOp();setTab("jadwal");}} style={{background:C.pBg,border:`1px solid ${C.p}`,borderRadius:10,color:C.p,cursor:"pointer",fontSize:22,width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>}
-        <div><div style={{fontSize:17,fontWeight:800,color:C.t}}>{editingOp?"✏️ Edit Jadwal":"📝 Pendaftaran Jadwal Operasi"}</div><div style={{fontSize:12,color:C.tL,marginTop:2}}>Field bertanda <span style={{color:C.d,fontWeight:700}}>✱</span> wajib diisi</div></div>
+        <div><div key={editingOp?"edit":"new"} style={{fontSize:17,fontWeight:800,color:C.t}}><SplitText text={editingOp?"✏️ Edit Jadwal":"📝 Pendaftaran Jadwal Operasi"}/></div><div style={{fontSize:12,color:C.tL,marginTop:2}}>Field bertanda <span style={{color:C.d,fontWeight:700}}>✱</span> wajib diisi</div></div>
         <button onClick={()=>setShowTpl(s=>!s)} style={{marginLeft:"auto",background:C.pBg,border:`1px solid ${C.p}33`,borderRadius:10,color:C.p,fontSize:11,fontWeight:700,padding:"7px 12px",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>📌 Template{templates.length>0?` (${templates.length})`:""}</button>
       </div>
       {showTpl && (
@@ -3063,1917 +1263,28 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
 /* FIX #1: lSet dan lSby dipindah ke dalam ViewLaporan sebagai local state.
    Sebelumnya keduanya ada di root App sehingga setiap ketukan di field
    "Keterangan Laporan" memicu re-render seluruh pohon komponen. */
-function ViewLaporan({ops,staff,roster,showToast,role,privacyMode}: ViewLaporanProps) {
-  const [lSet, setLSet] = useState({greeting:gWord(),recipients:"",keterangan:"",pembawaHP:"",katimPhone:"",grupPhone:""});
-  const [lSby, setLSby] = useState({anest:["",""],cyto:["","",""],nurses:["","","",""],pembawaHP:""});
-  const [preview,setPreview] = useState("");
-  const [foc,setFoc]         = useState<string|null>(null);
-  const todayOps = ops.filter((o:any)=>o.date===todayDate());
-  /* ── Poin ④: Manajemen tanggal anti-overwrite (khusus Hari Sabtu) ──
-     Saat hari ini Sabtu, Minggu (H+1) dan Senin (H+2) WAJIB diinstansiasi
-     sebagai dua objek Date terpisah di memori — TIDAK boleh mutasi setDate
-     beruntun pada satu referensi objek yang sama (mencegah data leakage
-     antar hari). Setiap objek dikonversi ke string YYYY-MM-DD memakai
-     waktu LOKAL (toLocalISODate — bukan .toISOString() yang berbasis UTC),
-     supaya tanggal tidak bergeser mundur. */
-  const _todayObj   = new Date();
-  const _isSaturday = _todayObj.getDay() === 6;
-  /* Objek tanggal Minggu (H+1) — instansiasi independen, bukan turunan _todayObj yang dimutasi */
-  const _mingguObj  = new Date(_todayObj.getFullYear(), _todayObj.getMonth(), _todayObj.getDate() + 1);
-  const _mingguStr  = toLocalISODate(_mingguObj);
-  /* Objek tanggal Senin (H+2) — instansiasi independen kedua, terpisah dari objek Minggu */
-  const _seninObj   = new Date(_todayObj.getFullYear(), _todayObj.getMonth(), _todayObj.getDate() + 2);
-  const _seninStr   = toLocalISODate(_seninObj);
-  /* _besokStr/_lusaStr dipertahankan untuk kompatibilitas dengan tmrwOps (hari non-Sabtu) */
-  const _besokStr   = tmrwDate();
-  const _lusaStr    = _seninStr;
-  const tmrwOps = ops
-    .filter((o:any)=>{
-      if(o.status==="batal") return false;
-      return _isSaturday
-        ? (o.date===_besokStr || o.date===_lusaStr)
-        : o.date===_besokStr;
-    })
-    .sort((a:any,b:any)=> a.date!==b.date ? a.date.localeCompare(b.date) : a.time.localeCompare(b.time));
-  /* ── Render terpisah khusus Sabtu: filter ketat per-hari, tidak digabung ── */
-  const mingguOps = _isSaturday
-    ? ops.filter((o:any)=>o.status!=="batal" && o.date===_mingguStr).sort((a:any,b:any)=>a.time.localeCompare(b.time))
-    : [];
-  const seninOps = _isSaturday
-    ? ops.filter((o:any)=>o.status!=="batal" && o.date===_seninStr).sort((a:any,b:any)=>a.time.localeCompare(b.time))
-    : [];
-  const rTmrw    = roster.find((r:any)=>r.date===todayDate());
-  const tActive  = todayOps.filter((o:any)=>o.status!=="batal");
-  const tBatal   = todayOps.filter((o:any)=>o.status==="batal");
+// ViewLaporan sekarang diimpor dari ./components/view-laporan (lihat import di atas)
 
-  useEffect(()=>{
-    if(rTmrw) setLSby((p:any)=>({
-      ...p,
-      anest: (()=>{
-        const a = rTmrw.anestJagaList?.length ? rTmrw.anestJagaList : (rTmrw.anestJaga ? rTmrw.anestJaga.split(/[,;]/).map((x:string)=>x.trim()).filter(Boolean) : []);
-        const cur = p.anest.filter((x:any)=>x);
-        const base = a.length>0 ? [...a] : [...cur];
-        while(base.length<2) base.push("");
-        return base.slice(0,2).concat(base.slice(2));
-      })(),
-      cyto: (()=>{
-        const c = rTmrw.anestCytoList?.length ? rTmrw.anestCytoList : (rTmrw.anestCyto ? rTmrw.anestCyto.split(/[,;]/).map((x:string)=>x.trim()).filter(Boolean) : []);
-        const cur = p.cyto.filter((x:any)=>x);
-        const base = c.length>0 ? [...c] : [...cur];
-        while(base.length<3) base.push("");
-        return base.slice(0,3).concat(base.slice(3));
-      })(),
-      nurses: (()=>{
-        const n = rTmrw.nurses?.filter(Boolean).length ? rTmrw.nurses.filter(Boolean) : (p.nurses.filter((x:any)=>x).length ? p.nurses.filter((x:any)=>x) : []);
-        while(n.length<4) n.push("");
-        return n;
-      })(),
-      pembawaHP: rTmrw.pembawaHP||p.pembawaHP||""
-    }));
-  }, [roster]);
-
-  const gen = () => {
-    const t = buildLaporan({
-      greeting:lSet.greeting||gWord(), recipients:lSet.recipients||"",
-      keterangan:lSet.keterangan, todayOps, tomorrowOps:tmrwOps,
-      anestStandby:lSby.anest, anestCyto:lSby.cyto,
-      nurseStandby:lSby.nurses, pembawaHP:lSby.pembawaHP||lSet.pembawaHP
-    });
-    setPreview(t);
-  };
-  const addI = (k: string) => setLSby((p:any)=>({...p,[k]:[...(p[k]||[]),""] }));
-  const setI = (k: string,i: number,v: string) => setLSby((p:any)=>({...p,[k]:(p[k]||[]).map((x:string,j:number)=>j===i?v:x)}));
-  const rmI  = (k: string,i: number) => setLSby((p:any)=>({...p,[k]:(p[k]||[]).filter((_:any,j:number)=>j!==i)}));
-  const katimList = staff.filter((s:any)=>s.type==="katim");
-
-  return (
-    <div>
-      <Row title="Laporan Kepala Jaga"/>
-      {rTmrw ? <div style={{background:C.sBg,borderRadius:10,padding:"8px 14px",marginBottom:12,fontSize:12,color:C.s,border:`1px solid ${C.s}33`}}>✅ Jadwal siaga hari ini ditemukan — kolom siaga terisi otomatis. Bisa diedit.</div>
-              : <div style={{background:C.wBg,borderRadius:10,padding:"8px 14px",marginBottom:12,fontSize:12,color:C.w}}>⚠ Upload Jadwal Siaga di menu <b>Staf</b>, atau isi manual di bawah.</div>}
-      <Card>
-        <SH label="① Salam & Penerima"/>
-        <LF label="Waktu Salam">
-          <div style={{display:"flex",gap:8}}>
-            {["pagi","siang","sore","malam"].map(g=>(
-              <button key={g} onClick={()=>setLSet((p:any)=>({...p,greeting:g}))} style={{flex:1,padding:"9px 4px",borderRadius:10,border:`1.5px solid ${lSet.greeting===g?C.p:C.b}`,background:lSet.greeting===g?C.p:"#FAFBFD",color:lSet.greeting===g?C.white:C.t,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                {g.charAt(0).toUpperCase()+g.slice(1)}
-              </button>
-            ))}
-          </div>
-        </LF>
-        <LF label="Penerima Laporan">
-          <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
-            <textarea style={{...iS,flex:1,resize:"vertical",minHeight:72,lineHeight:1.7,borderColor:foc==="rec"?C.p:C.b,boxShadow:foc==="rec"?`0 0 0 3px ${C.p}22`:""} as React.CSSProperties} placeholder="Nama penerima laporan..." value={lSet.recipients||""} onChange={(ev:any)=>setLSet((p:any)=>({...p,recipients:ev.target.value}))} onFocus={()=>setFoc("rec")} onBlur={()=>setFoc(null)} spellCheck={false}/>
-            <div style={{display:"flex",flexDirection:"column",gap:8,flexShrink:0}}>
-              <button onClick={()=>setLSet((p:any)=>({...p,recipients:DEFAULT_RECIPIENT}))} style={{background:C.p,border:"none",borderRadius:10,color:"#fff",padding:"9px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",lineHeight:1.4,whiteSpace:"nowrap"}}>★ Default</button>
-              <button onClick={()=>setLSet((p:any)=>({...p,recipients:""}))} style={{background:"none",border:`1.5px solid ${C.b}`,borderRadius:10,color:C.tL,padding:"8px 12px",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Hapus</button>
-            </div>
-          </div>
-          {!lSet.recipients && <div style={{fontSize:11,color:C.tL,marginTop:4}}>💡 Klik <b>★ Default</b> untuk isi otomatis teks penerima standar</div>}
-        </LF>
-      </Card>
-      <Card>
-        <SH label="② Keterangan Tambahan"/>
-        <textarea style={{...iS,resize:"vertical",minHeight:72,lineHeight:1.7,borderColor:foc==="ket"?C.p:C.b,boxShadow:foc==="ket"?`0 0 0 3px ${C.p}22`:""} as React.CSSProperties} placeholder="Catatan khusus shift ini (kosongkan jika tidak ada)..." value={lSet.keterangan||""} onChange={(ev:any)=>setLSet((p:any)=>({...p,keterangan:ev.target.value}))} onFocus={()=>setFoc("ket")} onBlur={()=>setFoc(null)} spellCheck={false}/>
-        {lSet.keterangan && <div style={{fontSize:11,color:C.p,marginTop:3}}>✓ Keterangan akan disisipkan di awal laporan</div>}
-      </Card>
-      <Card style={{background:tActive.length>0?"#F8FBF0":C.gBg,border:`1px solid ${tActive.length>0?"#D4E6A0":C.b}`}}>
-        <SH label="③ Acara Operasi Hari Ini" color={C.s}/>
-        {tActive.length===0
-          ? <div style={{fontSize:13,color:C.tL,textAlign:"center",padding:"6px 0",fontStyle:"italic"}}>Hari Ini Tidak Ada Acara Operasi</div>
-          : [...tActive].sort((a:any,b:any)=>a.time.localeCompare(b.time)).map((op:any,i:number)=>(
-            <div key={op.id} style={{display:"flex",gap:10,marginBottom:8,paddingBottom:8,borderBottom:i<tActive.length-1?`1px solid ${C.b}`:"none",fontStyle:"italic"}}>
-              <div style={{background:op.opType==="cyto"?"#FFCDD2":C.sBg,borderRadius:8,padding:"5px 9px",fontSize:12,fontWeight:700,color:op.opType==="cyto"?"#B71C1C":C.s,flexShrink:0,minWidth:52,textAlign:"center"}}>{op.time}</div>
-              <div style={{flex:1}}>
-                <div style={{fontSize:13,fontWeight:700,color:C.t}}>{maskName(op.patient,privacyMode)}{op.age?`, ${op.age}th`:""}</div>
-                <div style={{fontSize:11,color:C.tL}}>{op.surgeon} / {op.anesthesiologist||"—"}</div>
-              </div>
-              <Bdg label={STS[op.status as keyof typeof STS]?.l||"Terjadwal"} color={STS[op.status as keyof typeof STS]?.c||C.i} bg={STS[op.status as keyof typeof STS]?.bg||C.iBg}/>
-            </div>
-          ))
-        }
-        {tBatal.length>0 && <div style={{fontSize:12,color:C.d,marginTop:6,borderTop:`1px dashed ${C.dL}`,paddingTop:6}}><b>Batal/Tunda:</b> {tBatal.map((o:any)=>maskName(o.patient,privacyMode)+(o.cancelReason?` (${o.cancelReason})`:""  )).join("; ")}</div>}
-      </Card>
-      <Card style={{background:"#EDE7F6",border:"1px solid #D1C4E9"}}>
-        <SH label="④ Rencana Operasi Besok (H-1)" color="#512DA8"/>
-        {!_isSaturday ? (
-          /* ── Mode normal (bukan Sabtu): satu blok seperti biasa ── */
-          tmrwOps.length===0 ? <div style={{fontSize:13,color:C.tL,textAlign:"center",padding:"6px 0"}}>Belum ada rencana operasi besok</div>
-            : <>
-              <div style={{fontSize:12,color:"#512DA8",marginBottom:10}}>Total <b>{tmrwOps.length}</b> · Pagi (&lt;14.00): <b>{tmrwOps.filter((o:any)=>o.time<"14:00").length}</b> · Sore (≥14.00): <b>{tmrwOps.filter((o:any)=>o.time>="14:00").length}</b></div>
-              {tmrwOps.sort((a:any,b:any)=>a.time.localeCompare(b.time)).map((op:any,i:number)=>(
-                <div key={op.id} style={{display:"flex",gap:10,marginBottom:8,paddingBottom:8,borderBottom:i<tmrwOps.length-1?"1px solid #D1C4E9":"none"}}>
-                  <div style={{background:"#D1C4E9",borderRadius:8,padding:"5px 9px",fontSize:12,fontWeight:700,color:"#512DA8",flexShrink:0,minWidth:52,textAlign:"center"}}>{op.time}</div>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:13,fontWeight:700,color:C.t}}>{maskName(op.patient,privacyMode)}{op.age?`, ${op.age}th`:""}</div>
-                    <div style={{fontSize:12,color:C.tL}}>{op.procedure}</div>
-                    <div style={{fontSize:11,color:C.tL}}>{op.surgeon} / {op.anesthesiologist||"—"}</div>
-                  </div>
-                  <Bdg label={OT[op.opType as keyof typeof OT||"elektif"]?.label} color={OT[op.opType as keyof typeof OT||"elektif"]?.c||C.i} bg={OT[op.opType as keyof typeof OT||"elektif"]?.bg||C.iBg}/>
-                </div>
-              ))}
-            </>
-        ) : (
-          /* ── Mode Sabtu: Minggu & Senin DIRENDER TERPISAH, masing-masing
-               dengan filter tanggal lokal sendiri — tidak saling menimpa.
-               Minggu: kalau memang ada jadwal, tetap ditampilkan apa adanya;
-               statis "Tidak ada acara operasi" hanya jika benar-benar kosong. ── */
-          <>
-            <div style={{marginBottom:14}}>
-              <div style={{fontSize:12,fontWeight:700,color:"#512DA8",textTransform:"uppercase",letterSpacing:.4,marginBottom:8}}>Rencana Hari Minggu ({fDMY(_mingguStr)})</div>
-              {mingguOps.length===0 ? (
-                <div style={{fontSize:13,color:C.tL,textAlign:"center",padding:"6px 0",fontStyle:"italic"}}>Tidak ada acara operasi</div>
-              ) : (
-                <>
-                  <div style={{fontSize:12,color:"#512DA8",marginBottom:10}}>Total <b>{mingguOps.length}</b> · Pagi (&lt;14.00): <b>{mingguOps.filter((o:any)=>o.time<"14:00").length}</b> · Sore (≥14.00): <b>{mingguOps.filter((o:any)=>o.time>="14:00").length}</b></div>
-                  {mingguOps.map((op:any,i:number)=>(
-                    <div key={op.id} style={{display:"flex",gap:10,marginBottom:8,paddingBottom:8,borderBottom:i<mingguOps.length-1?"1px solid #D1C4E9":"none"}}>
-                      <div style={{background:"#D1C4E9",borderRadius:8,padding:"5px 9px",fontSize:12,fontWeight:700,color:"#512DA8",flexShrink:0,minWidth:52,textAlign:"center"}}>{op.time}</div>
-                      <div style={{flex:1}}>
-                        <div style={{fontSize:13,fontWeight:700,color:C.t}}>{maskName(op.patient,privacyMode)}{op.age?`, ${op.age}th`:""}</div>
-                        <div style={{fontSize:12,color:C.tL}}>{op.procedure}</div>
-                        <div style={{fontSize:11,color:C.tL}}>{op.surgeon} / {op.anesthesiologist||"—"}</div>
-                      </div>
-                      <Bdg label={OT[op.opType as keyof typeof OT||"elektif"]?.label} color={OT[op.opType as keyof typeof OT||"elektif"]?.c||C.i} bg={OT[op.opType as keyof typeof OT||"elektif"]?.bg||C.iBg}/>
-                    </div>
-                  ))}
-                </>
-              )}
-            </div>
-            <div style={{borderTop:"1px dashed #D1C4E9",paddingTop:12}}>
-              <div style={{fontSize:12,fontWeight:700,color:"#512DA8",textTransform:"uppercase",letterSpacing:.4,marginBottom:8}}>Rencana Hari Senin ({fDMY(_seninStr)})</div>
-              {seninOps.length===0 ? (
-                <div style={{fontSize:13,color:C.tL,textAlign:"center",padding:"6px 0",fontStyle:"italic"}}>Belum ada rencana operasi Hari Senin</div>
-              ) : (
-                <>
-                  <div style={{fontSize:12,color:"#512DA8",marginBottom:10}}>Total <b>{seninOps.length}</b> · Pagi (&lt;14.00): <b>{seninOps.filter((o:any)=>o.time<"14:00").length}</b> · Sore (≥14.00): <b>{seninOps.filter((o:any)=>o.time>="14:00").length}</b></div>
-                  {seninOps.map((op:any,i:number)=>(
-                    <div key={op.id} style={{display:"flex",gap:10,marginBottom:8,paddingBottom:8,borderBottom:i<seninOps.length-1?"1px solid #D1C4E9":"none"}}>
-                      <div style={{background:"#D1C4E9",borderRadius:8,padding:"5px 9px",fontSize:12,fontWeight:700,color:"#512DA8",flexShrink:0,minWidth:52,textAlign:"center"}}>{op.time}</div>
-                      <div style={{flex:1}}>
-                        <div style={{fontSize:13,fontWeight:700,color:C.t}}>{maskName(op.patient,privacyMode)}{op.age?`, ${op.age}th`:""}</div>
-                        <div style={{fontSize:12,color:C.tL}}>{op.procedure}</div>
-                        <div style={{fontSize:11,color:C.tL}}>{op.surgeon} / {op.anesthesiologist||"—"}</div>
-                      </div>
-                      <Bdg label={OT[op.opType as keyof typeof OT||"elektif"]?.label} color={OT[op.opType as keyof typeof OT||"elektif"]?.c||C.i} bg={OT[op.opType as keyof typeof OT||"elektif"]?.bg||C.iBg}/>
-                    </div>
-                  ))}
-                </>
-              )}
-            </div>
-          </>
-        )}
-      </Card>
-      {/* ⑤ Siaga Dokter Anestesi — 2 kolom fixed */}
-      <Card>
-        <SH label="⑤ Siaga Dokter Anestesi" color={C.p}/>
-        {rTmrw && <div style={{fontSize:11,color:C.s,marginBottom:8,fontWeight:600}}>✓ Terisi otomatis dari jadwal jaga {fDMY(todayDate())} — bisa diedit</div>}
-        <div style={{display:"flex",gap:8}}>
-          {[0,1].map(i=>(
-            <div key={i} style={{flex:1}}>
-              <div style={{fontSize:11,fontWeight:700,color:C.g,marginBottom:4,textTransform:"uppercase",letterSpacing:.4}}>Dokter {i+1}</div>
-              <input style={iS} placeholder={`Dokter Anestesi ${i+1}`} value={(lSby.anest||["",""])[i]||""} onChange={(ev:any)=>setI("anest",i,ev.target.value)} spellCheck={false}/>
-            </div>
-          ))}
-        </div>
-      </Card>
-      {/* ⑥ Siaga Cyto Dokter Anestesi — 3 kolom fixed */}
-      <Card hi={C.dL}>
-        <SH label="⑥ Siaga Cyto Dokter Anestesi" color="#B71C1C"/>
-        {rTmrw && <div style={{fontSize:11,color:C.s,marginBottom:8,fontWeight:600}}>✓ Terisi otomatis dari jadwal jaga {fDMY(todayDate())} — bisa diedit</div>}
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          {[0,1,2].map(i=>(
-            <div key={i} style={{flex:"1 1 calc(33% - 8px)",minWidth:120}}>
-              <div style={{fontSize:11,fontWeight:700,color:C.g,marginBottom:4,textTransform:"uppercase",letterSpacing:.4}}>Dokter {i+1}</div>
-              <input style={iS} placeholder={`Dokter Cyto ${i+1}`} value={(lSby.cyto||["","",""])[i]||""} onChange={(ev:any)=>setI("cyto",i,ev.target.value)} spellCheck={false}/>
-            </div>
-          ))}
-        </div>
-      </Card>
-      {/* ⑦ Siaga Perawat — 4 kolom fixed */}
-      <Card>
-        <SH label="⑦ Siaga Perawat" color={C.p}/>
-        {rTmrw && <div style={{fontSize:11,color:C.s,marginBottom:8,fontWeight:600}}>✓ Terisi otomatis dari jadwal jaga {fDMY(todayDate())} — bisa diedit</div>}
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          {[0,1,2,3].map(i=>(
-            <div key={i} style={{flex:"1 1 calc(50% - 8px)",minWidth:140}}>
-              <div style={{fontSize:11,fontWeight:700,color:C.g,marginBottom:4,textTransform:"uppercase",letterSpacing:.4}}>Perawat {i+1}</div>
-              <input style={iS} placeholder={`Siaga Perawat ${i+1}`} value={(lSby.nurses||["","","",""])[i]||""} onChange={(ev:any)=>setI("nurses",i,ev.target.value)} spellCheck={false}/>
-            </div>
-          ))}
-        </div>
-      </Card>
-      <Card>
-        <SH label="⑧ Pembawa HP & Nomor WA Pengiriman"/>
-        <LF label="Nama Pembawa HP">
-          <input style={iS} placeholder="Nama staf pembawa HP shift ini" value={lSby.pembawaHP||lSet.pembawaHP||""} onChange={(ev:any)=>setLSby((p:any)=>({...p,pembawaHP:ev.target.value}))} spellCheck={false}/>
-        </LF>
-        <div style={{display:"flex",gap:12}}>
-          <div style={{flex:1}}><LF label="No. WA Katim"><input style={iS} placeholder="628112345678" type="tel" inputMode="numeric" value={lSet.katimPhone||""} onChange={(ev:any)=>setLSet((p:any)=>({...p,katimPhone:ev.target.value}))}/></LF></div>
-          <div style={{flex:1}}><LF label="No. WA Grup"><input style={iS} placeholder="628112345678" type="tel" inputMode="numeric" value={lSet.grupPhone||""} onChange={(ev:any)=>setLSet((p:any)=>({...p,grupPhone:ev.target.value}))}/></LF></div>
-        </div>
-        {katimList.length>0 && <div><div style={{fontSize:12,color:C.tL,marginBottom:6}}>Pilih nomor Katim dari staf:</div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{katimList.map((s:any)=><button key={s.id} onClick={()=>setLSet((p:any)=>({...p,katimPhone:s.phone}))} style={{fontSize:12,padding:"5px 10px",borderRadius:8,border:`1px solid ${C.p}`,background:C.pBg,color:C.p,cursor:"pointer",fontFamily:"inherit"}}>{s.name.split(",")[0]}</button>)}</div></div>}
-      </Card>
-      <Btn full onClick={gen} style={{marginBottom:12,padding:"14px",fontSize:15}}>⚙ Generate Laporan</Btn>
-      {preview && (
-        <Card hi={C.pL+"55"}>
-          <div style={{fontSize:13,fontWeight:700,color:C.p,marginBottom:8}}>Pratinjau — Verifikasi sebelum kirim</div>
-          <div style={{background:"#F8FAFB",borderRadius:10,padding:"12px 14px",fontSize:13,lineHeight:1.9,whiteSpace:"pre-wrap",border:`1px solid ${C.b}`,marginBottom:12,maxHeight:320,overflowY:"auto",fontFamily:"inherit"}}>{preview}</div>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <Btn outline color={C.p} onClick={()=>navigator.clipboard?.writeText(preview).then(()=>showToast("✓ Teks disalin")).catch(()=>showToast("Salin dari pratinjau di atas"))} style={{flex:1}}>Salin Teks</Btn>
-            <WaBt onClick={()=>{ if(!lSet.katimPhone){showToast("Nomor WA Katim belum diisi",C.d);return;} window.open(`https://wa.me/${normalizePhone62(lSet.katimPhone)}?text=${encodeURIComponent(preview)}`,"_blank"); showToast("✓ WA Katim dibuka","#25D366"); }} style={{flex:1}}>WA Katim</WaBt>
-            <WaBt onClick={()=>{ if(!lSet.grupPhone){showToast("Nomor WA Grup belum diisi",C.d);return;} window.open(`https://wa.me/${normalizePhone62(lSet.grupPhone)}?text=${encodeURIComponent(preview)}`,"_blank"); showToast("✓ WA Grup dibuka","#25D366"); }} style={{flex:1}}>WA Grup</WaBt>
-          </div>
-        </Card>
-      )}
-    </div>
-  );
-}
 
 /* ─── VIEW KIRIM WA ──────────────────────────────────────────────────── */
-function ViewKirimWA({ops,staff,setNotifs,showToast}: ViewKirimWAProps) {
-  const [prev,setPrev] = useState<Record<string,boolean>>({});
-  const getPhone = (n: string) => staff.find((x:any)=>x.name===n)?.phone||null;
-  const tmrwOps  = ops.filter((o:any)=>o.date===tmrwDate()&&o.status!=="batal");
-  const sendWA   = (ph: string | null,msg: string,name: string,lbl: string) => {
-    /* FIX AUDIT #46 (lanjutan): sama seperti confirmCyto & WA Katim/Grup —
-       pakai normalizePhone62() supaya nomor berawalan "0" (format umum
-       yang diisi manual di form Staf) tetap membentuk link wa.me yang
-       valid, bukan hanya nomor yang kebetulan sudah diketik dalam format
-       62xxx sejak awal. */
-    if(ph) window.open(`https://wa.me/${normalizePhone62(ph)}?text=${encodeURIComponent(msg)}`,"_blank");
-    /* FIX AUDIT #24: sama seperti di ViewJadwal — cap 200 entri terbaru. */
-    setNotifs((p:any)=>[{id:gId(),type:"wa_direct",label:lbl,patient:name,procedure:"Jadwal H-1",message:msg,sentAt:fNow()},...p].slice(0,200));
-    showToast("✓ WhatsApp dibuka — tekan Kirim di WA","#25D366");
-  };
-  const surgeons = [...new Set(tmrwOps.map((o:any)=>o.surgeon))].filter(Boolean);
-  const anests   = [...new Set(tmrwOps.map((o:any)=>o.anesthesiologist))].filter(Boolean);
-  return (
-    <div>
-      <div style={{background:`linear-gradient(90deg,${C.pBg},${C.waBg})`,borderRadius:14,padding:"14px 16px",marginBottom:14,border:`1px solid ${C.pL}33`}}>
-        <div style={{fontSize:14,fontWeight:700,color:C.p}}>Kamar Bedah {HOSPITAL}</div>
-        <div style={{fontSize:12,color:C.tL,marginTop:2}}>Pengiriman H-1 — Besok: {fDMY(tmrwDate())} · {tmrwOps.length} operasi</div>
-      </div>
-      <div style={{background:C.iBg,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:12,color:C.i,lineHeight:1.6}}>ℹ️ Pesan bersifat DRAFT. Pratinjau wajib ditampilkan. Tekan Kirim di WhatsApp untuk konfirmasi manual.</div>
-      {tmrwOps.length===0 && <Card><div style={{textAlign:"center",padding:20,color:C.tL,fontSize:13}}>Belum ada operasi terjadwal untuk besok ({fDMY(tmrwDate())})</div></Card>}
-      {(surgeons as string[]).length>0 && (
-        <div style={{marginBottom:16}}>
-          <div style={{fontSize:12,fontWeight:700,color:C.g,textTransform:"uppercase",letterSpacing:.8,marginBottom:10}}>H-1 → Dokter Bedah / Operator</div>
-          {(surgeons as string[]).map(name=>{
-            const sOps=tmrwOps.filter((o:any)=>o.surgeon===name), ph=getPhone(name), msg=msgSurgeon(name,sOps), k="s_"+name;
-            return (
-              <Card key={name}>
-                <div style={{fontSize:14,fontWeight:700,color:C.t,marginBottom:2}}>{name}</div>
-                <div style={{fontSize:12,color:C.tL,marginBottom:8}}>{sOps.length} tindakan besok · {ph?<span>+{ph}</span>:<span style={{color:C.d}}>Nomor belum terdaftar</span>}</div>
-                <div style={{fontSize:12,color:C.tL,marginBottom:10}}>{sOps.sort((a:any,b:any)=>a.time.localeCompare(b.time)).map((op:any,i:number)=><div key={op.id}>{i+1}. {op.time} — {op.procedure}</div>)}</div>
-                <WaBt full onClick={()=>sendWA(ph,msg,name,"H-1 Bedah → "+name)} disabled={!ph}>Kirim H-1 ke Dokter Bedah</WaBt>
-                <button onClick={()=>setPrev(p=>({...p,[k]:!p[k]}))} style={{background:"none",border:"none",color:C.p,cursor:"pointer",fontSize:12,fontWeight:600,marginTop:10,padding:0}}>{prev[k]?"▲ Tutup":"▼ Pratinjau Pesan"}</button>
-                {prev[k] && <div style={{marginTop:10,background:"#F9FAFB",borderRadius:10,padding:"12px 14px",fontSize:12,lineHeight:1.9,whiteSpace:"pre-wrap",border:`1px solid ${C.b}`,maxHeight:240,overflowY:"auto",fontFamily:"inherit"}}>{msg}</div>}
-              </Card>
-            );
-          })}
-        </div>
-      )}
-      {(anests as string[]).length>0 && (
-        <div>
-          <div style={{fontSize:12,fontWeight:700,color:C.g,textTransform:"uppercase",letterSpacing:.8,marginBottom:10}}>H-1 → Dokter Anestesi</div>
-          {(anests as string[]).map(name=>{
-            const aOps=tmrwOps.filter((o:any)=>o.anesthesiologist===name), ph=getPhone(name), msg=msgAnest(name,aOps), k="a_"+name;
-            return (
-              <Card key={name}>
-                <div style={{fontSize:14,fontWeight:700,color:C.t,marginBottom:2}}>{name}</div>
-                <div style={{fontSize:12,color:C.tL,marginBottom:8}}>{aOps.length} kasus besok · {ph?<span>+{ph}</span>:<span style={{color:C.d}}>Nomor belum terdaftar</span>}</div>
-                <WaBt full onClick={()=>sendWA(ph,msg,name,"H-1 Anestesi → "+name)} disabled={!ph}>Kirim H-1 ke Dokter Anestesi</WaBt>
-                <button onClick={()=>setPrev(p=>({...p,[k]:!p[k]}))} style={{background:"none",border:"none",color:C.p,cursor:"pointer",fontSize:12,fontWeight:600,marginTop:10,padding:0}}>{prev[k]?"▲ Tutup":"▼ Pratinjau Pesan"}</button>
-                {prev[k] && <div style={{marginTop:10,background:"#F9FAFB",borderRadius:10,padding:"12px 14px",fontSize:12,lineHeight:1.9,whiteSpace:"pre-wrap",border:`1px solid ${C.b}`,maxHeight:240,overflowY:"auto",fontFamily:"inherit"}}>{msg}</div>}
-              </Card>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
+// ViewKirimWA sekarang diimpor dari ./components/view-kirim-wa (lihat import di atas)
+
 
 /* ─── VIEW STATISTIK ─────────────────────────────────────────────────── */
-function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
-  const [range, setRange] = useState<"all"|"30"|"90">("all");
-  const [exporting, setExporting] = useState(false);
-  const COLORS = ["#1F5A52","#1565C0","#E65100","#7B1FA2","#2E7D32","#C62828","#00838F","#E91E63"];
+// ViewStatistik sekarang diimpor dari ./components/view-statistik (lihat import di atas)
 
-  const allOps = [...ops, ...(archive.flatMap((a:any)=>a.ops||[]))];
-  const now = new Date();
-  const filtered = allOps.filter(op => {
-    if(range==="all") return true;
-    const d = new Date(op.date+"T00:00:00");
-    const days = range==="30"?30:90;
-    const diff = now.getTime()-d.getTime();
-    /* PENTING: harus cek diff>=0 JUGA, bukan hanya diff<=range.
-       Tanpa batas bawah ini, operasi yang TERJADWAL DI MASA DEPAN (status
-       "scheduled") punya diff negatif, yang selalu <= days*ms berapa pun
-       besarnya — akibatnya operasi bulan depan/tahun depan tetap lolos
-       filter "30 Hari" / "90 Hari" dan mencemari statistik. */
-    return diff >= 0 && diff <= days*24*60*60*1000;
-  });
-
-  const total = filtered.length;
-  const selesai = filtered.filter((o:any)=>o.status==="done").length;
-  const batal = filtered.filter((o:any)=>o.status==="batal").length;
-  const berlangsung = filtered.filter((o:any)=>o.status==="ongoing").length;
-  const terjadwal = filtered.filter((o:any)=>o.status==="scheduled").length;
-  const cyto = filtered.filter((o:any)=>o.opType==="cyto").length;
-  const elektif = filtered.filter((o:any)=>o.opType==="elektif").length;
-  const semi = filtered.filter((o:any)=>o.opType==="semi").length;
-
-  // Per surgeon
-  const bySurgeon: Record<string,number> = {};
-  filtered.forEach((o:any)=>{ if(o.surgeon) bySurgeon[o.surgeon]=(bySurgeon[o.surgeon]||0)+1; });
-  const surgeonData = Object.entries(bySurgeon).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([label,value],i)=>({label,value,color:COLORS[i%COLORS.length]}));
-
-  // Per room
-  const byRoom: Record<string,number> = {};
-  filtered.forEach((o:any)=>{ if(o.room) byRoom[o.room]=(byRoom[o.room]||0)+1; });
-  const roomData = Object.entries(byRoom).sort((a,b)=>b[1]-a[1]).map(([label,value],i)=>({label,value,color:COLORS[i%COLORS.length]}));
-
-  // Per month (last 6 months)
-  const monthMap: Record<string,number> = {};
-  filtered.forEach((o:any)=>{
-    /* FIX #5: Cek tipe dan panjang string sebelum .slice() — jika o.date null/undefined
-       (dari data migrasi lama), .slice() akan crash "Cannot read properties of null".
-       Perlu typeof === "string" DAN panjang >= 7, bukan sekadar truthy check. */
-    if(typeof o.date !== "string" || o.date.length < 7) return;
-    const m = o.date.slice(0,7);
-    monthMap[m]=(monthMap[m]||0)+1;
-  });
-  const monthData = Object.entries(monthMap).sort(([a],[b])=>a.localeCompare(b)).slice(-6).map(([key,value])=>{
-    const [y,m]=key.split("-");
-    const names=["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
-    return {label:names[parseInt(m)-1]+" "+y.slice(2), value, color:C.p};
-  });
-
-  // Per anesthesiologist
-  const byAnest: Record<string,number> = {};
-  filtered.forEach((o:any)=>{ if(o.anesthesiologist) byAnest[o.anesthesiologist]=(byAnest[o.anesthesiologist]||0)+1; });
-  const anestData = Object.entries(byAnest).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([label,value],i)=>({label,value,color:COLORS[i%COLORS.length]}));
-
-  // Agregasi Tindakan (procedure)
-  const byProcedure: Record<string,number> = {};
-  filtered.forEach((o:any)=>{ const k=(o.procedure||"").trim(); if(k) byProcedure[k]=(byProcedure[k]||0)+1; });
-  const procedureData = Object.entries(byProcedure).sort((a,b)=>b[1]-a[1]);
-
-  // Agregasi Diagnosa
-  const byDiagnosis: Record<string,number> = {};
-  filtered.forEach((o:any)=>{ const k=(o.diagnosis||"").trim(); if(k) byDiagnosis[k]=(byDiagnosis[k]||0)+1; });
-  const diagnosisData = Object.entries(byDiagnosis).sort((a,b)=>b[1]-a[1]);
-
-  const exportToExcel = () => {
-    setExporting(true);
-    try {
-      const wb = XLSX.utils.book_new();
-      const rangeLabel = range==="all"?"Semua Data":range==="30"?"30 Hari Terakhir":"90 Hari Terakhir";
-
-      /* ── Sheet 1: Ringkasan ── */
-      const summaryRows = [
-        ["LAPORAN STATISTIK KAMAR BEDAH"],
-        ["Rumah Sakit Panti Rini"],
-        ["Diekspor pada:", fNow()],
-        ["Rentang Data:", rangeLabel],
-        [""],
-        ["RINGKASAN UMUM",""],
-        ["Total Operasi", total],
-        ["Operasi Selesai", selesai],
-        ["Batal / Tunda", batal],
-        ["Berlangsung", berlangsung],
-        ["Terjadwal", terjadwal],
-        [""],
-        ["JENIS OPERASI",""],
-        ["Elektif", elektif],
-        ["Semi-Elektif", semi],
-        ["CYTO / Emergency", cyto],
-        [""],
-        ["TINGKAT KEBERHASILAN",""],
-        ["Persentase Selesai", total>0?Math.round((selesai/total)*100)+"%":"0%"],
-        ["Persentase Batal",   total>0?Math.round((batal/total)*100)+"%":"0%"],
-      ];
-      const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
-      wsSummary["!cols"] = [{wch:30},{wch:20}];
-      XLSX.utils.book_append_sheet(wb, wsSummary, "Ringkasan");
-
-      /* ── Sheet 2: Per Bulan ── */
-      if(monthData.length>0) {
-        const monthRows = [["Bulan","Jumlah Operasi"],...monthData.map(d=>[d.label,d.value])];
-        const wsMonth = XLSX.utils.aoa_to_sheet(monthRows);
-        wsMonth["!cols"] = [{wch:20},{wch:20}];
-        XLSX.utils.book_append_sheet(wb, wsMonth, "Per Bulan");
-      }
-
-      /* ── Sheet 3: Per Dokter Bedah ── */
-      if(Object.keys(bySurgeon).length>0) {
-        const surgRows = [["Dokter Bedah / Operator","Jumlah Operasi"],...Object.entries(bySurgeon).sort((a,b)=>b[1]-a[1]).map(([n,v])=>[n,v])];
-        const wsSurg = XLSX.utils.aoa_to_sheet(surgRows);
-        wsSurg["!cols"] = [{wch:35},{wch:20}];
-        XLSX.utils.book_append_sheet(wb, wsSurg, "Per Dokter Bedah");
-      }
-
-      /* ── Sheet 4: Per Dokter Anestesi ── */
-      if(Object.keys(byAnest).length>0) {
-        const anRows = [["Dokter Anestesi","Jumlah Operasi"],...Object.entries(byAnest).sort((a,b)=>b[1]-a[1]).map(([n,v])=>[n,v])];
-        const wsAn = XLSX.utils.aoa_to_sheet(anRows);
-        wsAn["!cols"] = [{wch:35},{wch:20}];
-        XLSX.utils.book_append_sheet(wb, wsAn, "Per Dokter Anestesi");
-      }
-
-      /* ── Sheet 5: Per Kamar ── */
-      if(Object.keys(byRoom).length>0) {
-        const roomRows = [["Kamar Operasi","Jumlah Operasi"],...Object.entries(byRoom).sort((a,b)=>b[1]-a[1]).map(([n,v])=>[n,v])];
-        const wsRoom = XLSX.utils.aoa_to_sheet(roomRows);
-        wsRoom["!cols"] = [{wch:25},{wch:20}];
-        XLSX.utils.book_append_sheet(wb, wsRoom, "Per Kamar");
-      }
-
-      /* ── Sheet 6: Data Detail semua operasi ── */
-      const headers = ["No","Tanggal","Jam","Pasien","Usia","No RM","Jenis","Diagnosa","Tindakan","Kamar","Dokter Bedah","Dokter Anestesi","Asisten","PERAWAT Instrumen","P.Anestesi","Onloop","RR/Katim","Alergi","Gol.Darah","Status"];
-      /* FIX AUDIT #33 (HIGH — CSV/Excel Formula Injection, CWE-1236):
-         sebelumnya kolom bebas-teks (pasien, diagnosa, tindakan, nama staf,
-         dll) ditulis MENTAH ke aoa_to_sheet, padahal field ini bisa diisi
-         manual atau auto-fill OCR (data eksternal). Kalau ada nilai yang
-         diawali "=", "+", "-", atau "@", Excel akan menafsirkannya sebagai
-         formula saat file dibuka (bisa dipakai untuk RCE/DDE atau eksfiltrasi
-         data via =WEBSERVICE(...)). sanitizeCellForExcel() sudah dipakai di
-         modul lembur — sekarang diterapkan juga di sini agar konsisten. */
-      const detailRows = filtered.map((op:any,i:number)=>[
-        i+1, op.date||"", op.time||"",
-        sanitizeCellForExcel(op.patient||""), op.age||"", sanitizeCellForExcel(op.rm||""),
-        OT[op.opType as keyof typeof OT]?.label||"Elektif",
-        sanitizeCellForExcel(op.diagnosis||""), sanitizeCellForExcel(op.procedure||""), sanitizeCellForExcel(op.room||""),
-        sanitizeCellForExcel(op.surgeon||""), sanitizeCellForExcel(op.anesthesiologist||""),
-        sanitizeCellForExcel(op.assistantNurse||""), sanitizeCellForExcel(op.circulatingNurse||""),
-        sanitizeCellForExcel(op.anesthesiaNurse||""), sanitizeCellForExcel(op.onloopNurse||""),
-        sanitizeCellForExcel(op.rrKatim||""), sanitizeCellForExcel(op.allergy||""), op.bloodType||"",
-        STS[op.status as keyof typeof STS]?.l||op.status||""
-      ]);
-      const wsDetail = XLSX.utils.aoa_to_sheet([headers,...detailRows]);
-      wsDetail["!cols"] = [
-        {wch:5},{wch:12},{wch:8},{wch:25},{wch:6},{wch:12},{wch:12},
-        {wch:30},{wch:35},{wch:18},{wch:28},{wch:28},
-        {wch:22},{wch:22},{wch:22},{wch:22},{wch:22},
-        {wch:15},{wch:10},{wch:14}
-      ];
-      XLSX.utils.book_append_sheet(wb, wsDetail, "Data Lengkap");
-
-      const filename = `Statistik_OR_PantiRini_${todayDate()}.xlsx`;
-      XLSX.writeFile(wb, filename);
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  const StatBox = ({label,value,bg,color}: any) => (
-    <div style={{background:bg,borderRadius:12,padding:"14px 16px",textAlign:"center",border:`1px solid ${color}33`}}>
-      <div style={{fontSize:28,fontWeight:800,color}}>{value}</div>
-      <div style={{fontSize:11,color,fontWeight:600,marginTop:2}}>{label}</div>
-    </div>
-  );
-
-  return (
-    <div>
-      <Row title="📊 Statistik Operasi"/>
-      <div style={{display:"flex",gap:6,marginBottom:14,background:C.gBg,borderRadius:12,padding:4}}>
-        {[{v:"all",l:"Semua"},{v:"30",l:"30 Hari"},{v:"90",l:"90 Hari"}].map(r=>(
-          <button key={r.v} onClick={()=>setRange(r.v as any)} style={{flex:1,padding:"8px 4px",borderRadius:10,border:"none",background:range===r.v?C.white:"none",color:range===r.v?C.p:C.g,fontSize:12,fontWeight:range===r.v?700:500,cursor:"pointer",boxShadow:range===r.v?"0 1px 6px rgba(0,0,0,.1)":"none"}}>{r.l}</button>
-        ))}
-      </div>
-      <button
-        onClick={exportToExcel}
-        disabled={exporting||total===0}
-        style={{width:"100%",marginBottom:14,padding:"12px",borderRadius:12,border:"1.5px solid #217346",background:exporting||total===0?"#eee":"#217346",color:exporting||total===0?C.g:"#fff",fontSize:13,fontWeight:700,cursor:exporting||total===0?"not-allowed":"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:8,opacity:total===0?.5:1,transition:"opacity .15s"}}
-      >
-        {exporting
-          ? <><span style={{animation:"spin 1s linear infinite",display:"inline-block"}}>⟳</span> Mengekspor...</>
-          : <>📥 Ekspor Excel (.xlsx) — {total} operasi</>
-        }
-      </button>
-      <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
-
-      {/* Ringkasan */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8,marginBottom:12}}>
-        <StatBox label="Total Operasi" value={total} bg={C.pBg} color={C.p}/>
-        <StatBox label="Selesai" value={selesai} bg={C.sBg} color={C.s}/>
-        <StatBox label="Batal/Tunda" value={batal} bg={C.dBg} color={C.d}/>
-        <StatBox label="CYTO/Emergency" value={cyto} bg="#FFCDD2" color="#B71C1C"/>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
-        <StatBox label="Terjadwal" value={terjadwal} bg={C.iBg} color={C.i}/>
-        <StatBox label="Berlangsung" value={berlangsung} bg={C.pBg} color={C.pL}/>
-        <StatBox label="Elektif" value={elektif} bg="#E8F5E9" color="#388E3C"/>
-      </div>
-
-      {/* Jenis */}
-      <Card>
-        <SH label="Jenis Operasi"/>
-        <MiniBar data={[
-          {label:"Elektif",value:elektif,color:"#1565C0"},
-          {label:"Semi-Elektif",value:semi,color:"#E65100"},
-          {label:"CYTO/Emergency",value:cyto,color:"#B71C1C"},
-        ]}/>
-      </Card>
-
-      {/* Per bulan */}
-      {monthData.length>0 && (
-        <Card>
-          <SH label="Operasi per Bulan"/>
-          <MiniBar data={monthData}/>
-        </Card>
-      )}
-
-      {/* Per dokter bedah */}
-      {surgeonData.length>0 && (
-        <Card>
-          <SH label="Operasi per Dokter Bedah (Top 8)"/>
-          <MiniBar data={surgeonData}/>
-        </Card>
-      )}
-
-      {/* Per dokter anestesi */}
-      {anestData.length>0 && (
-        <Card>
-          <SH label="Operasi per Dokter Anestesi (Top 6)"/>
-          <MiniBar data={anestData}/>
-        </Card>
-      )}
-
-      {/* ── Rekapitulasi Tindakan ── */}
-      {procedureData.length>0 && (
-        <Card>
-          <SH label="🔪 Rekapitulasi Tindakan Medis" color="#0284c7"/>
-          <div style={{fontSize:11,color:C.tL,marginBottom:10}}>Total {procedureData.length} jenis tindakan · {filtered.length} operasi</div>
-          {procedureData.map(([label,val],i)=>{
-            const pct = filtered.length>0 ? Math.round((val/filtered.length)*100) : 0;
-            const barColor = COLORS[i%COLORS.length];
-            return (
-              <div key={label} style={{marginBottom:8}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
-                  <div style={{fontSize:12,fontWeight:600,color:C.t,flex:1,marginRight:8,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                    <span style={{color:C.tL,marginRight:6,fontSize:11}}>#{i+1}</span>{label}
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                    <span style={{fontSize:13,fontWeight:800,color:barColor}}>{val}</span>
-                    <span style={{fontSize:10,color:C.tL}}>({pct}%)</span>
-                  </div>
-                </div>
-                <div style={{background:"#f1f5f9",borderRadius:6,height:8,overflow:"hidden"}}>
-                  <div style={{height:"100%",background:barColor,borderRadius:6,width:`${pct}%`,transition:"width .4s"}}/>
-                </div>
-              </div>
-            );
-          })}
-        </Card>
-      )}
-
-      {/* ── Rekapitulasi Diagnosa ── */}
-      {diagnosisData.length>0 && (
-        <Card>
-          <SH label="🏥 Rekapitulasi Diagnosa" color="#7c3aed"/>
-          <div style={{fontSize:11,color:C.tL,marginBottom:10}}>Total {diagnosisData.length} jenis diagnosa</div>
-          {diagnosisData.map(([label,val],i)=>{
-            const pct = filtered.length>0 ? Math.round((val/filtered.length)*100) : 0;
-            const barColor = ["#7c3aed","#a855f7","#8b5cf6","#6d28d9","#9333ea","#4f46e5","#7c3aed","#c026d3"][i%8];
-            return (
-              <div key={label} style={{marginBottom:8}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
-                  <div style={{fontSize:12,fontWeight:600,color:C.t,flex:1,marginRight:8,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                    <span style={{color:C.tL,marginRight:6,fontSize:11}}>#{i+1}</span>{label}
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                    <span style={{fontSize:13,fontWeight:800,color:barColor}}>{val}</span>
-                    <span style={{fontSize:10,color:C.tL}}>({pct}%)</span>
-                  </div>
-                </div>
-                <div style={{background:"#f5f3ff",borderRadius:6,height:8,overflow:"hidden"}}>
-                  <div style={{height:"100%",background:barColor,borderRadius:6,width:`${pct}%`,transition:"width .4s"}}/>
-                </div>
-              </div>
-            );
-          })}
-        </Card>
-      )}
-
-      {/* Per kamar */}
-      {roomData.length>0 && (
-        <Card>
-          <SH label="Operasi per Kamar"/>
-          <MiniBar data={roomData}/>
-        </Card>
-      )}
-
-      {/* Tingkat keberhasilan */}
-      {total>0 && (
-        <Card>
-          <SH label="Tingkat Keberhasilan"/>
-          <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:8}}>
-            <div style={{flex:1}}>
-              <div style={{fontSize:32,fontWeight:800,color:C.s}}>{Math.round((selesai/total)*100)}%</div>
-              <div style={{fontSize:11,color:C.tL,marginTop:2}}>Operasi berhasil dari total {total}</div>
-            </div>
-            <div style={{flex:2}}>
-              <div style={{background:"#F0F4F8",borderRadius:8,height:18,overflow:"hidden"}}>
-                <div style={{height:"100%",background:`linear-gradient(90deg,${C.s},${C.pL})`,width:`${Math.round((selesai/total)*100)}%`,borderRadius:8,transition:"width .5s"}}/>
-              </div>
-              {batal>0 && <div style={{height:8}}/>}
-              {batal>0 && <div style={{background:"#F0F4F8",borderRadius:8,height:12,overflow:"hidden"}}>
-                <div style={{height:"100%",background:C.d,width:`${Math.round((batal/total)*100)}%`,borderRadius:8}}/>
-              </div>}
-            </div>
-          </div>
-          <div style={{display:"flex",gap:10,fontSize:11}}>
-            <span style={{color:C.s}}>■ Selesai {selesai}</span>
-            {batal>0 && <span style={{color:C.d}}>■ Batal {batal}</span>}
-            {terjadwal>0 && <span style={{color:C.i}}>■ Terjadwal {terjadwal}</span>}
-          </div>
-        </Card>
-      )}
-
-      {total===0 && (
-        <Card>
-          <div style={{textAlign:"center",padding:32,color:C.tL}}>
-            <div style={{fontSize:40,marginBottom:8}}>📊</div>
-            <div style={{fontSize:14,fontWeight:600}}>Belum ada data operasi</div>
-            <div style={{fontSize:12,marginTop:4}}>Daftarkan jadwal operasi untuk melihat statistik</div>
-          </div>
-        </Card>
-      )}
-    </div>
-  );
-}
 
 /* ─── VIEW STAF ──────────────────────────────────────────────────────── */
-function ViewStaf({staff,setStaff,roster,setRoster,showToast,upsertOneToSupa,deleteFromSupa,upsertBulkToSupa}: ViewStafProps) {
-  const [form,setForm]   = useState({name:"",type:"surgeon",phone:""});
-  const [editing,setEd]  = useState<any>(null);
-  const [show,setShow]   = useState(false);
-  const [err,setErr]     = useState<any>({});
-  const [rExp,setRExp]   = useState(false);
-  const sfRef = useRef<HTMLInputElement>(null), rsfRef = useRef<HTMLInputElement>(null);
+// ViewStaf sekarang diimpor dari ./components/view-staf,
+// ImportExcel dari ./components/import-excel (lihat import di atas)
 
-  const validate = () => {
-    const e: any={};
-    if(!form.name.trim()) e.name="Wajib";
-    if(!form.phone.trim()) e.phone="Wajib";
-    else if(!isValidPhone62(form.phone.replace(/\s/g,""))) e.phone="Format: 62xxx (tanpa + atau spasi)";
-    setErr(e); return !Object.keys(e).length;
-  };
-  const save = () => {
-    if(!validate()) return;
-    if(editing){
-      const updated={...editing,...form, updated_at: new Date().toISOString()};
-      setStaff((p:any[])=>p.map((s:any)=>s.id===editing.id?updated:s));
-      AmbilLogMedis("MANAJEMEN_STAF","Admin","UBAH_STAF",
-        `Edit data staf: ${updated.name||"-"} (${updated.type||"-"})`,
-        { before: editing, after: updated }
-      );
-      upsertOneToSupa?.("kb_staf",updated).then((res:{ok:boolean;error?:string})=>{
-        if(!res?.ok){
-          setStaff((p:any[])=>p.map((s:any)=>s.id===editing.id?editing:s));
-          showToast(`⚠ Gagal menyimpan staf: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
-        } else showToast("✓ Data staf diperbarui & tersinkron",C.s);
-      });
-    } else {
-      const newStaf={id:gId(),...form, updated_at: new Date().toISOString()};
-      AmbilLogMedis("MANAJEMEN_STAF","Admin","TAMBAH_STAF",
-        `Tambah staf baru: ${newStaf.name||"-"} (${newStaf.type||"-"})`,
-        { ...newStaf }
-      );
-      upsertOneToSupa?.("kb_staf",newStaf).then((res:{ok:boolean;error?:string})=>{
-        if(!res?.ok){
-          showToast(`⚠ Gagal menyimpan staf: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
-        } else {
-          setStaff((p:any[])=>{
-            if(p.some((s:any)=>s.id===newStaf.id)) return p;
-            return [...p,newStaf];
-          });
-          showToast("✓ Staf berhasil ditambahkan & tersinkron",C.s);
-        }
-      });
-    }
-    setForm({name:"",type:"surgeon",phone:""}); setEd(null); setShow(false); setErr({});
-  };
-  const dlStaff = () => {
-    const csv = `"nama","jabatan","nomor_wa"\n"dr. Nama Bedah Sp.B","surgeon","628112345001"\n"dr. Nama Anestesi Sp.An","anesthesiologist","628112345002"\n"Ns. Nama Instrumen","circulating","628112345003"\n"Ns. Nama P.Anestesi","anesthesia_nurse","628112345004"\n"Ns. Nama Onloop","onloop","628112345005"\n"Ns. Nama Katim","katim","628112345006"`;
-    downloadBlob(csv,"template_staf.csv"); showToast("✓ Template CSV Staf diunduh",C.s);
-  };
-  const dlRoster = () => {
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet([
-      ["Tanggal","Dokter Anestesi Jaga 1","Dokter Anestesi Jaga 2","Dokter Anestesi Cyto 1","Dokter Anestesi Cyto 2","Dokter Anestesi Cyto 3","Perawat Siaga 1","Perawat Siaga 2","Perawat Siaga 3","Perawat Siaga 4","Pembawa HP"],
-      ["01/06/2025","dr. Anestesi Jaga 1 Sp.An","dr. Anestesi Jaga 2 Sp.An","dr. Cyto 1 Sp.An","dr. Cyto 2 Sp.An","dr. Cyto 3 Sp.An","Ns. Perawat 1","Ns. Perawat 2","Ns. Perawat 3","Ns. Perawat 4","Ns. Katim Jaga"],
-      ["02/06/2025","dr. Anestesi Jaga 1 Sp.An","dr. Anestesi Jaga 2 Sp.An","dr. Cyto 1 Sp.An","dr. Cyto 2 Sp.An","dr. Cyto 3 Sp.An","Ns. Perawat 1","Ns. Perawat 2","Ns. Perawat 3","Ns. Perawat 4","Ns. Katim Jaga"],
-    ]);
-    ws["!cols"]=[{wch:12},{wch:28},{wch:28},{wch:28},{wch:28},{wch:28},{wch:22},{wch:22},{wch:22},{wch:22},{wch:22}];
-    XLSX.utils.book_append_sheet(wb,ws,"Jadwal Siaga");
-    XLSX.writeFile(wb,"template_jadwal_siaga_bulanan.xlsx");
-    showToast("✓ Template Jadwal Siaga diunduh",C.s);
-  };
-
-
-
-  /* readFileRows: PENTING — untuk .xlsx dibaca dengan cellDates:true dan TIDAK
-     dipaksa jadi string di sini. Memaksa String(cell) terlalu awal adalah
-     sumber bug nyata: sel tanggal Excel yang diformat sebagai tanggal akan
-     terbaca sebagai angka "serial" (mis. 45809) oleh SheetJS bila cellDates
-     tidak diaktifkan, lalu String(45809) tidak akan pernah cocok dengan
-     regex DD/MM/YYYY — tanggal rusak inilah yang akhirnya ditolak Supabase.
-     Sel Date/number asli dipertahankan agar bisa disanitasi per-kolom oleh
-     toISODateStrict() di pemanggil. */
-  const readFileRows = async (f: File): Promise<any[][]> => {
-    const isXlsx = f.name.match(/\.xlsx?$/i);
-    if(isXlsx) {
-      const buf = await f.arrayBuffer();
-      const wb2 = XLSX.read(new Uint8Array(buf),{type:"array", cellDates:true});
-      const ws2 = wb2.Sheets[wb2.SheetNames[0]];
-      const raw: any[][] = XLSX.utils.sheet_to_json(ws2,{header:1,defval:""});
-      return raw;
-    }
-    return parseCSV(await f.text());
-  };
-
-  const handleStaffFile = async (ev: any) => {
-    const f=ev.target.files[0]; if(!f)return; ev.target.value="";
-    try {
-      const rows = await readFileRows(f);
-      if(rows.length<2){showToast("File kosong atau format tidak sesuai",C.d);return;}
-      const h=rows[0].map((x:any)=>String(x).toLowerCase().trim());
-      const ni=h.findIndex((x:string)=>x.includes("nama")), ti=h.findIndex((x:string)=>x.includes("jabatan")||x.includes("type")), pi=h.findIndex((x:string)=>x.includes("wa")||x.includes("phone")||x.includes("nomor"));
-      if(ni<0){showToast("Kolom 'nama' tidak ditemukan. Gunakan template.",C.d);return;}
-      let skippedPhone = 0;
-      const imp=rows.slice(1).map((c:any[])=>{
-        const name = sanitize(String(c[ni]??""));
-        if(!name) return null;
-        const rawPhone = String(pi>=0?c[pi]??"":"");
-        const phone = normalizePhone62(rawPhone);
-        if(rawPhone.trim() && !isValidPhone62(phone)) skippedPhone++;
-        /* Cocokkan dgn staf yang SUDAH ADA (nama, case-insensitive) — jika ketemu,
-           PERBARUI baris yg sama (reuse id) bukan membuat staf duplikat baru.
-           Tanpa ini, re-upload file staf yg sama akan menggandakan data setiap kali. */
-        const existing = staff.find((s:any)=>String(s.name||"").toLowerCase().trim()===name.toLowerCase());
-        return {
-          id: existing ? existing.id : gId(),
-          name,
-          type: ti>=0 ? normalizeStaffType(String(c[ti]??"")) : "circulating",
-          phone,
-          updated_at: new Date().toISOString(),
-        };
-      }).filter(Boolean) as any[];
-      if(!imp.length){showToast("Tidak ada data valid (kolom nama kosong)",C.d);return;}
-      showToast(`⟳ Menyimpan ${imp.length} staf ke Supabase...`,C.p);
-      const res = await upsertBulkToSupa?.("kb_staf", imp);
-      if(res?.ok) {
-        setStaff((p:any[])=>{
-          const byId = new Map(p.map((s:any)=>[s.id,s]));
-          imp.forEach((s:any)=>byId.set(s.id,s));
-          return Array.from(byId.values());
-        });
-        const note = skippedPhone ? ` (${skippedPhone} nomor WA format tidak valid — tetap tersimpan, cek kembali)` : "";
-        showToast("✓ "+imp.length+" staf berhasil diimport & tersinkron"+note,C.s);
-      } else {
-        showToast(`⚠ Import staf gagal: ${res?.error||"kesalahan tidak diketahui dari Supabase"}`,C.d);
-      }
-    } catch(e: any){showToast("Error membaca file: "+(e?.message||"format tidak dikenali"),C.d);}
-  };
-  const handleRosterFile = async (ev: any) => {
-    const f=ev.target.files[0]; if(!f)return; ev.target.value="";
-    try {
-      const rows = await readFileRows(f);
-      if(rows.length<2){showToast("File kosong",C.d);return;}
-      const h=rows[0].map((x:any)=>String(x).toLowerCase().trim());
-      const di=h.findIndex((x:string)=>x.includes("tanggal")||x.includes("date"));
-      if(di<0){showToast("Kolom 'Tanggal' tidak ditemukan. Gunakan template.",C.d);return;}
-      const ai1=h.findIndex((x:string)=>x.includes("jaga")&&!x.includes("cyto")&&(x.includes("1")||(!x.includes("2")&&!x.includes("3"))));
-      const ai2=h.findIndex((x:string)=>x.includes("jaga")&&!x.includes("cyto")&&x.includes("2"));
-      const ci1=h.findIndex((x:string)=>x.includes("cyto")&&(x.includes("1")||(!x.includes("2")&&!x.includes("3"))));
-      const ci2=h.findIndex((x:string)=>x.includes("cyto")&&x.includes("2"));
-      const ci3=h.findIndex((x:string)=>x.includes("cyto")&&x.includes("3"));
-      const pi=h.findIndex((x:string)=>x.includes("perawat")||x.includes("nurse"));
-      const hpi=h.findIndex((x:string)=>x.includes("pembawa")||x.includes("hp"));
-      const ts = new Date().toISOString();
-      let skippedDate = 0;
-      const imp=rows.slice(1).map((r:any[])=>{
-        /* toISODateStrict menangani Date object, serial number Excel, dan
-           string DD/MM/YYYY atau YYYY-MM-DD sekaligus — lihat definisinya. */
-        const date = toISODateStrict(r[di]);
-        if(!date){ if(r[di]) skippedDate++; return null; }
-        const nurses: string[]=[];
-        if(pi>=0) for(let i=pi;i<Math.min(r.length,pi+4);i++){ const cell=String(r[i]??"").trim(); if(cell && !cell.toLowerCase().includes("pembawa")) nurses.push(sanitize(cell)); }
-        const jaga1=sanitize(String(r[ai1>=0?ai1:0]??""));
-        const jaga2=ai2>=0?sanitize(String(r[ai2]??"")):"";
-        const cyto1=ci1>=0?sanitize(String(r[ci1]??"")):"";
-        const cyto2=ci2>=0?sanitize(String(r[ci2]??"")):"";
-        const cyto3=ci3>=0?sanitize(String(r[ci3]??"")):"";
-        const anestJagaArr=[jaga1,jaga2].filter(Boolean);
-        const anestCytoArr=[cyto1,cyto2,cyto3].filter(Boolean);
-        /* id DETERMINISTIK dari tanggal (bukan random) — re-upload jadwal yang
-           tanggalnya sama akan UPSERT baris yg sama (onConflict:"id"), bukan
-           membuat baris baru yang "berhantu" (tetap ada di DB walau sudah
-           tergeser di tampilan lokal) dan muncul lagi sbg duplikat di device
-           lain / setelah refresh. */
-        return {id:`roster_${date}`,date,anestJaga:anestJagaArr.join(", "),anestCyto:anestCytoArr.join(", "),anestJagaList:anestJagaArr,anestCytoList:anestCytoArr,nurses,pembawaHP:sanitize(String(r[hpi>=0?hpi:0]??"")),updated_at:ts};
-      }).filter(Boolean) as any[];
-      if(!imp.length){showToast(`Tidak ada baris valid (${skippedDate} tanggal tidak terbaca — cek format DD/MM/YYYY)`,C.d);return;}
-      /* Merge lokal: timpa entry dengan tanggal yang sama */
-      const oldSameDate = roster.filter((x:any)=>imp.some((n:any)=>n.date===x.date));
-      const newRoster=[...roster.filter((x:any)=>!imp.find((n:any)=>n.date===x.date)),...imp];
-      showToast(`⟳ Menyimpan ${imp.length} jadwal siaga ke Supabase...`,C.p);
-      /* DB-first: roster harus persist sebelum UI diupdate */
-      const res = await upsertBulkToSupa?.("kb_roster", imp);
-      if(res?.ok) {
-        setRoster(newRoster);
-        /* Best-effort: bersihkan baris lama (id berbeda, mis. dari upload versi
-           sebelumnya yg masih pakai id acak) utk tanggal yg sama agar tidak
-           menumpuk sbg duplikat "hantu" di Supabase. */
-        const orphanIds = oldSameDate.filter((x:any)=>!imp.some((n:any)=>n.id===x.id)).map((x:any)=>x.id);
-        if(orphanIds.length) Promise.all(orphanIds.map((id:string)=>deleteFromSupa?.("kb_roster", id))).catch(()=>{});
-        const note = skippedDate ? ` (${skippedDate} baris dilewati — tanggal tidak terbaca)` : "";
-        showToast("✓ "+imp.length+" jadwal siaga tersimpan & tersinkron ke semua perangkat"+note,C.s);
-      } else {
-        showToast(`⚠ Upload jadwal siaga gagal: ${res?.error||"kesalahan tidak diketahui dari Supabase"}`,C.d);
-      }
-    } catch(e: any){showToast("Error membaca file: "+(e?.message||"format tidak dikenali"),C.d);}
-  };
-
-  return (
-    <div>
-      <Row title="Manajemen Staf & Roster" right={<Btn sm onClick={()=>{setForm({name:"",type:"surgeon",phone:""});setEd(null);setErr({});setShow(true);}}>+ Tambah Staf</Btn>}/>
-      <Card style={{background:C.iBg,border:"1px solid #1565C033"}}>
-        <SH label="📋 Upload Data Master Staf" color={C.i}/>
-        <div style={{fontSize:12,color:C.tL,marginBottom:10,lineHeight:1.6}}>Format: <b>CSV</b> atau <b>Excel (.xlsx)</b> · Kolom: nama, jabatan, nomor_wa</div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          <input ref={sfRef} type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleStaffFile} style={{display:"none"}}/>
-          <Btn sm outline color={C.i} onClick={()=>sfRef.current&&sfRef.current.click()}>📂 Upload CSV/Excel Staf</Btn>
-          <Btn sm outline color={C.g} onClick={dlStaff}>⬇ Template</Btn>
-        </div>
-        {staff.length>0 && <div style={{marginTop:8,fontSize:12,color:C.i,fontWeight:600}}>✓ {staff.length} staf terdaftar</div>}
-      </Card>
-      <Card style={{background:"#F3E5F5",border:"2px solid #CE93D8"}}>
-        <SH label="📅 Upload Jadwal Siaga 1 Bulan" color="#7B1FA2"/>
-        <div style={{background:"#EDE7F6",borderRadius:8,padding:"10px 12px",marginBottom:12,fontSize:12,color:"#512DA8",lineHeight:1.7}}>
-          <b>Fungsi:</b> Basis data siaga 1 bulan untuk auto-populate laporan kepala jaga.<br/>
-          Kolom wajib: Tanggal (DD/MM/YYYY), Dokter Anestesi Jaga, Dokter Anestesi Cyto, Perawat Siaga 1–3, Pembawa HP
-        </div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          <input ref={rsfRef} type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleRosterFile} style={{display:"none"}}/>
-          <Btn sm color="#7B1FA2" onClick={()=>rsfRef.current&&rsfRef.current.click()}>📂 Upload Jadwal Siaga (CSV/Excel)</Btn>
-          <Btn sm outline color={C.g} onClick={dlRoster}>⬇ Template</Btn>
-        </div>
-        {roster.length>0 && (
-          <div style={{marginTop:10,background:"#EDE7F6",borderRadius:8,padding:"10px 12px"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div style={{fontSize:12,color:"#512DA8",fontWeight:700}}>✓ {roster.length} hari jadwal siaga tersimpan</div>
-              <button onClick={()=>setRExp((v:boolean)=>!v)} style={{background:"none",border:"none",color:"#7B1FA2",cursor:"pointer",fontSize:12,fontWeight:600}}>{rExp?"▲ Tutup":"▼ Lihat"}</button>
-            </div>
-            <div style={{fontSize:11,color:"#7B1FA2",marginTop:4}}>Hari ini: {roster.find((r:any)=>r.date===todayDate())?"✓":"—"} · Besok: {roster.find((r:any)=>r.date===tmrwDate())?"✓":"—"}</div>
-            {rExp && roster.slice(0,5).map((r:any)=>(
-              <div key={r.id} style={{fontSize:11,color:"#7B1FA2",marginTop:6,paddingTop:6,borderTop:"1px solid #D1C4E9"}}>
-                📅 {fD(r.date)} · Jaga: {r.anestJaga||"—"} · Cyto: {r.anestCyto||"—"}<br/>
-                Perawat: {(r.nurses||[]).join(", ")||"—"} · HP: {r.pembawaHP||"—"}
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-      {show && (
-        <Card hi="#00897B66">
-          <div style={{fontSize:14,fontWeight:700,color:C.p,marginBottom:14}}>{editing?"Edit Staf":"Tambah Staf Baru"}</div>
-          <LF label="Nama Lengkap & Gelar" req err={err.name}><input style={iS} placeholder="dr. Nama, Sp.B  atau  Ns. Nama, S.Kep" value={form.name} onChange={(e:any)=>setForm((p:any)=>({...p,name:e.target.value}))} autoComplete="off" spellCheck={false}/></LF>
-          <SF label="Jabatan" options={Object.entries(ST).map(([v,l])=>({v,l}))} value={form.type} onChange={(e:any)=>setForm((p:any)=>({...p,type:e.target.value}))}/>
-          <LF label="Nomor WhatsApp" req err={err.phone}><input style={iS} placeholder="628112345678" type="tel" inputMode="numeric" value={form.phone} onChange={(e:any)=>setForm((p:any)=>({...p,phone:e.target.value.replace(/[^0-9]/g,"")}))} autoComplete="off"/></LF>
-          <div style={{fontSize:11,color:C.tL,marginBottom:12}}>Diawali 62, tanpa + atau spasi</div>
-          <div style={{display:"flex",gap:8}}><Btn full onClick={save}>{editing?"Simpan Perubahan":"Tambah Staf"}</Btn><Btn full outline color={C.g} onClick={()=>{setShow(false);setEd(null);setErr({});}}>Batal</Btn></div>
-        </Card>
-      )}
-      {staff.length===0 && !show && <Card><div style={{textAlign:"center",padding:24,color:C.tL}}><div style={{fontSize:40,marginBottom:8}}>👥</div><div style={{fontSize:14,fontWeight:600}}>Belum ada data staf</div><div style={{fontSize:12,marginTop:4}}>Tambah manual atau upload CSV</div></div></Card>}
-      {Object.entries(ST).map(([type,label])=>{
-        const list=staff.filter((s:any)=>s.type===type); if(!list.length)return null;
-        return (
-          <div key={type} style={{marginBottom:14}}>
-            <div style={{fontSize:11,fontWeight:700,color:C.g,textTransform:"uppercase",letterSpacing:.8,marginBottom:6}}>{label}</div>
-            {list.map((s:any)=>(
-              <Card key={s.id} style={{padding:"12px 16px",marginBottom:6}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <div><div style={{fontSize:14,fontWeight:700,color:C.t}}>{s.name}</div><div style={{fontSize:12,color:C.tL}}>+{s.phone}</div></div>
-                  <div style={{display:"flex",gap:6}}>
-                    <Btn sm outline color={C.p} onClick={()=>{setForm({name:s.name,type:s.type,phone:s.phone});setEd(s);setErr({});setShow(true);}}>Edit</Btn>
-                    <Btn sm outline color={C.d} onClick={async()=>{
-                      const res = await deleteFromSupa?.("kb_staf",s.id);
-                      if(!res?.ok){ showToast(`⚠ Gagal menghapus staf: ${res?.error||"kesalahan tidak diketahui"}`,C.d); return; }
-                      setStaff((p:any[])=>p.filter((x:any)=>x.id!==s.id));
-                      AmbilLogMedis("MANAJEMEN_STAF","Admin","HAPUS_STAF",
-                        `Hapus staf: ${s.name||"-"} (${s.type||"-"})`,
-                        { deleted: { id: s.id, name: s.name, type: s.type } }
-                      );
-                      showToast("✓ Staf dihapus & tersinkron",C.d);
-                    }}>Hapus</Btn>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/* ─── IMPORT EXCEL ───────────────────────────────────────────────────── */
-function ImportExcel({ops, setOps, showToast, upsertBulkToSupa}: any) {
-  const [rows, setRows] = useState<any[]>([]);
-  const [fileName, setFileName] = useState("");
-  const [importing, setImporting] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-
-  const COLS: {label:string;key:string;required?:boolean}[] = [
-    {label:"Tanggal (DD/MM/YYYY atau YYYY-MM-DD)",key:"date",required:true},
-    {label:"Jam (HH:MM)",key:"time",required:true},
-    {label:"Nama Pasien",key:"patient",required:true},
-    {label:"Tindakan/Prosedur",key:"procedure",required:true},
-    {label:"Diagnosa",key:"diagnosis"},
-    {label:"Dokter Bedah",key:"surgeon"},
-    {label:"Dokter Anestesi",key:"anesthesiologist"},
-    {label:"Kamar Operasi",key:"room"},
-    {label:"Usia",key:"age"},
-    {label:"No RM",key:"rm"},
-    {label:"Golongan Darah",key:"bloodType"},
-    {label:"Alergi",key:"allergy"},
-    {label:"Jenis Operasi",key:"opType"},
-    {label:"PERAWAT Instrumen",key:"circulatingNurse"},
-    {label:"P. Anestesi",key:"anesthesiaNurse"},
-    {label:"Onloop",key:"onloopNurse"},
-    {label:"RR/Katim",key:"rrKatim"},
-  ];
-
-  const handleFile = (file: File) => {
-    setFileName(file.name);
-    const reader = new FileReader();
-    /* FIX AUDIT #28 (LOW — FileReader tanpa onerror): tanpa ini, kalau file
-       gagal dibaca di level OS/browser (bukan gagal parse Excel), tidak ada
-       feedback ke user sama sekali — UI terlihat "menggantung" tanpa
-       penjelasan. */
-    reader.onerror = () => { setFileName(""); showToast("Gagal membaca file — coba pilih file lain", C.d); };
-    reader.onload = (e) => {
-      try {
-        const wb = XLSX.read(new Uint8Array(e.target!.result as ArrayBuffer), {type:"array", cellDates:true});
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const data: any[][] = XLSX.utils.sheet_to_json(ws, {header:1});
-        if(data.length<2){showToast("File kosong atau tidak ada data",C.d);return;}
-        const header: string[] = (data[0] as string[]).map(h=>String(h||"").trim());
-        const parsed: any[] = [];
-        for(let i=1;i<data.length;i++){
-          const row=data[i] as any[];
-          if(!row||row.every((c:any)=>!c)) continue;
-          const obj: any={};
-          COLS.forEach(col=>{
-            const idx=header.findIndex(h=>h.toLowerCase()===col.label.toLowerCase()||h.toLowerCase()===col.key.toLowerCase());
-            if(idx<0){ obj[col.key]=""; return; }
-            /* Kolom tanggal disanitasi khusus — sel Excel bisa berupa Date object
-               atau serial number, jangan langsung String() atau formatnya rusak. */
-            obj[col.key] = col.key==="date" ? (toISODateStrict(row[idx])||"") : String(row[idx]??"").trim();
-          });
-          if(obj.date||obj.patient||obj.procedure) parsed.push(obj);
-        }
-        setRows(parsed);
-        if(parsed.length===0) showToast("Tidak ada baris data ditemukan",C.w);
-      } catch(err){showToast("Gagal membaca file Excel",C.d);}
-    };
-    reader.readAsArrayBuffer(file);
-  };
-
-  const doImport = async () => {
-    setImporting(true);
-    const valid = rows.filter(r=>r.patient&&r.date&&r.procedure);
-    const ts = new Date().toISOString();
-    const newOps = valid.map(r=>{
-      return {
-        id: gId(), status:"scheduled", reminders:[], requests:[],
-        createdAt: fNow(), updated_at: ts,
-        opType: r.opType||"elektif",
-        date: r.date, time: r.time||"08:00",
-        patient: r.patient, diagnosis: r.diagnosis||"", procedure: r.procedure,
-        surgeon: r.surgeon||"", anesthesiologist: r.anesthesiologist||"",
-        room: r.room||ROOMS[0], age: r.age||"", rm: r.rm||"",
-        bloodType: r.bloodType||"Tidak Diketahui", allergy: r.allergy||"Tidak Ada",
-        circulatingNurse: r.circulatingNurse||"", anesthesiaNurse: r.anesthesiaNurse||"",
-        onloopNurse: r.onloopNurse||"", rrKatim: r.rrKatim||"",
-      };
-    });
-    /* ── SSOT Import Flow ──────────────────────────────────────────────────
-       DB-FIRST: tulis ke Supabase dulu, baru update local state setelah konfirmasi.
-       Ini memastikan data persist bahkan jika browser di-refresh sesaat setelah import.
-       postgres_changes akan debounce ke device lain secara otomatis.
-       ──────────────────────────────────────────────────────────────────── */
-    showToast(`⟳ Menyimpan ${newOps.length} jadwal ke Supabase...`,C.p);
-    const res = upsertBulkToSupa
-      ? await upsertBulkToSupa("kb_operasi", newOps)
-      : {ok:false, error:"upsertBulkToSupa tidak tersedia"};
-    if(res.ok){
-      /* Insert ke local state HANYA setelah DB sukses — cegah ghost data */
-      setOps((p:any[])=>{
-        const existingIds = new Set(p.map((o:any)=>o.id));
-        const toAdd = newOps.filter(o=>!existingIds.has(o.id));
-        return [...p,...toAdd];
-      });
-      showToast(`✓ ${newOps.length} jadwal berhasil diimport & tersinkron`,C.s);
-    } else {
-      showToast(`⚠ Import gagal: ${res.error||"kesalahan tidak diketahui dari Supabase"}`,C.d);
-    }
-    setRows([]); setFileName(""); setImporting(false);
-  };
-
-  const downloadTemplate = () => {
-    const header = COLS.map(c=>c.label);
-    const example = [todayDate(),"08:00","Budi Santoso","Appendectomy","Appendicitis Akut","dr. Ahmad","dr. Budi","Kamar Operasi 1","45","RM-001","O+","Tidak Ada","elektif","","","",""];
-    const ws = XLSX.utils.aoa_to_sheet([header,example]);
-    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Template");
-    XLSX.writeFile(wb,"Template_Import_Jadwal.xlsx");
-    showToast("✓ Template Excel diunduh",C.s);
-  };
-
-  return (
-    <div>
-      <Card>
-        <SH label="📥 Import Jadwal dari Excel"/>
-        <div style={{background:"#E3F2FD",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#1565C0",lineHeight:1.7,border:"1px solid #90CAF9"}}>
-          <b>Cara import:</b><br/>
-          1. Unduh template Excel di bawah ini<br/>
-          2. Isi data jadwal sesuai format kolom<br/>
-          3. Upload file, cek preview, lalu klik Import
-        </div>
-        <Btn full outline color={C.i} onClick={downloadTemplate} style={{marginBottom:12}}>⬇ Unduh Template Excel</Btn>
-        <div
-          style={{border:`2px dashed ${C.b}`,borderRadius:12,padding:"24px 16px",textAlign:"center",cursor:"pointer",marginBottom:12,background:"#FAFBFD"}}
-          onClick={()=>fileRef.current?.click()}
-          onDragOver={e=>{e.preventDefault();}}
-          onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)handleFile(f);}}>
-          <div style={{fontSize:28,marginBottom:6}}>📊</div>
-          <div style={{fontSize:13,fontWeight:600,color:C.t}}>{fileName||"Klik atau seret file .xlsx / .xls ke sini"}</div>
-          <div style={{fontSize:11,color:C.tL,marginTop:4}}>Format: Excel (.xlsx, .xls)</div>
-        </div>
-        <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(f)handleFile(f);e.target.value="";}}/>
-        {rows.length>0 && (
-          <div>
-            <div style={{fontSize:13,fontWeight:700,color:C.t,marginBottom:8}}>{rows.length} baris ditemukan — Preview:</div>
-            <div style={{overflowX:"auto",marginBottom:12}}>
-              <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
-                <thead><tr style={{background:C.pBg}}>{["Tanggal","Jam","Pasien","Tindakan","Kamar","Dokter"].map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",color:C.p,fontWeight:700,borderBottom:`2px solid ${C.p}33`}}>{h}</th>)}</tr></thead>
-                <tbody>{rows.slice(0,10).map((r,i)=><tr key={i} style={{borderBottom:`1px solid ${C.b}`}}><td style={{padding:"5px 10px"}}>{fDMY(r.date)}</td><td style={{padding:"5px 10px"}}>{r.time}</td><td style={{padding:"5px 10px",fontWeight:600}}>{r.patient}</td><td style={{padding:"5px 10px"}}>{r.procedure}</td><td style={{padding:"5px 10px"}}>{r.room}</td><td style={{padding:"5px 10px"}}>{r.surgeon}</td></tr>)}</tbody>
-              </table>
-              {rows.length>10&&<div style={{fontSize:11,color:C.tL,marginTop:6,textAlign:"center"}}>...dan {rows.length-10} baris lainnya</div>}
-            </div>
-            <div style={{display:"flex",gap:10}}>
-              <Btn full onClick={doImport} disabled={importing} style={{flex:2}}>{importing?"⟳ Mengimport...":"✚ Import "+rows.length+" Jadwal"}</Btn>
-              <Btn full outline color={C.g} onClick={()=>{setRows([]);setFileName("");}} style={{flex:1}}>Batal</Btn>
-            </div>
-          </div>
-        )}
-      </Card>
-    </div>
-  );
-}
 
 /* ─── VIEW ARSIP ─────────────────────────────────────────────────────── */
-function ViewArsip(props: ViewArsipProps) {
-  /* FIX AUDIT #23: destructure ulang dari struktur grouped menjadi nama
-     variabel IDENTIK dengan sebelumnya — sengaja, supaya seluruh body
-     function di bawah ini (ratusan baris) TIDAK PERLU diubah sama sekali,
-     menghilangkan risiko regresi dari menyentuh kode yang sudah teruji. */
-  const { ops, archive, notifs, lemburData, lemburPegawai, monitoringEntries, monitoringCfg } = props.data;
-  const { setOps, showToast, role, upsertBulkToSupa, auditLog } = props;
-  const { mode: privacyMode, setMode: setPrivacyMode } = props.privacy;
-  const { cfg: supaCfg, setCfg: setSupaCfg, status: supaStatus, backingUp: supaBackingUp,
-          onBackup: onSupaBackup, onRestoreOps: onSupaRestoreOps, onRestoreLembur: onSupaRestoreLembur,
-          onRestoreMonitoring: onSupaRestoreMonitoring, onRestoreAll: onSupaRestoreAll } = props.supabase;
-  const { cfg: dbxCfg, setCfg: setDbxCfg, status: dbxStatus, backingUp: dbxBacking,
-          onBackup: onDbxBackup, onRestoreOps: onDbxRestoreOps, onRestoreLembur: onDbxRestoreLembur,
-          onBackupOpsXls: onDbxBackupOpsXls, onBackupLemburXls: onDbxBackupLemburXls,
-          onBackupMonitoringXls: onDbxBackupMonitoringXls } = props.dropbox;
-  const { status: rtStatus, enabled: rtEnabled, setEnabled: setRtEnabled } = props.realtime;
-  const [sub,setSub] = useState("notif");
-  const [arsipTahun,setArsipTahun]  = useState("");
-  const [arsipBulan,setArsipBulan]  = useState("");
-  const [arsipTipe,setArsipTipe]    = useState("laporan_operasi");
-  const [dlCloudMonth,setDlCloudMonth] = useState(()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");});
-  const [dlCloudType,setDlCloudType] = useState<"ops"|"lembur"|"monitoring">("ops");
-  const [dlCloudBusy,setDlCloudBusy] = useState(false);
-  const nCfg: any = {cyto:{c:C.d,bg:C.dBg},"H-1":{c:C.i,bg:C.iBg},"H-1jam":{c:C.w,bg:C.wBg},wa_direct:{c:C.wa,bg:C.waBg}};
+// ViewArsip sekarang diimpor dari ./components/view-arsip (lihat import di atas)
 
-  /* Compute available years from ops + lembur */
-  const allYears = [...new Set([
-    ...ops.map((o:any)=>o.date?.slice(0,4)).filter(Boolean),
-    ...Object.keys(lemburData||{}).map((k:string)=>k.split("_").pop()?.slice(0,4)).filter(Boolean),
-  ])].sort().reverse() as string[];
-
-  const MONTHS = ["01","02","03","04","05","06","07","08","09","10","11","12"];
-  const MONTH_LABELS: Record<string,string> = {
-    "01":"Januari","02":"Februari","03":"Maret","04":"April","05":"Mei","06":"Juni",
-    "07":"Juli","08":"Agustus","09":"September","10":"Oktober","11":"November","12":"Desember",
-  };
-
-  const filteredOpsArsip = ops.filter((o:any)=>{
-    if(arsipTahun && !o.date?.startsWith(arsipTahun)) return false;
-    if(arsipBulan && o.date?.slice(5,7) !== arsipBulan) return false;
-    return true;
-  });
-
-  const downloadArsipExcel = () => {
-    if(arsipTipe==="laporan_operasi"||arsipTipe==="jadwal_operasi") {
-      if(!filteredOpsArsip.length){showToast("Tidak ada data operasi untuk periode ini",C.w);return;}
-      const h = ["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status"];
-      const rows = filteredOpsArsip.map((o:any,i:number)=>[String(i+1),o.date,o.time,o.patient||"",o.age||"",o.rm||"",o.opType||"elektif",o.diagnosis||"",o.procedure||"",o.room||"",o.surgeon||"",o.anesthesiologist||"",o.assistantNurse||"",o.circulatingNurse||"",o.anesthesiaNurse||"",o.onloopNurse||"",o.rrKatim||"",o.status||""]);
-      const ws = XLSX.utils.aoa_to_sheet([h,...rows]);
-      ws["!cols"]=[{wch:4},{wch:12},{wch:7},{wch:22},{wch:5},{wch:12},{wch:10},{wch:28},{wch:28},{wch:14},{wch:22},{wch:22},{wch:22},{wch:22},{wch:18},{wch:18},{wch:16},{wch:12}];
-      const wb = XLSX.utils.book_new();
-      const label = (arsipTipe==="laporan_operasi"?"Laporan":"Jadwal")+" Operasi"+(arsipTahun?" "+arsipTahun:"")+(arsipBulan?" "+MONTH_LABELS[arsipBulan]:"");
-      XLSX.utils.book_append_sheet(wb, ws, label.slice(0,31));
-      XLSX.writeFile(wb, `${arsipTipe==="laporan_operasi"?"Laporan":"Jadwal"}_Operasi${arsipTahun?"_"+arsipTahun:""}${arsipBulan?"_"+arsipBulan:""}_${todayDate()}.xlsx`);
-      showToast("✓ Excel arsip diunduh",C.s);
-    } else if(arsipTipe==="monitoring_suhu") {
-      const me = (monitoringEntries||[]).filter((e:any)=>{
-        if(arsipTahun && !e.tanggal?.startsWith(arsipTahun)) return false;
-        if(arsipBulan && e.tanggal?.slice(5,7)!==arsipBulan) return false;
-        return true;
-      });
-      if(!me.length){showToast("Tidak ada data monitoring untuk periode ini",C.w);return;}
-      const h = ["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"];
-      const rows = me
-        .sort((a:any,b:any)=>
-          (MON_ROOMS.indexOf(a.ruang??"")-MON_ROOMS.indexOf(b.ruang??"")) ||
-          a.tanggal.localeCompare(b.tanggal) ||
-          a.jam.localeCompare(b.jam)
-        )
-        .map((e:any)=>[
-          e.ruang??monitoringCfg?.lokasiRuang??"",
-          e.tanggal, e.jam, e.suhu, e.kelembaban,
-          monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",
-          e.petugas
-        ]);
-      const ws = XLSX.utils.aoa_to_sheet([h,...rows]);
-      ws["!cols"]=[{wch:18},{wch:12},{wch:8},{wch:12},{wch:14},{wch:16},{wch:22}];
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Monitoring Suhu");
-      XLSX.writeFile(wb, `Monitoring_Suhu${arsipTahun?"_"+arsipTahun:""}${arsipBulan?"_"+arsipBulan:""}_${todayDate()}.xlsx`);
-      showToast("✓ Excel monitoring suhu diunduh",C.s);
-    } else {
-      /* Data Lembur */
-      const rows: string[][] = [];
-      (lemburPegawai||[]).forEach((p:any)=>{
-        Object.keys(lemburData||{}).filter((k:string)=>{
-          if(!k.startsWith(p.id+"_")) return false;
-          const ym = k.replace(p.id+"_","");
-          if(arsipTahun && !ym.startsWith(arsipTahun)) return false;
-          if(arsipBulan && ym.slice(5,7)!==arsipBulan) return false;
-          return true;
-        }).forEach(k=>{
-          const rec = lemburData[k];
-          (rec.entries||[]).forEach((e:any)=>rows.push([sanitizeCellForExcel(p.name),p.nik||"",k.replace(p.id+"_",""),e.tanggalAwal||"",e.tanggalAkhir||"",e.jamMasuk||"",e.jamKeluar||"",sanitizeCellForExcel(e.keperluanLembur||""),sanitizeCellForExcel(e.keterangan||"")]));
-        });
-      });
-      if(!rows.length){showToast("Tidak ada data lembur untuk periode ini",C.w);return;}
-      const ws = XLSX.utils.aoa_to_sheet([["Nama","NIK","Bulan","Tgl Awal Lembur","Tgl Akhir Lembur","Jam Masuk","Jam Keluar","Keperluan","Keterangan"],...rows]);
-      ws["!cols"]=[{wch:22},{wch:16},{wch:12},{wch:14},{wch:14},{wch:10},{wch:10},{wch:28},{wch:22}];
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Data Lembur");
-      XLSX.writeFile(wb, `Data_Lembur${arsipTahun?"_"+arsipTahun:""}${arsipBulan?"_"+arsipBulan:""}_${todayDate()}.xlsx`);
-      showToast("✓ Excel lembur arsip diunduh",C.s);
-    }
-  };
-
-  const downloadArsipWord = () => {
-    if(arsipTipe==="laporan_operasi"||arsipTipe==="jadwal_operasi") {
-      if(!filteredOpsArsip.length){showToast("Tidak ada data operasi untuk periode ini",C.w);return;}
-      const h = ["No","Tanggal","Jam","Pasien","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Status"];
-      const rows: string[][] = filteredOpsArsip.map((o:any,i:number)=>[String(i+1),o.date||"",o.time||"",o.patient||"",o.diagnosis||"",o.procedure||"",o.room||"",o.surgeon||"",o.anesthesiologist||"",o.status||""]);
-      const label = (arsipTipe==="laporan_operasi"?"Laporan":"Jadwal")+" Operasi"+(arsipTahun?" "+arsipTahun:"")+(arsipBulan?" "+MONTH_LABELS[arsipBulan]:"");
-      downloadAsWord(label+" — "+HOSPITAL, [h,...rows], `${arsipTipe==="laporan_operasi"?"Laporan":"Jadwal"}_Operasi${arsipTahun?"_"+arsipTahun:""}${arsipBulan?"_"+arsipBulan:""}_${todayDate()}.doc`);
-      showToast("✓ Word arsip diunduh",C.s);
-    } else {
-      const allRows: string[][] = [];
-      (lemburPegawai||[]).forEach((p:any)=>{
-        Object.keys(lemburData||{}).filter((k:string)=>{
-          if(!k.startsWith(p.id+"_")) return false;
-          const ym=k.replace(p.id+"_","");
-          if(arsipTahun && !ym.startsWith(arsipTahun)) return false;
-          if(arsipBulan && ym.slice(5,7)!==arsipBulan) return false;
-          return true;
-        }).forEach(k=>{
-          const rec=lemburData[k];
-          (rec.entries||[]).forEach((e:any)=>allRows.push([p.name,p.nik||"",k.replace(p.id+"_",""),e.tanggalAwal||"",e.jamMasuk||"",e.jamKeluar||"",e.keperluanLembur||"",e.keterangan||""]));
-        });
-      });
-      if(!allRows.length){showToast("Tidak ada data lembur untuk periode ini",C.w);return;}
-      const h=["Nama","NIK","Bulan","Tgl Lembur","Jam Masuk","Jam Keluar","Keperluan","Keterangan"];
-      const label="Data Lembur"+(arsipTahun?" "+arsipTahun:"")+(arsipBulan?" "+MONTH_LABELS[arsipBulan]:"");
-      downloadAsWord(label+" — "+HOSPITAL,[h,...allRows],`Data_Lembur${arsipTahun?"_"+arsipTahun:""}${arsipBulan?"_"+arsipBulan:""}_${todayDate()}.doc`);
-      showToast("✓ Word lembur arsip diunduh",C.s);
-    }
-  };
-
-  /* Download tracking file: Operasi */
-  const downloadTrackingOps = (fmt:"excel"|"word") => {
-    if(!ops.length){showToast("Belum ada data operasi",C.w);return;}
-    const h=["No","Tanggal","Jam","Pasien","Usia","RM","Diagnosa","Tindakan","Jenis","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Alergi","Gol.Darah","Status","Dibuat"];
-    const rows: string[][] = [...ops].sort((a:any,b:any)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map((o:any,i:number)=>[String(i+1),o.date||"",o.time||"",o.patient||"",o.age||"",o.rm||"",o.diagnosis||"",o.procedure||"",o.opType||"",o.room||"",o.surgeon||"",o.anesthesiologist||"",o.assistantNurse||"",o.circulatingNurse||"",o.anesthesiaNurse||"",o.onloopNurse||"",o.rrKatim||"",o.allergy||"",o.bloodType||"",o.status||"",o.createdAt||""]);
-    const fn = `Tracking_Operasi_${todayDate()}`;
-    if(fmt==="excel"){
-      const ws=XLSX.utils.aoa_to_sheet([h,...rows]);
-      const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Tracking Operasi");
-      XLSX.writeFile(wb,fn+".xlsx"); showToast("✓ Tracking Operasi Excel diunduh",C.s);
-    } else {
-      downloadAsWord("Tracking Jadwal Operasi — "+HOSPITAL,[h,...rows],fn+".doc");
-      showToast("✓ Tracking Operasi Word diunduh",C.s);
-    }
-  };
-
-  /* Download tracking file: Lembur */
-  const downloadTrackingLembur = (fmt:"excel"|"word") => {
-    const rows: string[][] = [];
-    (lemburPegawai||[]).forEach((p:any)=>{
-      Object.keys(lemburData||{}).filter((k:string)=>k.startsWith(p.id+"_")).forEach(k=>{
-        const rec=lemburData[k];
-        (rec.entries||[]).forEach((e:any)=>rows.push([p.name,p.nik||"",k.replace(p.id+"_",""),e.tanggalAwal||"",e.tanggalAkhir||"",e.jamMasuk||"",e.jamKeluar||"",e.keperluanLembur||"",e.keterangan||"",e.ttd||""]));
-      });
-    });
-    if(!rows.length){showToast("Belum ada data lembur",C.w);return;}
-    const h=["Nama Pegawai","NIK","Bulan","Tgl Awal","Tgl Akhir","Jam Masuk","Jam Keluar","Keperluan Lembur","Keterangan","TTD"];
-    const fn=`Tracking_Lembur_${todayDate()}`;
-    if(fmt==="excel"){
-      const ws=XLSX.utils.aoa_to_sheet([h,...rows]);
-      const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Tracking Lembur");
-      XLSX.writeFile(wb,fn+".xlsx"); showToast("✓ Tracking Lembur Excel diunduh",C.s);
-    } else {
-      downloadAsWord("Tracking Data Lembur — "+HOSPITAL,[h,...rows],fn+".doc");
-      showToast("✓ Tracking Lembur Word diunduh",C.s);
-    }
-  };
-
-  /* helper: bulan label dari "YYYY-MM" */
-  const ymLabel = (ym:string) => {
-    if(!ym) return "";
-    const ML: Record<string,string> = {"01":"Jan","02":"Feb","03":"Mar","04":"Apr","05":"Mei","06":"Jun","07":"Jul","08":"Agu","09":"Sep","10":"Okt","11":"Nov","12":"Des"};
-    const [y,m] = ym.split("-");
-    return `${ML[m]||m} ${y}`;
-  };
-
-  /* helper: build Excel & download */
-  const buildAndDownloadXlsx = (title:string, header:string[], rows:(string|number)[][], filename:string) => {
-    const ws = XLSX.utils.aoa_to_sheet([header,...rows]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, title.slice(0,31));
-    XLSX.writeFile(wb, filename);
-  };
-
-  /* ── Download lokal berdasarkan bulan ── */
-  const dlFromLocal = (month:string, type:"ops"|"lembur"|"monitoring") => {
-    if(!month){showToast("Pilih bulan terlebih dahulu",C.w);return;}
-    if(type==="ops"){
-      const rows = ops.filter((o:any)=>o.date?.startsWith(month))
-        .map((o:any,i:number)=>[i+1,o.date||"",o.time||"",o.patient||"",o.age||"",o.rm||"",o.opType||"",o.diagnosis||"",o.procedure||"",o.room||"",o.surgeon||"",o.anesthesiologist||"",o.assistantNurse||"",o.circulatingNurse||"",o.anesthesiaNurse||"",o.onloopNurse||"",o.rrKatim||"",o.status||""]);
-      if(!rows.length){showToast("Tidak ada data operasi "+ymLabel(month),C.w);return;}
-      const h=["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status"];
-      buildAndDownloadXlsx("Operasi "+ymLabel(month),h,rows,`Operasi_${month}.xlsx`);
-      showToast(`✓ Excel Operasi ${ymLabel(month)} diunduh (${rows.length} data)`,C.s);
-    } else if(type==="lembur"){
-      const rows: (string|number)[][] = [];
-      (lemburPegawai||[]).forEach((p:any)=>{
-        const k=`${p.id}_${month}`;
-        const rec=(lemburData||{})[k];
-        (rec?.entries||[]).forEach((e:any)=>rows.push([p.name,p.nik||"",ymLabel(month),e.tanggalAwal||"",e.tanggalAkhir||"",e.jamMasuk||"",e.jamKeluar||"",e.keperluanLembur||"",e.keterangan||"",e.ttd||""]));
-      });
-      if(!rows.length){showToast("Tidak ada data lembur "+ymLabel(month),C.w);return;}
-      const h=["Nama","NIK","Bulan","Tgl Awal","Tgl Akhir","Masuk","Keluar","Keperluan","Keterangan","TTD"];
-      buildAndDownloadXlsx("Lembur "+ymLabel(month),h,rows,`Lembur_${month}.xlsx`);
-      showToast(`✓ Excel Lembur ${ymLabel(month)} diunduh`,C.s);
-    } else {
-      const filtered=(monitoringEntries||[]).filter((e:any)=>e.tanggal?.startsWith(month));
-      if(!filtered.length){showToast("Tidak ada data monitoring "+ymLabel(month),C.w);return;}
-      const h=["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"];
-      const rows=filtered.map((e:any)=>[e.ruang||"",e.tanggal||"",e.jam||"",e.suhu??"",e.kelembaban??"",monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas||""]);
-      buildAndDownloadXlsx("Monitoring "+ymLabel(month),h,rows,`Monitoring_${month}.xlsx`);
-      showToast(`✓ Excel Monitoring ${ymLabel(month)} diunduh`,C.s);
-    }
-  };
-
-  /* ── Download dari Supabase berdasarkan bulan ── */
-  const dlFromSupabase = async (month:string, type:"ops"|"lembur"|"monitoring") => {
-    if(!month){showToast("Pilih bulan terlebih dahulu",C.w);return;}
-    
-    setDlCloudBusy(true);
-    try {
-      // Gunakan SUPA_CLIENT singleton
-      const tbl = "kamar_bedah_backup";
-      const {data, error} = await SUPA_CLIENT.from(tbl).select("*").order("created_at",{ascending:false}).limit(1);
-      if(error||!data?.length) throw new Error(error?.message||"Data Supabase tidak ditemukan");
-      const raw = data[0];
-      if(type==="ops"){
-        const allOps:any[] = raw.ops||raw.data?.ops||[];
-        const rows = allOps.filter((o:any)=>o.date?.startsWith(month))
-          .map((o:any,i:number)=>[i+1,o.date||"",o.time||"",o.patient||"",o.age||"",o.rm||"",o.opType||"",o.diagnosis||"",o.procedure||"",o.room||"",o.surgeon||"",o.anesthesiologist||"",o.assistantNurse||"",o.circulatingNurse||"",o.anesthesiaNurse||"",o.onloopNurse||"",o.rrKatim||"",o.status||""]);
-        if(!rows.length){showToast("Tidak ada data operasi "+ymLabel(month)+" di Supabase",C.w);return;}
-        const h=["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status"];
-        buildAndDownloadXlsx("Operasi "+ymLabel(month),h,rows,`Operasi_Supa_${month}.xlsx`);
-        showToast(`✓ ${rows.length} data operasi ${ymLabel(month)} dari Supabase`,C.s);
-      } else if(type==="lembur"){
-        const ld:any = raw.lemburData||raw.data?.lemburData||{};
-        const lp:any[] = raw.lemburPegawai||raw.data?.lemburPegawai||[];
-        const rows: (string|number)[][] = [];
-        (lp.length?lp:(lemburPegawai||[])).forEach((p:any)=>{
-          const k=`${p.id}_${month}`;
-          const rec=ld[k];
-          (rec?.entries||[]).forEach((e:any)=>rows.push([p.name,p.nik||"",ymLabel(month),e.tanggalAwal||"",e.tanggalAkhir||"",e.jamMasuk||"",e.jamKeluar||"",e.keperluanLembur||"",e.keterangan||"",e.ttd||""]));
-        });
-        if(!rows.length){showToast("Tidak ada data lembur "+ymLabel(month)+" di Supabase",C.w);return;}
-        const h=["Nama","NIK","Bulan","Tgl Awal","Tgl Akhir","Masuk","Keluar","Keperluan","Keterangan","TTD"];
-        buildAndDownloadXlsx("Lembur "+ymLabel(month),h,rows,`Lembur_Supa_${month}.xlsx`);
-        showToast(`✓ Data lembur ${ymLabel(month)} dari Supabase diunduh`,C.s);
-      } else {
-        const me:any[] = raw.monitoringEntries||raw.data?.monitoringEntries||[];
-        const cfg2:any = raw.monitoringCfg||raw.data?.monitoringCfg||monitoringCfg;
-        const filtered=me.filter((e:any)=>e.tanggal?.startsWith(month));
-        if(!filtered.length){showToast("Tidak ada data monitoring "+ymLabel(month)+" di Supabase",C.w);return;}
-        const h=["Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"];
-        const rows=filtered.map((e:any)=>[e.tanggal||"",e.jam||"",e.suhu??"",e.kelembaban??"",monIsOK(e.suhu,e.kelembaban,cfg2)?"SESUAI":"TIDAK SESUAI",e.petugas||""]);
-        buildAndDownloadXlsx("Monitoring "+ymLabel(month),h,rows,`Monitoring_Supa_${month}.xlsx`);
-        showToast(`✓ ${rows.length} data monitoring ${ymLabel(month)} dari Supabase`,C.s);
-      }
-    } catch(e:any){
-      showToast("Gagal ambil dari Supabase: "+(e.message||e),C.d);
-    } finally {
-      setDlCloudBusy(false);
-    }
-  };
-
-  /* ── Download dari Dropbox berdasarkan bulan ── */
-  const dlFromDropbox = async (month:string, type:"ops"|"lembur"|"monitoring") => {
-    if(!month){showToast("Pilih bulan terlebih dahulu",C.w);return;}
-    setDlCloudBusy(true);
-    try {
-      const res = await callDbxProxy({action:"restore", path: dbxCfg.path});
-      if(!res.ok) throw new Error(res.msg);
-      const raw = res.data;
-      if(type==="ops"){
-        const allOps:any[] = raw.ops||raw.data?.ops||[];
-        const rows = allOps.filter((o:any)=>o.date?.startsWith(month))
-          .map((o:any,i:number)=>[i+1,o.date||"",o.time||"",o.patient||"",o.age||"",o.rm||"",o.opType||"",o.diagnosis||"",o.procedure||"",o.room||"",o.surgeon||"",o.anesthesiologist||"",o.assistantNurse||"",o.circulatingNurse||"",o.anesthesiaNurse||"",o.onloopNurse||"",o.rrKatim||"",o.status||""]);
-        if(!rows.length){showToast("Tidak ada data operasi "+ymLabel(month)+" di Dropbox",C.w);return;}
-        const h=["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status"];
-        buildAndDownloadXlsx("Operasi "+ymLabel(month),h,rows,`Operasi_Dbx_${month}.xlsx`);
-        showToast(`✓ ${rows.length} data operasi ${ymLabel(month)} dari Dropbox`,C.s);
-      } else if(type==="lembur"){
-        const ld:any = raw.lemburData||raw.data?.lemburData||{};
-        const lp:any[] = raw.lemburPegawai||raw.data?.lemburPegawai||[];
-        const rows:(string|number)[][]=[];
-        (lp.length?lp:(lemburPegawai||[])).forEach((p:any)=>{
-          const k=`${p.id}_${month}`;
-          const rec=ld[k];
-          (rec?.entries||[]).forEach((e:any)=>rows.push([p.name,p.nik||"",ymLabel(month),e.tanggalAwal||"",e.tanggalAkhir||"",e.jamMasuk||"",e.jamKeluar||"",e.keperluanLembur||"",e.keterangan||"",e.ttd||""]));
-        });
-        if(!rows.length){showToast("Tidak ada data lembur "+ymLabel(month)+" di Dropbox",C.w);return;}
-        const h=["Nama","NIK","Bulan","Tgl Awal","Tgl Akhir","Masuk","Keluar","Keperluan","Keterangan","TTD"];
-        buildAndDownloadXlsx("Lembur "+ymLabel(month),h,rows,`Lembur_Dbx_${month}.xlsx`);
-        showToast(`✓ Data lembur ${ymLabel(month)} dari Dropbox diunduh`,C.s);
-      } else {
-        const me:any[] = raw.monitoringEntries||raw.data?.monitoringEntries||[];
-        const cfg2:any = raw.monitoringCfg||raw.data?.monitoringCfg||monitoringCfg;
-        const filtered=me.filter((e:any)=>e.tanggal?.startsWith(month));
-        if(!filtered.length){showToast("Tidak ada data monitoring "+ymLabel(month)+" di Dropbox",C.w);return;}
-        const h=["Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"];
-        const rows=filtered.map((e:any)=>[e.tanggal||"",e.jam||"",e.suhu??"",e.kelembaban??"",monIsOK(e.suhu,e.kelembaban,cfg2)?"SESUAI":"TIDAK SESUAI",e.petugas||""]);
-        buildAndDownloadXlsx("Monitoring "+ymLabel(month),h,rows,`Monitoring_Dbx_${month}.xlsx`);
-        showToast(`✓ ${rows.length} data monitoring ${ymLabel(month)} dari Dropbox`,C.s);
-      }
-    } catch(e:any){
-      showToast("Gagal ambil dari Dropbox: "+(e.message||e),C.d);
-    } finally {
-      setDlCloudBusy(false);
-    }
-  };
-
-  return (
-    <div>
-      <div style={{display:"flex",gap:0,marginBottom:14,background:C.gBg,borderRadius:12,padding:4,flexWrap:"wrap"}}>
-        {[{k:"notif",l:"Log"},{k:"jadwal",l:"Jadwal"},{k:"arsip",l:"Arsip"},{k:"unduh",l:"📥 Unduh"},{k:"import",l:"Import"},{k:"audit",l:"📋 Audit"},{k:"pengaturan",l:"⚙ Setelan"}].map(t=>(
-          <button key={t.k} onClick={()=>setSub(t.k)} style={{flex:1,minWidth:56,padding:"8px 2px",borderRadius:10,border:"none",background:sub===t.k?C.white:"none",color:sub===t.k?C.p:C.g,fontSize:10,fontWeight:sub===t.k?700:500,cursor:"pointer",boxShadow:sub===t.k?"0 1px 6px rgba(0,0,0,.1)":"none"}}>{t.l}</button>
-        ))}
-      </div>
-
-      {sub==="notif" && (
-        <div>
-          {notifs.length===0 && <Card><div style={{textAlign:"center",padding:24,color:C.tL,fontSize:13}}>Belum ada log notifikasi</div></Card>}
-          {notifs.map((n:any)=>{
-            const cfg=nCfg[n.type]||{c:C.g,bg:C.gBg};
-            return (
-              <Card key={n.id}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                  <Bdg label={n.label} color={cfg.c} bg={cfg.bg}/>
-                  <div style={{fontSize:11,color:C.tL}}>{n.sentAt}</div>
-                </div>
-                <div style={{fontSize:13,fontWeight:700,color:C.t}}>{n.patient}</div>
-                <div style={{fontSize:12,color:C.tL,marginBottom:n.message?6:0}}>{n.procedure}</div>
-                {n.message && (
-                  <details>
-                    <summary style={{fontSize:12,color:C.p,fontWeight:700,cursor:"pointer",outline:"none"}}>Lihat Isi Pesan</summary>
-                    <div style={{marginTop:8,background:"#F9FAFB",borderRadius:8,padding:"10px 12px",fontSize:12,lineHeight:1.8,whiteSpace:"pre-wrap",border:"1px solid #DDE3EA",fontFamily:"inherit",maxHeight:200,overflowY:"auto"}}>{n.message}</div>
-                  </details>
-                )}
-              </Card>
-            );
-          })}
-        </div>
-      )}
-
-      {sub==="jadwal" && (
-        <div>
-          <Btn full outline color={C.p} onClick={()=>{
-            if(!ops.length){showToast("Belum ada data jadwal",C.w);return;}
-            const h=["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","PERAWAT Instrumen","P.Anestesi","Onloop","RR/Katim","Alergi","Gol.Darah","Status"];
-            const rows=ops.map((op:any,i:number)=>[i+1,op.date,op.time,sanitizeForCSV(op.patient),sanitizeForCSV(op.age||""),sanitizeForCSV(op.rm||""),OT[op.opType as keyof typeof OT||"elektif"]&&OT[op.opType as keyof typeof OT||"elektif"].label||"Elektif",sanitizeForCSV(op.diagnosis),sanitizeForCSV(op.procedure),op.room,op.surgeon,op.anesthesiologist||"",op.assistantNurse||"",op.circulatingNurse||"",op.anesthesiaNurse||"",op.onloopNurse||"",op.rrKatim||"",sanitizeForCSV(op.allergy||""),op.bloodType,op.status]);
-            downloadBlob([h,...rows].map((r:any[])=>r.map((c:any)=>typeof c==="string"&&c.startsWith('"')?c:sanitizeForCSV(c)).join(",")).join("\n"),"JadwalOK_PantiRini_"+todayDate()+".csv");
-            showToast("✓ CSV berhasil diunduh",C.s);
-          }} style={{marginBottom:12}}>⬇ Unduh CSV Jadwal</Btn>
-          {ops.length===0 && <Card><div style={{textAlign:"center",padding:20,color:C.tL,fontSize:13}}>Belum ada data jadwal</div></Card>}
-          {ops.map((op:any)=>{
-            const sc=STS[op.status as keyof typeof STS]||STS.scheduled, ot=OT[op.opType as keyof typeof OT||"elektif"];
-            return (
-              <Card key={op.id} style={{padding:"12px 16px",marginBottom:6, ...(op.needsReview?{border:"2px solid #3B82F6",background:"#EFF6FF"}:{})}}>
-                <div style={{fontSize:13,fontWeight:700,color:C.t}}>{op.patient||"—"}</div>
-                <div style={{fontSize:12,color:C.tL}}>{op.procedure} · {fD(op.date)} {op.time} WIB</div>
-                <div style={{marginTop:6,display:"flex",gap:5,flexWrap:"wrap"}}>
-                  <Bdg label={sc.l} color={sc.c} bg={sc.bg}/>
-                  <Bdg label={ot&&ot.label||"Elektif"} color={ot&&ot.c||C.i} bg={ot&&ot.bg||C.iBg}/>
-                  {op.allergy&&op.allergy!=="Tidak Ada"&&<Bdg label="Alergi" color={C.d} bg={C.dBg}/>}
-                  {op.needsReview&&<Bdg label="🔍 Perlu Review (dari OCR)" color="#3B82F6" bg="#DBEAFE"/>}
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-      )}
-
-      {sub==="arsip" && (
-        <div>
-          {archive.length===0 && <Card><div style={{textAlign:"center",padding:24,color:C.tL,fontSize:13,lineHeight:1.6}}>Belum ada arsip.<br/>Data diarsipkan otomatis setiap pergantian hari.</div></Card>}
-          {archive.map((a:any)=>(
-            <details key={a.id} style={{marginBottom:10}}>
-              <summary style={{background:C.white,borderRadius:12,padding:"14px 16px",cursor:"pointer",border:"1px solid #DDE3EA",listStyle:"none",fontWeight:700,fontSize:14,color:C.t}}>
-                📅 {a.label} — {(a.ops||[]).length} operasi
-                <div style={{fontSize:11,color:C.tL,fontWeight:400,marginTop:3}}>{a.archivedAt}</div>
-              </summary>
-              <div style={{paddingTop:8,paddingLeft:6}}>
-                {(a.ops||[]).map((op:any)=>(
-                  <Card key={op.id} style={{padding:"10px 14px",marginBottom:6}}>
-                    <div style={{fontSize:13,fontWeight:700}}>{op.patient}</div>
-                    <div style={{fontSize:12,color:C.tL}}>{op.procedure} · {op.time} WIB</div>
-                  </Card>
-                ))}
-              </div>
-            </details>
-          ))}
-        </div>
-      )}
-
-      {sub==="unduh" && (
-        <div>
-          {/* ── DOWNLOAD EXCEL PER BULAN dari Lokal / Supabase / Dropbox ── */}
-          <Card style={{background:"#EDE7F6",border:"1px solid #B39DDB",marginBottom:14}}>
-            <SH label="📥 Download Excel per Bulan" color="#4527A0"/>
-            <div style={{fontSize:12,color:"#5E35B1",marginBottom:12,lineHeight:1.7}}>
-              Pilih bulan &amp; jenis data, lalu download langsung sebagai file Excel (.xlsx).
-              Bisa dari data <b>Lokal</b> (perangkat ini), <b>Supabase</b> (cloud), atau <b>Dropbox</b> (cloud).
-            </div>
-            <div style={{background:"#F3E5F5",borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:12,color:"#6A1B9A",lineHeight:1.6}}>
-              ✅ <b>Multi-Device Sync Aktif:</b> Data tersinkron otomatis ke <b>Supabase</b> & <b>Dropbox</b> setiap ada perubahan.
-              Buka dari HP/tablet lain = data langsung tersedia. Auto-delete backup &gt; 2 tahun.
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-              <LF label="Bulan &amp; Tahun">
-                <input style={{...iS}} type="month" value={dlCloudMonth} onChange={e=>setDlCloudMonth(e.target.value)}/>
-              </LF>
-              <LF label="Jenis Data">
-                <select style={{...iS,appearance:"none"} as React.CSSProperties} value={dlCloudType} onChange={e=>setDlCloudType(e.target.value as any)}>
-                  <option value="ops">📋 Jadwal Operasi</option>
-                  <option value="lembur">⏱ Data Lembur</option>
-                  <option value="monitoring">🌡 Monitoring Suhu</option>
-                </select>
-              </LF>
-            </div>
-            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              <Btn full onClick={()=>dlFromLocal(dlCloudMonth,dlCloudType)} style={{flex:1,background:"#7B1FA2",color:"#fff",border:"none",minWidth:120}}>
-                💾 Lokal
-              </Btn>
-              {supaCfg?.url&&supaCfg?.anonKey&&(
-                <Btn full onClick={()=>dlFromSupabase(dlCloudMonth,dlCloudType)} style={{flex:1,background:dlCloudBusy?"#aaa":"#3ECF8E",color:"#fff",border:"none",minWidth:120,opacity:dlCloudBusy?.6:1,cursor:dlCloudBusy?"not-allowed":"pointer"}}>
-                  {dlCloudBusy?"⏳ Mengunduh...":"☁️ Supabase"}
-                </Btn>
-              )}
-              {dbxCfg?.path&&(
-                <Btn full onClick={()=>dlFromDropbox(dlCloudMonth,dlCloudType)} style={{flex:1,background:dlCloudBusy?"#aaa":"#0061FF",color:"#fff",border:"none",minWidth:120,opacity:dlCloudBusy?.6:1,cursor:dlCloudBusy?"not-allowed":"pointer"}}>
-                  {dlCloudBusy?"⏳ Mengunduh...":"📦 Dropbox"}
-                </Btn>
-              )}
-            </div>
-            {!supaCfg?.url&&!dbxCfg?.path&&(
-              <div style={{marginTop:10,fontSize:11,color:"#7B1FA2",background:"#F3E5F5",borderRadius:8,padding:"6px 10px"}}>
-                💡 Tombol Supabase &amp; Dropbox akan muncul setelah konfigurasi diisi di tab ⚙ Setelan.
-              </div>
-            )}
-          </Card>
-
-          {/* ── FITUR 3: Download Arsip Lama dengan Filter ── */}
-          <Card style={{background:"#E8F5E9",border:"1px solid #A5D6A7",marginBottom:14}}>
-            <SH label="📁 Download Data Arsip / Lama" color="#2E7D32"/>
-            <div style={{fontSize:12,color:"#2E7D32",marginBottom:12,lineHeight:1.6}}>
-              Unduh data historis berdasarkan tahun, bulan, dan jenis laporan.
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-              <LF label="Tahun">
-                <select style={{...iS,appearance:"none"} as React.CSSProperties} value={arsipTahun} onChange={e=>setArsipTahun(e.target.value)}>
-                  <option value="">Semua Tahun</option>
-                  {allYears.map(y=><option key={y} value={y}>{y}</option>)}
-                </select>
-              </LF>
-              <LF label="Bulan">
-                <select style={{...iS,appearance:"none"} as React.CSSProperties} value={arsipBulan} onChange={e=>setArsipBulan(e.target.value)}>
-                  <option value="">Semua Bulan</option>
-                  {MONTHS.map(m=><option key={m} value={m}>{MONTH_LABELS[m]}</option>)}
-                </select>
-              </LF>
-            </div>
-            <LF label="Jenis Laporan">
-              <select style={{...iS,appearance:"none"} as React.CSSProperties} value={arsipTipe} onChange={e=>setArsipTipe(e.target.value)}>
-                <option value="laporan_operasi">Laporan Operasi</option>
-                <option value="jadwal_operasi">Jadwal Operasi</option>
-                <option value="data_lembur">Data Lembur</option>
-                <option value="monitoring_suhu">Monitoring Suhu &amp; Kelembaban</option>
-              </select>
-            </LF>
-            <div style={{background:"#F1F8E9",borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:12,color:"#388E3C"}}>
-              {arsipTipe!=="data_lembur"
-                ? <>{filteredOpsArsip.length} jadwal operasi ditemukan{arsipTahun?` (${arsipTahun}${arsipBulan?" "+MONTH_LABELS[arsipBulan]:""})`:" (semua data)"}</>
-                : <>Data lembur{arsipTahun?` (${arsipTahun}${arsipBulan?" "+MONTH_LABELS[arsipBulan]:""})`:" (semua bulan)"}</>
-              }
-            </div>
-            <div style={{display:"flex",gap:8}}>
-              <Btn full onClick={downloadArsipExcel} style={{flex:1,background:"#217346",color:"#fff",border:"none"}}>
-                📊 Download Excel
-              </Btn>
-              <Btn full onClick={downloadArsipWord} style={{flex:1,background:"#2B5797",color:"#fff",border:"none"}}>
-                📄 Download Word
-              </Btn>
-            </div>
-          </Card>
-
-          {/* ── FITUR 2: Download File Tracking per Kategori ── */}
-          <Card style={{background:"#E3F2FD",border:"1px solid #90CAF9",marginBottom:14}}>
-            <SH label="📋 Download File Tracking Operasi" color="#1565C0"/>
-            <div style={{fontSize:12,color:"#1565C0",marginBottom:12,lineHeight:1.6}}>
-              Unduh semua data jadwal operasi sebagai file tracking (Excel atau Word).
-              Total: <b>{ops.length} jadwal</b> operasi.
-            </div>
-            <div style={{display:"flex",gap:8}}>
-              <Btn full onClick={()=>downloadTrackingOps("excel")} style={{flex:1,background:"#1565C0",color:"#fff",border:"none"}}>
-                📊 Excel Tracking Operasi
-              </Btn>
-              <Btn full onClick={()=>downloadTrackingOps("word")} style={{flex:1,background:"#0D47A1",color:"#fff",border:"none"}}>
-                📄 Word Tracking Operasi
-              </Btn>
-            </div>
-          </Card>
-
-          <Card style={{background:"#E0F2F1",border:"1px solid #80CBC4"}}>
-            <SH label="📋 Download File Tracking Lembur" color="#1F5A52"/>
-            <div style={{fontSize:12,color:"#1F5A52",marginBottom:12,lineHeight:1.6}}>
-              Unduh semua data lembur dari semua pegawai sebagai file tracking (Excel atau Word).
-              Total pegawai: <b>{(lemburPegawai||[]).length}</b>.
-            </div>
-            {role==="admin" && <div style={{display:"flex",gap:8}}>
-              <Btn full onClick={()=>downloadTrackingLembur("excel")} style={{flex:1,background:"#1F5A52",color:"#fff",border:"none"}}>
-                📊 Excel Tracking Lembur
-              </Btn>
-              <Btn full onClick={()=>downloadTrackingLembur("word")} style={{flex:1,background:"#16685F",color:"#fff",border:"none"}}>
-                📄 Word Tracking Lembur
-              </Btn>
-            </div>}
-          </Card>
-        </div>
-      )}
-
-      {sub==="import" && (
-        <ImportExcel ops={ops} setOps={setOps} showToast={showToast} upsertBulkToSupa={upsertBulkToSupa}/>
-      )}
-
-      {sub==="audit" && (
-        <div>
-          <div style={{fontSize:13,fontWeight:700,color:C.t,marginBottom:10}}>📋 Riwayat Perubahan ({auditLog.length})</div>
-          {auditLog.length===0 && <Card><div style={{textAlign:"center",padding:24,color:C.tL,fontSize:13}}>Belum ada riwayat. Perubahan pada jadwal akan tercatat di sini.</div></Card>}
-          {[...auditLog].reverse().map((a:any)=>(
-            <div key={a.id} style={{background:C.white,borderRadius:12,padding:"12px 16px",marginBottom:8,border:"1px solid #DDE3EA",borderLeft:`4px solid ${a.action==="Hapus"?C.d:a.action==="Edit"?C.i:C.s}`}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                <span style={{fontSize:12,fontWeight:800,color:a.action==="Hapus"?C.d:a.action==="Edit"?C.i:C.s}}>{a.action==="Hapus"?"🗑 HAPUS":a.action==="Edit"?"✏️ EDIT":"✚ TAMBAH"}</span>
-                <span style={{fontSize:11,color:C.tL}}>{a.time}</span>
-              </div>
-              <div style={{fontSize:13,fontWeight:700,color:C.t}}>{a.patient}</div>
-              <div style={{fontSize:12,color:C.tL}}>{a.detail}</div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {sub==="pengaturan" && (
-        <div>
-          {/* Mode Privasi */}
-          <Card>
-            <SH label="Mode Privasi" color="#4A148C"/>
-            <Toggle value={privacyMode} onChange={(v:boolean)=>{setPrivacyMode(v);showToast(v?"🔒 Mode Privasi aktif":"Mode Privasi dimatikan",v?"#7B1FA2":C.g);}} color="#4A148C" label="🔒 Sembunyikan Data Pasien" sub="Nama & RM disamarkan di layar (pesan WA tetap asli)"/>
-            {privacyMode && <div style={{background:"#F3E5F5",borderRadius:8,padding:"8px 12px",marginTop:10,fontSize:12,color:"#7B1FA2",lineHeight:1.6}}>Mode aktif. Aman untuk presentasi, audit & dokumentasi sistem.</div>}
-          </Card>
-
-          {/* Supabase Backup */}
-          <Card>
-            <SH label="☁ Backup ke Supabase" color="#3ECF8E"/>
-            <div style={{background:"#ECFDF5",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#065F46",lineHeight:1.7,border:"1px solid #A7F3D0"}}>
-              <b>✅ Koneksi Supabase aktif otomatis.</b><br/>
-              Project: <code style={{background:"#D1FAE5",padding:"1px 5px",borderRadius:4}}>ezwgnpdtzcabxmimovbp.supabase.co</code><br/>
-              Konfigurasi dikelola secara terpusat — tidak perlu input manual.
-            </div>
-            <Toggle
-              value={supaCfg.autoBackup}
-              onChange={(v:boolean)=>setSupaCfg((p:SupabaseConfig)=>({...p,autoBackup:v}))}
-              color="#3ECF8E"
-              label="🔄 Auto-Backup JSON Otomatis"
-              sub={`Backup otomatis setiap ${supaCfg.backupInterval} menit (semua data: ops, lembur, monitoring)`}
-            />
-            {supaCfg.autoBackup && (
-              <div style={{marginTop:10}}>
-                <LF label={`Interval Backup (menit) — saat ini: ${supaCfg.backupInterval} menit`}>
-                  <input style={iS} type="number" min="5" max="1440" value={supaCfg.backupInterval} onChange={(e:any)=>setSupaCfg((p:SupabaseConfig)=>({...p,backupInterval:Math.max(5,parseInt(e.target.value)||60)}))}/>
-                </LF>
-              </div>
-            )}
-            <Toggle
-              value={supaCfg.realtimeBackup}
-              onChange={(v:boolean)=>setSupaCfg((p:SupabaseConfig)=>({...p,realtimeBackup:v}))}
-              color="#059669"
-              label="⚡ Backup Realtime ke Supabase"
-              sub="Setiap ada perubahan data, backup dikirim ke Supabase dalam 5 detik"
-            />
-            <Toggle
-              value={supaCfg.autoExcelBackup}
-              onChange={(v:boolean)=>setSupaCfg((p:SupabaseConfig)=>({...p,autoExcelBackup:v}))}
-              color="#0369A1"
-              label="📊 Auto-Backup Excel 24 Jam ke Supabase"
-              sub="Upload Excel Operasi, Lembur & Monitoring otomatis setiap 24 jam via Supabase Storage"
-            />
-            {supaCfg.lastBackup && (
-              <div style={{background:"#ECFDF5",borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:"#065F46",border:"1px solid #A7F3D0"}}>
-                🕐 Backup terakhir: {supaCfg.lastBackup}
-              </div>
-            )}
-            {/* Storage indicator */}
-            <div style={{background:"#F0F4F8",borderRadius:10,padding:"10px 14px",marginBottom:10,display:"flex",gap:12,flexWrap:"wrap"}}>
-              <div style={{flex:1,minWidth:120}}>
-                <div style={{fontSize:10,fontWeight:700,color:C.p,marginBottom:4,textTransform:"uppercase",letterSpacing:.5}}>☁ Supabase</div>
-                <div style={{fontSize:11,color:C.g}}>Free: ~500MB · Auto-backup aktif</div>
-                <div style={{background:C.b,borderRadius:4,height:6,marginTop:4}}>
-                  <div style={{background:C.p,height:6,borderRadius:4,width:"2%"}}/>
-                </div>
-                <div style={{fontSize:10,color:C.tL,marginTop:2}}>~2% terpakai · Auto-delete &gt;2 tahun</div>
-              </div>
-              <div style={{flex:1,minWidth:120}}>
-                <div style={{fontSize:10,fontWeight:700,color:"#0061FF",marginBottom:4,textTransform:"uppercase",letterSpacing:.5}}>📦 Dropbox</div>
-                <div style={{fontSize:11,color:C.g}}>Free: ~2GB · Auto-backup aktif</div>
-                <div style={{background:C.b,borderRadius:4,height:6,marginTop:4}}>
-                  <div style={{background:"#0061FF",height:6,borderRadius:4,width:"1%"}}/>
-                </div>
-                <div style={{fontSize:10,color:C.tL,marginTop:2}}>~1% terpakai · JSON + Excel harian</div>
-              </div>
-            </div>
-            {supaStatus && (
-              <div style={{background:supaStatus.ok?"#ECFDF5":"#FEF2F2",borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:supaStatus.ok?"#065F46":C.d,border:`1px solid ${supaStatus.ok?"#A7F3D0":C.dL}`}}>
-                {supaStatus.msg}
-              </div>
-            )}
-            <Btn full color="#3ECF8E" onClick={onSupaBackup} disabled={supaBackingUp} style={{marginTop:4}}>
-              {supaBackingUp?"⟳ Memproses...":"☁ Backup Semua Data Sekarang ke Supabase"}
-            </Btn>
-            {/* ── Restore dari Supabase ── */}
-            <div style={{marginTop:12,background:"#F0FDF4",borderRadius:10,padding:"12px 14px",border:"1px solid #BBF7D0"}}>
-              <div style={{fontSize:12,fontWeight:700,color:"#065F46",marginBottom:6}}>⬆ Pulihkan dari Supabase (backup terakhir)</div>
-              <div style={{fontSize:11,color:"#047857",marginBottom:10,lineHeight:1.6}}>
-                Ambil data dari backup Supabase paling baru. Pilih kategori data yang ingin dipulihkan, atau pulihkan semua sekaligus.
-              </div>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
-                <Btn full outline color="#065F46" onClick={onSupaRestoreOps} disabled={supaBackingUp} style={{flex:1,minWidth:130}}>
-                  🗓 Pulihkan Operasi
-                </Btn>
-                <Btn full outline color="#065F46" onClick={onSupaRestoreLembur} disabled={supaBackingUp} style={{flex:1,minWidth:130}}>
-                  ⏰ Pulihkan Lembur
-                </Btn>
-                <Btn full outline color="#0369A1" onClick={onSupaRestoreMonitoring} disabled={supaBackingUp} style={{flex:1,minWidth:130}}>
-                  🌡 Pulihkan Monitoring
-                </Btn>
-              </div>
-              <Btn full color="#065F46" onClick={onSupaRestoreAll} disabled={supaBackingUp} style={{background:"#065F46",color:"#fff",border:"none",width:"100%"}}>
-                ♻ Pulihkan SEMUA Data dari Supabase
-              </Btn>
-            </div>
-          </Card>
-
-          {/* Dropbox Backup */}
-          <Card>
-            <SH label="📦 Backup ke Dropbox" color="#0061FF"/>
-            <div style={{background:"#EFF6FF",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#1D4ED8",lineHeight:1.8,border:"1px solid #BFDBFE"}}>
-              <b>✅ Koneksi Dropbox aktif otomatis.</b><br/>
-              Token terkonfigurasi secara terpusat — tidak perlu input manual.<br/>
-              Path backup: <code style={{background:"#DBEAFE",padding:"1px 4px",borderRadius:3}}>/KamarBedahPantiRini/backup.json</code>
-            </div>
-            <Toggle
-              value={dbxCfg.autoBackup}
-              onChange={(v:boolean)=>setDbxCfg((p:DropboxConfig)=>({...p,autoBackup:v}))}
-              color="#0061FF"
-              label="⏰ Auto-Backup Terjadwal"
-              sub={`Backup otomatis setiap ${dbxCfg.backupInterval} menit`}
-            />
-            {dbxCfg.autoBackup && (
-              <div style={{marginTop:8,marginBottom:4}}>
-                <LF label={`Interval (menit) — saat ini: ${dbxCfg.backupInterval} menit`}>
-                  <input style={iS} type="number" min="5" max="1440" value={dbxCfg.backupInterval} onChange={(e:any)=>setDbxCfg((p:DropboxConfig)=>({...p,backupInterval:Math.max(5,parseInt(e.target.value)||30)}))}/>
-                </LF>
-              </div>
-            )}
-            <Toggle
-              value={dbxCfg.realtimeBackup}
-              onChange={(v:boolean)=>setDbxCfg((p:DropboxConfig)=>({...p,realtimeBackup:v}))}
-              color="#0061FF"
-              label="⚡ Cadangkan Realtime (otomatis)"
-              sub="Setiap ada perubahan data, backup dikirim ke Dropbox dalam 3 detik"
-            />
-            {dbxCfg.realtimeBackup && (
-              <div style={{background:"#EFF6FF",borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:"#1D4ED8",border:"1px solid #BFDBFE",display:"flex",alignItems:"center",gap:6}}>
-                <span style={{fontSize:16}}>⚡</span>
-                <span>Realtime aktif — setiap perubahan jadwal &amp; lembur otomatis tersimpan ke Dropbox</span>
-              </div>
-            )}
-            {/* ── Auto Excel every 24h ── */}
-            <Toggle
-              value={dbxCfg.autoExcelBackup}
-              onChange={(v:boolean)=>setDbxCfg((p:DropboxConfig)=>({...p,autoExcelBackup:v}))}
-              color="#3730A3"
-              label="📊 Auto-Backup Excel setiap 24 Jam"
-              sub="Upload Excel Operasi &amp; Lembur otomatis ke Dropbox setiap 24 jam"
-            />
-            {dbxCfg.autoExcelBackup && (
-              <div style={{background:"#EEF2FF",borderRadius:8,padding:"10px 12px",marginBottom:8,fontSize:12,color:"#3730A3",border:"1px solid #C7D2FE"}}>
-                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
-                  <span style={{fontSize:15}}>📊</span>
-                  <b>Auto Excel aktif</b>
-                </div>
-                <div style={{color:"#4F46E5",lineHeight:1.7}}>
-                  Setiap 24 jam, file <b>Auto_Operasi_YYYY-MM-DD.xlsx</b>, <b>Auto_Lembur_YYYY-MM-DD.xlsx</b>, dan <b>Auto_Monitoring_YYYY-MM-DD.xlsx</b> di-upload ke Dropbox secara otomatis.
-                  {dbxCfg.lastExcelBackup && (
-                    <div style={{marginTop:4}}>🕐 Excel terakhir diupload: <b>{dbxCfg.lastExcelBackup}</b></div>
-                  )}
-                  {!dbxCfg.lastExcelBackup && (
-                    <div style={{marginTop:4,color:"#6366F1"}}>⏳ Menunggu waktu upload pertama (setiap 24 jam sekali)</div>
-                  )}
-                </div>
-              </div>
-            )}
-            {dbxCfg.lastBackup && (
-              <div style={{background:"#EFF6FF",borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:"#1D4ED8",border:"1px solid #BFDBFE"}}>
-                🕐 Backup JSON terakhir: <b>{dbxCfg.lastBackup}</b>
-              </div>
-            )}
-            {dbxStatus && (
-              <div style={{background:dbxStatus.ok?"#ECFDF5":"#FEF2F2",borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:dbxStatus.ok?"#065F46":C.d,border:`1px solid ${dbxStatus.ok?"#A7F3D0":C.dL}`}}>
-                {dbxStatus.msg}
-              </div>
-            )}
-            <Btn full color="#0061FF" onClick={onDbxBackup} disabled={dbxBacking} style={{background:"#0061FF",color:"#fff",border:"none",marginTop:4}}>
-              {dbxBacking?"⟳ Menyimpan...":"📦 Backup Semua Data (JSON) ke Dropbox"}
-            </Btn>
-            {/* ── FITUR 1: Backup per kategori sebagai Excel ── */}
-            <div style={{marginTop:10,background:"#EEF2FF",borderRadius:10,padding:"12px 14px"}}>
-              <div style={{fontSize:12,fontWeight:700,color:"#3730A3",marginBottom:8}}>📊 Backup per Kategori (Excel) ke Dropbox</div>
-              <div style={{fontSize:11,color:"#6366F1",marginBottom:10,lineHeight:1.6}}>
-                Backup data Operasi atau Lembur secara terpisah sebagai file Excel (.xlsx) ke Dropbox.
-                File tersimpan di folder yang sama dengan path backup utama.
-              </div>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                <Btn full outline color="#3730A3" onClick={onDbxBackupOpsXls} disabled={dbxBacking} style={{flex:1,minWidth:140}}>
-                  🗓 Backup Operasi (Excel)
-                </Btn>
-                <Btn full outline color="#3730A3" onClick={onDbxBackupLemburXls} disabled={dbxBacking} style={{flex:1,minWidth:140}}>
-                  ⏰ Backup Lembur (Excel)
-                </Btn>
-                <Btn full outline color="#0369A1" onClick={onDbxBackupMonitoringXls} disabled={dbxBacking} style={{flex:1,minWidth:140}}>
-                  🌡 Backup Monitoring (Excel)
-                </Btn>
-              </div>
-            </div>
-            <div style={{marginTop:10}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#1D4ED8",marginBottom:6}}>⬇ Pulihkan dari Dropbox (pilih data yang ingin dipulihkan):</div>
-              <div style={{display:"flex",gap:8}}>
-                <Btn full outline color="#0061FF" onClick={onDbxRestoreOps} disabled={dbxBacking} style={{flex:1}}>
-                  🗓 Jadwal Operasi
-                </Btn>
-                <Btn full outline color="#0061FF" onClick={onDbxRestoreLembur} disabled={dbxBacking} style={{flex:1}}>
-                  ⏰ Data Lembur
-                </Btn>
-              </div>
-            </div>
-          </Card>
-
-          {/* Backup JSON lokal */}
-          <Card>
-            <SH label="💾 Backup & Recovery Lokal" color={C.w}/>
-            <div style={{fontSize:12,color:C.tL,marginBottom:12,lineHeight:1.6}}>Ekspor semua data lokal sebagai file JSON untuk backup darurat.</div>
-            <Btn full outline color={C.w} onClick={()=>{
-              const data={exportedAt:fNow(),ops,archive,notifs};
-              downloadBlob(JSON.stringify(data,null,2),"BACKUP_OR_PantiRini_"+todayDate()+".json","application/json");
-              showToast("✓ File JSON berhasil diunduh",C.s);
-            }}>⬇ Ekspor Semua Data (JSON)</Btn>
-          </Card>
-
-          {/* Supabase Realtime */}
-          <Card>
-            <SH label="📡 Sinkronisasi Real-time" color="#1565C0"/>
-            <div style={{background:"#E3F2FD",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#1565C0",lineHeight:1.7,border:"1px solid #90CAF9"}}>
-              Sinkronisasi data antar HP/komputer secara langsung menggunakan Supabase Realtime. Aktifkan setelah mengisi URL & Anon Key Supabase di atas.
-            </div>
-            <Toggle value={rtEnabled} onChange={(v:boolean)=>setRtEnabled(v)} color="#1565C0" label="📡 Aktifkan Sinkronisasi Real-time" sub="Semua perubahan jadwal akan disinkron ke perangkat lain"/>
-            {rtStatus && (
-              <div style={{marginTop:10,background:rtStatus==="online"?"#E8F5E9":"#FFF3E0",borderRadius:8,padding:"8px 12px",fontSize:12,color:rtStatus==="online"?"#2E7D32":"#E65100",fontWeight:700,border:`1px solid ${rtStatus==="online"?"#A5D6A7":"#FFCC80"}`}}>
-                {rtStatus==="online"?"🟢 Terhubung — data disinkron secara real-time":rtStatus==="connecting"?"🟡 Menghubungkan...":"🔴 Tidak terhubung — periksa URL & Anon Key"}
-              </div>
-            )}
-          </Card>
-
-          <Card style={{background:C.sBg,border:"1px solid #2E7D3233"}}>
-            <div style={{fontSize:12,color:C.s,lineHeight:2.1}}>
-              ✓ <b>Zero dummy data</b> — sistem dimulai kosong<br/>
-              ✓ <b>Spasi bebas</b> saat mengetik (sanitize hanya saat simpan)<br/>
-              ✓ <b>PERAWAT Instrumen</b> mengganti Perawat Sirkuler<br/>
-              ✓ <b>Supabase Backup</b> — manual & auto terjadwal<br/>
-              ✓ <b>Pagination {PAGE_SIZE}/halaman</b> — tahan 100+ data<br/>
-              ✓ <b>Auto-lock</b> setelah {LOCK_MS/60000} menit idle<br/>
-              ✓ <b>Statistik lengkap</b> per bulan, kamar, dokter
-            </div>
-          </Card>
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* ─── VIEW LEMBUR ────────────────────────────────────────────────────── */
-const BULAN_ID = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+// BULAN_ID sekarang diimpor dari ./constants (lihat import di atas)
 const nowYM = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
 const ymLabel = (ym:string) => { const [y,m]=ym.split("-"); return `${BULAN_ID[parseInt(m)-1]} ${y}`; };
 
@@ -6555,36 +2866,18 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
 }
 
 /* ─── MONITORING SUHU & KELEMBABAN (Multi-Room) ─────────────────────── */
-interface MonitoringEntry {
-  id: string;
-  ruang: string;        // nama ruangan (hardcoded dari MON_ROOMS)
-  tanggal: string;
-  jam: string;
-  suhu: number;
-  kelembaban: number;
-  petugas: string;
-  createdAt: string;
-}
-interface MonitoringCfg { suhuMin:number; suhuMax:number; rhMin:number; rhMax:number; lokasiRuang:string; kepalaKamarBedah:string; }
+// MonitoringEntry & MonitoringCfg sekarang diimpor dari ./types (lihat import type di atas)
 const defaultMonCfg: MonitoringCfg = { suhuMin:19, suhuMax:24, rhMin:45, rhMax:65, lokasiRuang:"Kamar Bedah", kepalaKamarBedah:"" };
-const MON_JAMS  = ["07:00","14:00","21:00"];
-/* MON_ROOMS: 3 ruangan hardcoded sesuai spesifikasi.
-   Urutan ini digunakan di seluruh UI, Excel, dan ID deterministik. */
-const MON_ROOMS = ["Kamar Bedah 1","Kamar Bedah 2","Ruang Instrumen"];
+// MON_JAMS dan MON_ROOMS sekarang diimpor dari ./constants (lihat import di atas)
 /* monId: id deterministik berbasis (ruang,tanggal,jam) — bukan random — sehingga
    menyimpan ulang slot yang sama akan UPSERT (timpa baris yang sama) bukan
    membuat baris baru yang menumpuk sebagai duplikat "hantu" di Supabase.
    KRITIS: ruang disertakan agar data antar-ruangan tidak saling menimpa. */
 const monId = (ruang: string, tanggal: string, jam: string) =>
   `mon_${ruang.replace(/\s+/g,"_")}_${tanggal}_${jam}`;
-const MON_MONTHS_ID = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
-const MC = { pri:"#0369A1", priL:"#0284C7", priBg:"#EFF6FF", ok:"#16A34A", okBg:"#DCFCE7", err:"#DC2626", errBg:"#FEE2E2", warn:"#D97706" };
-/* Warna per ruangan untuk chart multi-line */
-const MON_ROOM_COLORS = ["#0369A1","#7C3AED","#B45309"];
+// MON_MONTHS_ID, MC, MON_ROOM_COLORS sekarang diimpor dari ./constants (lihat import di atas)
 
-function monIsOK(suhu:number, rh:number, cfg:MonitoringCfg):boolean {
-  return suhu>=cfg.suhuMin && suhu<=cfg.suhuMax && rh>=cfg.rhMin && rh<=cfg.rhMax;
-}
+// monIsOK sekarang diimpor dari ./utils (lihat import di atas)
 
 function monXlsx(
   entries: MonitoringEntry[],
@@ -7525,16 +3818,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
    di-hardcode di source: hardcode membuat rotasi key sulit, membuat key
    bocor ke setiap fork/clone repo, dan menyamarkan kebutuhan RLS yang benar.
    ─────────────────────────────────────────────────────────────────── */
-const SUPA_URL    = (import.meta as any).env?.VITE_SUPABASE_URL as string | undefined;
-const SUPA_ANON   = (import.meta as any).env?.VITE_SUPABASE_ANON_KEY as string | undefined;
-if (!SUPA_URL || !SUPA_ANON) {
-  // eslint-disable-next-line no-console
-  console.error(
-    "[Konfigurasi] VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY belum diset di .env.local. " +
-    "Aplikasi tidak dapat terhubung ke Supabase sampai env var ini dikonfigurasi."
-  );
-}
-const SUPA_CLIENT = createClient(SUPA_URL || "", SUPA_ANON || "");
+// SUPA_URL, SUPA_ANON, SUPA_CLIENT sekarang diimpor dari ./services (lihat import di atas)
 
 /* ─── DROPBOX: token DIHAPUS dari sini sepenuhnya — lihat DBX_PROXY_SECRET
    di atas. Token asli sekarang hanya hidup sbg secret server-side di
@@ -7544,42 +3828,17 @@ const SUPA_CLIENT = createClient(SUPA_URL || "", SUPA_ANON || "");
    Sengaja dipisah jadi komponennya sendiri — detak 1 detik di sini TIDAK
    memicu re-render App ataupun tab yang sedang aktif (lihat catatan perf
    di komponen App: state currentTime sebelumnya ada di root App). */
-function HeaderClock() {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const iv = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(iv);
-  }, []);
-  return (
-    <>
-      <div style={{color:"rgba(255,255,255,.55)",fontSize:10,marginTop:3,letterSpacing:.2}}>{now.toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
-      <div style={{color:"rgba(255,255,255,.9)",fontSize:13,fontWeight:700,fontVariantNumeric:"tabular-nums",letterSpacing:1,marginTop:1}}>{now.toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit",second:"2-digit"})} WIB</div>
-    </>
-  );
-}
+// HeaderClock sekarang diimpor dari ./components/header-clock (lihat import di atas)
 
 /* ─── MAIN APP ───────────────────────────────────────────────────────── */
 
 /* ─── MASTER DATA PERAWAT RS PANTI RINI ────────────────────────────── */
-const MASTER_PERAWAT_LIST: Array<{nik:string; name:string; pk:string}> = [
-  { nik:"201010056", name:"Jaka R",        pk:"III"  },
-  { nik:"199720045", name:"Eka S",         pk:"III"  },
-  { nik:"200315032", name:"Niken A",       pk:"II"   },
-  { nik:"199805021", name:"Thresmiati CB", pk:"IV"   },
-  { nik:"200110078", name:"Yohana P",      pk:"III"  },
-  { nik:"200812034", name:"Agus W",        pk:"II"   },
-  { nik:"199912067", name:"Dewi R",        pk:"III"  },
-  { nik:"200508043", name:"Sari U",        pk:"II"   },
-  { nik:"201205089", name:"Budi S",        pk:"I"    },
-  { nik:"200001055", name:"Ratna K",       pk:"III"  },
-];
+// MASTER_PERAWAT_LIST, SHIFT_CODES, KB_ROSTER_MASTER_TABLE, SEED_MASTER,
+// BULAN_NAMA_ID, SUMMARY_COLS, LS_DRAFT_KEY sekarang diimpor dari
+// ./constants (lihat import di atas)
 
 /* ─── VIEW ROSTER GENERATOR ─────────────────────────────────────────── */
-/* Kamus kode shift */
-const SHIFT_CODES = { PAGI:"P", PAGI_SIAGA:"PG", SIANG:"S", SIANG_SIAGA:"SG", LIBUR:"L", LIBUR_SIAGA:"LG", CUTI:"T" } as const;
-type NurseType = "karu"|"senior"|"junior";
-interface RosterNurse { id: string; nik: string; pk: string; name: string; sisaCuti: number; tipe: NurseType; }
-interface RosterGenProps { showToast: ShowToastFn; upsertOneToSupa: UpsertOneFn; deleteFromSupa: DeleteFromSupaFn; dbxCfg: DropboxConfig; }
+// NurseType, RosterNurse, RosterGenProps sekarang diimpor dari ./types (lihat import type di atas)
 
 /* ── Master Perawat — interface (terpisah dari RosterNurse) ──
    FIX (Audit Sentralisasi DB): localStorage DIHAPUS TOTAL sebagai sumber
@@ -7589,28 +3848,7 @@ interface RosterGenProps { showToast: ShowToastFn; upsertOneToSupa: UpsertOneFn;
    kb_staf, dst). SEED_MASTER hanya dipakai sekali untuk mengisi
    tabel Supabase bila tabel masih kosong (first-run), bukan sebagai
    fallback offline. */
-interface NurseMaster { id: string; nik: string; name: string; pk: string; }
-const KB_ROSTER_MASTER_TABLE = "kb_roster_master";
-
-/* ── Seed awal: data RS Panti Rini (hanya dipakai utk first-run seed Supabase) ── */
-const SEED_MASTER: NurseMaster[] = [
-  { id:"m1",  nik:"201010056", name:"Jaka R",        pk:"III" },
-  { id:"m2",  nik:"199720045", name:"Eka S",          pk:"III" },
-  { id:"m3",  nik:"200315032", name:"Niken A",        pk:"II"  },
-  { id:"m4",  nik:"199805021", name:"Thresmiati CB",  pk:"IV"  },
-  { id:"m5",  nik:"200110078", name:"Yohana P",       pk:"III" },
-  { id:"m6",  nik:"200812034", name:"Agus W",         pk:"II"  },
-  { id:"m7",  nik:"199912067", name:"Dewi R",         pk:"III" },
-  { id:"m8",  nik:"200508043", name:"Sari U",         pk:"II"  },
-  { id:"m9",  nik:"201205089", name:"Budi S",         pk:"I"   },
-  { id:"m10", nik:"200001055", name:"Ratna K",        pk:"III" },
-];
-
-/* ── Nama-nama bulan Indonesia (dipakai di header Excel & label UI) ── */
-const BULAN_NAMA_ID = ["JANUARI","FEBRUARI","MARET","APRIL","MEI","JUNI","JULI","AGUSTUS","SEPTEMBER","OKTOBER","NOVEMBER","DESEMBER"];
-
-/* ── Kolom ringkasan individu di sisi kanan tabel Excel (7 kolom sesuai UI) ── */
-const SUMMARY_COLS = ["∑P","∑PG","∑S","∑SG","∑L/LG","∑T","∑Total"] as const;
+// NurseMaster sekarang diimpor dari ./types (lihat import type di atas)
 
 /* ── Helper: hitung ringkasan 7 kolom per perawat (untuk Excel export) ── */
 function hitungRingkasan(row: string[], daysInMonth: number) {
@@ -7619,9 +3857,6 @@ function hitungRingkasan(row: string[], daysInMonth: number) {
         T=cnt("T"), LG=cnt("LG"), L=cnt("L");
   return [P, PG, S, SG, LG+L, T, P+PG+S+SG+T+LG+L];
 }
-
-/* ── localStorage key untuk draft jadwal (offline resilience) ── */
-const LS_DRAFT_KEY = "rostergen_draft_v1";
 
 function mkNurse(tipe: NurseType = "junior"): RosterNurse {
   return { id: gId(), nik:"", pk:"", name:"", sisaCuti: 12, tipe };
@@ -8756,120 +4991,52 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
   );
 }
 
-/* FIX AUDIT #12: ALL_TABS sebagai module-level constant (stabil antar render) */
-const ALL_TABS: Array<{k:string; l:string; roles:Array<"admin"|"perawat">}> = [
-  {k:"home",      l:"🏠 Home",       roles:["admin","perawat"]},
-  {k:"jadwal",    l:"📋 Jadwal",     roles:["admin","perawat"]},
-  {k:"daftar",    l:"📝 Daftar",     roles:["admin","perawat"]},
-  {k:"laporan",   l:"📄 Laporan",    roles:["admin","perawat"]},
-  {k:"wa",        l:"💬 Kirim WA",   roles:["admin","perawat"]},
-  {k:"statistik", l:"📊 Statistik",  roles:["admin"]},
-  {k:"staf",      l:"👥 Staf",       roles:["admin"]},
-  {k:"lembur",    l:"⏰ Lembur",     roles:["admin","perawat"]},
-  {k:"monitoring",l:"🌡 Monitoring", roles:["admin","perawat"]},
-  {k:"roster_gen", l:"🗓 Generator",   roles:["admin"]},
-  {k:"arsip",     l:"🗂 Arsip",      roles:["admin"]},
-];
+// ALL_TABS sekarang diimpor dari ./constants (lihat import di atas)
+
+/* PENAMBAHAN #6 (konsistensi ikon): set ikon SVG line-style (stroke-based,
+   konsisten strokeWidth) untuk tab sidebar/nav — pengganti emoji yang
+   sebelumnya dipakai (🏠📋📝 dst). Dibuat inline (BUKAN import library
+   seperti lucide-react) supaya TIDAK menambah dependency baru yang perlu
+   di-install — cukup tempel file ini dan langsung jalan. CATATAN JUJUR:
+   ini baru diterapkan di tab sidebar (elemen paling sering dilihat),
+   BELUM di seluruh app (ratusan emoji lain di form/pesan toast/dll masih
+   emoji) — mengganti semuanya butuh sesi terpisah karena scope-nya besar
+   dan risiko regresi visual kalau dikerjakan tergesa. */
+// TabIcon dan ActionIcon sekarang diimpor dari ./components/icons (lihat import di atas)
 
 // ===== Install Prompt PWA (Android/desktop pakai event browser, iOS pakai instruksi manual) =====
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
-}
+// BeforeInstallPromptEvent sekarang diimpor dari ./types (lihat import type di atas)
 
-const KB_INSTALL_DISMISS_KEY = "kb_install_banner_dismissed_at";
-const KB_INSTALL_DISMISS_MS = 7 * 24 * 60 * 60 * 1000; // 7 hari
+// KB_INSTALL_DISMISS_KEY dan KB_INSTALL_DISMISS_MS sekarang diimpor dari ./constants (lihat import di atas)
 
-function kbIsStandalone(): boolean {
-  return (
-    window.matchMedia("(display-mode: standalone)").matches ||
-    (window.navigator as unknown as { standalone?: boolean }).standalone === true
-  );
-}
-
-function kbIsIos(): boolean {
-  const ua = window.navigator.userAgent;
-  const isIosDevice = /iphone|ipad|ipod/i.test(ua);
-  const isIpadOs = /macintosh/i.test(ua) && "ontouchend" in document;
-  return isIosDevice || isIpadOs;
-}
-
-function kbWasDismissedRecently(): boolean {
-  const raw = localStorage.getItem(KB_INSTALL_DISMISS_KEY);
-  if (!raw) return false;
-  const dismissedAt = Number(raw);
-  if (Number.isNaN(dismissedAt)) return false;
-  return Date.now() - dismissedAt < KB_INSTALL_DISMISS_MS;
-}
-
-function InstallPrompt() {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [showIosBanner, setShowIosBanner] = useState(false);
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    if (kbIsStandalone() || kbWasDismissedRecently()) return;
-
-    const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e as BeforeInstallPromptEvent);
-      setVisible(true);
-    };
-    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
-
-    if (kbIsIos()) {
-      setShowIosBanner(true);
-      setVisible(true);
-    }
-
-    return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
-  }, []);
-
-  const handleInstallClick = async () => {
-    if (!deferredPrompt) return;
-    await deferredPrompt.prompt();
-    const choice = await deferredPrompt.userChoice;
-    if (choice.outcome === "accepted") setVisible(false);
-    setDeferredPrompt(null);
-  };
-
-  const handleDismiss = () => {
-    localStorage.setItem(KB_INSTALL_DISMISS_KEY, String(Date.now()));
-    setVisible(false);
-  };
-
-  if (!visible) return null;
-
-  return (
-    <div style={{
-      position: "fixed", left: "12px", right: "12px", bottom: "12px", zIndex: 9999,
-      background: "#16685F", color: "white", borderRadius: "12px", padding: "14px 16px",
-      boxShadow: "0 4px 16px rgba(0,0,0,0.25)", display: "flex", alignItems: "center",
-      gap: "12px", fontSize: "14px", lineHeight: 1.4,
-    }}>
-      <div style={{ flex: 1 }}>
-        {showIosBanner ? (
-          <span>Instal aplikasi ini: tekan tombol <strong>Share</strong> di Safari, lalu pilih <strong>"Add to Home Screen"</strong>.</span>
-        ) : (
-          <span>Instal Sistem Kamar Bedah ke layar utama untuk akses lebih cepat.</span>
-        )}
-      </div>
-      {!showIosBanner && (
-        <button onClick={handleInstallClick} style={{
-          background: "white", color: "#16685F", border: "none", borderRadius: "8px",
-          padding: "8px 14px", fontWeight: 600, fontSize: "14px", cursor: "pointer", whiteSpace: "nowrap",
-        }}>Instal</button>
-      )}
-      <button onClick={handleDismiss} aria-label="Tutup" style={{
-        background: "transparent", border: "none", color: "white", fontSize: "18px",
-        cursor: "pointer", padding: "0 4px", lineHeight: 1,
-      }}>×</button>
-    </div>
-  );
-}
+// kbIsStandalone, kbIsIos, kbWasDismissedRecently, InstallPrompt sekarang
+// diimpor dari ./components/install-prompt (lihat import di atas)
 // ===== End Install Prompt =====
 
+/* ═══════════════════════════════════════════════════════════════════
+   VIRTUAL ASSISTANT — widget chat melayang untuk pendaftaran pasien lewat
+   teks natural (mis. "Ny. Siti 45th appendektomi besok jam 9 dr. Andika").
+
+   SENGAJA TIDAK bikin endpoint/tabel/skema baru — reuse penuh 2 jalur
+   yang SUDAH ADA & sudah teruji:
+   1. Ekstraksi teks → runWorkerOcrScanText() → endpoint /api/ocr-scan
+      YANG SAMA dipakai jalur "paste teks" di Tab Daftar. worker.ts TIDAK
+      perlu diubah sama sekali untuk fitur ini.
+   2. Penyimpanan → autoSaveOcrBatch() YANG SAMA dipakai batch OCR foto —
+      otomatis tersimpan ke kb_operasi dengan needsReview:true. Efeknya:
+      entri dari asisten ini muncul di Tab Jadwal dengan badge biru
+      "🔍 Perlu Review (dari OCR)" — perawat WAJIB buka Edit untuk
+      cek/lengkapi lalu Save (itu yang berfungsi sebagai "ACC"). TIDAK
+      ADA jalur auto-commit data pasien tanpa direview manusia — sengaja,
+      karena salah simpan jadwal operasi berisiko fatal (lihat diskusi
+      sebelumnya). Pola "antrian ACC" ini konsisten dengan yang sudah
+      berjalan untuk OCR foto/teks, bukan mekanisme baru yang terpisah. */
+// AssistantMsg sekarang diimpor dari ./types (lihat import type di atas)
+
+// FloatingAssistant sekarang diimpor dari ./components/floating-assistant (lihat import di atas)
+
 export default function App() {
+  useEffect(() => { ensureCustomFontLink(); }, []);
   /* FIX AUDIT #23 (MEDIUM — Silent Failure jika env var Supabase hilang):
      sebelumnya kegagalan ini hanya di-console.error (tidak terlihat user),
      lalu aplikasi tetap render normal — perawat bisa login & mengisi form
@@ -8947,6 +5114,13 @@ export default function App() {
   const [pmCfPerawat, setPmCfPerawat] = useState("");
   const [pmErr,       setPmErr]       = useState("");
   const [ops,      setOps]      = useState<Operation[]>([]);
+  /* PENAMBAHAN #3 (skeleton loading): true sampai fetch data AWAL dari
+     Supabase (loadAllFromSupa) selesai — dipakai ViewJadwal untuk
+     membedakan "data memang kosong" vs "masih dimuat" (lihat komentar di
+     ViewJadwalProps.initialLoading). Diset false di FINALLY loadAllFromSupa
+     (baik sukses maupun gagal) supaya tidak pernah macet true selamanya
+     kalau fetch gagal/offline. */
+  const [initialLoading, setInitialLoading] = useState(true);
   const [staff,    setStaff]    = useState<StaffMember[]>([]);
   const [roster,   setRoster]   = useState<RosterEntry[]>([]);
   const [notifs,   setNotifs]   = useState<Notif[]>([]);
@@ -9180,6 +5354,117 @@ export default function App() {
       @keyframes kbPulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(201,169,97,.55);}50%{opacity:.85;box-shadow:0 0 0 4px rgba(201,169,97,0);}}
       @keyframes lgFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
       @keyframes redPulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.4;transform:scale(.7);}}
+      /* PENAMBAHAN #1 (micro-animation): transisi halus saat pindah tab —
+         fade-in + sedikit slide-up, supaya perpindahan Home→Jadwal→Daftar
+         dst terasa hidup, tidak "melompat" mendadak seperti sebelumnya. */
+      /* PERKUAT #5 (Fade/Blur Content, mirip "FadeContent" ReactBits):
+         ditambah blur() di awal transisi, bukan cuma opacity+translateY —
+         kesan konten "menajam ke fokus" saat muncul, bukan sekadar fade. */
+      @keyframes kbTabFadeIn{from{opacity:0;transform:translateY(6px);filter:blur(4px);}to{opacity:1;transform:translateY(0);filter:blur(0);}}
+      .kb-content-inner{animation:kbTabFadeIn .28s ease-out;}
+      /* Kartu (Card) sedikit terangkat saat disentuh/hover — memberi kesan
+         interaktif tanpa mengubah layout/struktur data apa pun. */
+      .kb-content-inner .kbCardHoverable{transition:transform .15s ease,box-shadow .15s ease;}
+      .kb-content-inner .kbCardHoverable:active{transform:scale(.985);}
+
+      /* PENAMBAHAN — efek visual "website profesional" (batch ke-2) */
+
+      /* #3 Ripple effect: pakai trik CSS radial-gradient di ::after, tanpa
+         perlu JS/tracking posisi klik — otomatis berlaku ke SEMUA <button>
+         di seluruh app (global selector), tidak perlu edit tiap tombol. */
+      button{position:relative;overflow:hidden;}
+      button::after{content:"";position:absolute;inset:0;border-radius:inherit;
+        background:radial-gradient(circle,rgba(255,255,255,.55) 0%,rgba(255,255,255,0) 70%);
+        opacity:0;transform:scale(.4);transition:opacity .5s ease,transform .5s ease;pointer-events:none;}
+      button:active::after{opacity:1;transform:scale(1.6);transition:opacity 0s,transform 0s;}
+
+      /* #8 Input focus glow: transisi warna halus + shadow lembut saat
+         fokus, berlaku global ke semua input/select/textarea. */
+      input,select,textarea{transition:border-color .18s ease,box-shadow .18s ease;}
+      input:focus,select:focus,textarea:focus{
+        border-color:#3B82F6!important;
+        box-shadow:0 0 0 3px rgba(59,130,246,.18)!important;
+        outline:none;
+      }
+
+      /* #9 Loading bar tipis di atas layar (indeterminate progress),
+         dipicu oleh state global topLoading — lihat App() untuk trigger. */
+      @keyframes kbTopBarSlide{0%{left:-30%;width:30%;}50%{left:40%;width:45%;}100%{left:100%;width:30%;}}
+      .kb-topbar{position:fixed;top:0;left:0;right:0;height:3px;z-index:99999;overflow:hidden;pointer-events:none;background:transparent;}
+      .kb-topbar span{position:absolute;top:0;height:100%;background:linear-gradient(90deg,#38bdf8,#1d4ed8);
+        border-radius:2px;animation:kbTopBarSlide 1.1s ease-in-out infinite;box-shadow:0 0 8px rgba(59,130,246,.6);}
+
+      /* #7 Toast: masuk dengan sedikit "bounce" (spring-like), keluar
+         fade+turun halus. */
+      @keyframes kbToastIn{
+        0%{opacity:0;transform:translate(-50%,16px) scale(.92);}
+        60%{opacity:1;transform:translate(-50%,-4px) scale(1.02);}
+        100%{opacity:1;transform:translate(-50%,0) scale(1);}
+      }
+      .kb-toast{animation:kbToastIn .38s cubic-bezier(.34,1.56,.64,1);}
+
+      /* PENAMBAHAN — Modal transition: backdrop fade-in halus, konten
+         modal scale+fade dari 96% ke 100% (bukan muncul instan). */
+      @keyframes kbModalBackdropIn{from{opacity:0;}to{opacity:1;}}
+      @keyframes kbModalContentIn{from{opacity:0;transform:scale(.96) translateY(8px);}to{opacity:1;transform:scale(1) translateY(0);}}
+      .kb-modal-backdrop{animation:kbModalBackdropIn .2s ease-out;}
+      .kb-modal-content{animation:kbModalContentIn .25s cubic-bezier(.16,1,.3,1);}
+
+      /* #6 Gradient border animasi untuk elemen CYTO (urgent) — border
+         "berjalan" mengelilingi card, menarik perhatian tanpa mengganggu
+         konten di dalamnya. PERJELASAN: ini padanan/rekonstruksi dari
+         komponen "Star Border" ReactBits (border berkilau berputar) —
+         sudah diterapkan sejak batch efek visual sebelumnya, dipakai
+         KHUSUS untuk item CYTO (operasi darurat) di Tab Jadwal karena
+         butuh menarik perhatian secara visual, bukan dekorasi semata. */
+      @keyframes kbGradientBorderSpin{to{--kb-angle:360deg;}}
+      @property --kb-angle{syntax:'<angle>';initial-value:0deg;inherits:false;}
+      .kb-cyto-glow{
+        position:relative;border-radius:14px;
+        background:linear-gradient(#fff,#fff) padding-box,
+          conic-gradient(from var(--kb-angle),#B71C1C,#FF8A65,#FFC107,#B71C1C) border-box;
+        border:2.5px solid transparent;
+        animation:kbGradientBorderSpin 2.5s linear infinite;
+      }
+
+      /* #10 Noise/grain texture overlay — tekstur film grain SANGAT halus
+         di seluruh app (mirip trend "grainy background" di produk modern
+         2025-2026), memberi kesan "didesain" tanpa mengganggu keterbacaan.
+         Dibuat via SVG data-uri (feTurbulence), TANPA file gambar eksternal. */
+      .kb-noise-overlay{
+        position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.035;mix-blend-mode:overlay;
+        background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      }
+
+      /* #2 Skeleton shimmer diperhalus: arah & timing lebih natural */
+      .kb-skeleton-bar{animation-timing-function:cubic-bezier(.4,0,.6,1)!important;}
+
+      /* PENAMBAHAN #5 (tipografi modern): kontras berat font yang lebih
+         tegas antara judul (tebal, letter-spacing rapat) dan body text
+         (lebih ringan, line-height lega) — ini yang membentuk hierarki
+         visual "modern", bukan sekadar ukuran font yang beda-beda. */
+      /* Font kustom (Manrope/Playfair Display) di-load lewat <link> yang
+         disuntikkan via useEffect terpisah (lihat ensureCustomFontLink()) —
+         BUKAN via @import di sini, karena @import HARUS jadi aturan
+         PERTAMA dalam sebuah stylesheet atau browser mengabaikannya diam-
+         diam; di tengah blok CSS besar seperti ini, @import tidak akan
+         pernah berfungsi. */
+      /* PENAMBAHAN — kesan "mewah": font kustom (bukan font sistem default
+         yang jadi ciri khas tampilan "belum di-brand"). Manrope untuk body
+         (rapi, modern), Playfair Display (serif elegan) khusus untuk
+         judul-judul besar/hero — kombinasi umum di brand premium. */
+      body,input,select,textarea,button{font-family:'Manrope',-apple-system,BlinkMacSystemFont,sans-serif!important;}
+      .kb-font-display{font-family:'Playfair Display',Georgia,serif!important;}
+      body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+      /* Custom scrollbar — tipis, warna senada tema, rounded (scrollbar
+         browser default terasa "murahan"/generik). */
+      ::-webkit-scrollbar{width:8px;height:8px;}
+      ::-webkit-scrollbar-track{background:transparent;}
+      ::-webkit-scrollbar-thumb{background:rgba(11,18,32,.22);border-radius:8px;}
+      ::-webkit-scrollbar-thumb:hover{background:rgba(11,18,32,.38);}
+      *{scrollbar-width:thin;scrollbar-color:rgba(11,18,32,.22) transparent;}
+      .kb-content-inner{line-height:1.5;}
+      .kb-content-inner b, .kb-content-inner strong{letter-spacing:-.01em;}
 
       /* ── Mobile default (<640px) ── */
       body{background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
@@ -9187,7 +5472,9 @@ export default function App() {
       .kb-header{padding:12px 16px 0;}
       .kb-header-inner{margin-bottom:10px;}
       .kb-tabs{display:flex;overflow-x:auto;-webkit-overflow-scrolling:touch;gap:0;padding-bottom:0;}
-      .kb-tab-btn{padding:10px 14px;flex-shrink:0;white-space:nowrap;font-size:15px;font-weight:700;}
+      .kb-tab-btn{padding:10px 14px;flex-shrink:0;white-space:nowrap;font-size:15px;font-weight:700;
+        transition:transform .18s cubic-bezier(.34,1.56,.64,1);}
+      .kb-tab-btn:active{transform:scale(1.18) translateY(-2px);}
       .kb-content{padding:14px 16px 32px;background:#f8fafc;}
       .kb-sidebar{display:none;}
       .kb-main{display:block;}
@@ -9229,9 +5516,9 @@ export default function App() {
         .kb-sidebar{
           display:flex;flex-direction:column;
           width:200px;min-width:200px;
-          background:linear-gradient(180deg,#1e3a8a,#1d4ed8 60%,#0284c7);
+          background:linear-gradient(180deg,#0B1220,#151F35 60%,#0B1220);
           padding:16px 10px;gap:4px;position:relative;
-          border-right:1px solid rgba(255,255,255,.12);
+          border-right:1px solid rgba(232,206,143,.14);
           min-height:calc(100vh - 56px - 60px);
         }
         .kb-sidebar-btn{
@@ -9244,7 +5531,7 @@ export default function App() {
           font-family:inherit;transition:all .15s;
         }
         .kb-sidebar-btn:hover{background:rgba(255,255,255,.10);color:#fff;}
-        .kb-sidebar-btn.active{background:rgba(255,255,255,.18);color:#fff;font-weight:900;box-shadow:inset 3px 0 0 #38bdf8;}
+        .kb-sidebar-btn.active{background:rgba(232,206,143,.14);color:#fff;font-weight:900;box-shadow:inset 3px 0 0 #E8CE8F;}
         .kb-main{display:flex;flex:1;background:#f8fafc;}
         .kb-content{flex:1;padding:24px 32px 40px;overflow-y:auto;background:#f8fafc;}
         .kb-title{font-size:24px;}
@@ -9609,6 +5896,11 @@ export default function App() {
       if(toastTimerRef.current) clearTimeout(toastTimerRef.current);
       setToast({msg:"⚠ Koneksi Supabase gagal — mode offline",color:C.w});
       toastTimerRef.current = setTimeout(()=>{ setToast(null); toastTimerRef.current=null; }, 4000);
+    } finally {
+      /* PENAMBAHAN #3 (skeleton loading): SELALU diset false di sini —
+         baik fetch sukses maupun gagal — supaya skeleton tidak pernah
+         macet tampil selamanya kalau Supabase gagal/offline saat login. */
+      setInitialLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[]);
@@ -9643,6 +5935,49 @@ export default function App() {
     setToast({msg,color:color||C.s});
     toastTimerRef.current = setTimeout(()=>{ setToast(null); toastTimerRef.current=null; },3200);
   },[]);
+
+  /* PENAMBAHAN #8 (offline queue — flush otomatis): begitu browser
+     mendeteksi koneksi kembali online, coba sinkronkan semua entri
+     kb_operasi yang tertunda di localStorage (diisi dari saveOpFn /
+     autoSaveOcrBatch saat offline — lihat enqueueOfflineOp). Item yang
+     berhasil dihapus dari antrean; yang masih gagal (mis. koneksi putus
+     lagi di tengah proses) tetap di antrean untuk dicoba lagi nanti. */
+  const flushOfflineQueueRef = useRef(false);
+  const flushOfflineQueue = useCallback(async () => {
+    if (flushOfflineQueueRef.current) return; // cegah flush tumpang tindih
+    const pending = readOfflineQueue();
+    if (pending.length === 0) return;
+    flushOfflineQueueRef.current = true;
+    try {
+      showToast(`🔄 Menyinkronkan ${pending.length} data yang tersimpan offline…`, C.tL);
+      let successCount = 0;
+      for (const item of pending) {
+        const res = await upsertOneToSupa("kb_operasi", item.payload);
+        if (res?.ok) { dequeueOfflineOp(item.id); successCount++; }
+      }
+      const remaining = countOfflineQueue();
+      if (successCount > 0) {
+        showToast(
+          remaining > 0
+            ? `✓ ${successCount} data tersinkron. ${remaining} masih tertunda (akan dicoba lagi).`
+            : `✓ Semua ${successCount} data offline berhasil tersinkron ke database.`,
+          C.s
+        );
+      }
+    } finally {
+      flushOfflineQueueRef.current = false;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [upsertOneToSupa, showToast]);
+
+  // Coba flush saat mount (kalau ada sisa antrean dari sesi sebelumnya
+  // yang belum sempat sinkron) DAN setiap kali koneksi kembali online.
+  useEffect(() => {
+    if (navigator.onLine) flushOfflineQueue();
+    window.addEventListener("online", flushOfflineQueue);
+    return () => window.removeEventListener("online", flushOfflineQueue);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /* Keep latestDataRef fresh for use in intervals (prevents stale closures) */
   useEffect(()=>{
@@ -9948,7 +6283,7 @@ export default function App() {
        bawah — sama semangatnya dengan audit trail di jalur 1-kandidat
        (saveOpFn), meski di sini tidak ada tahap "edit sebelum simpan"
        karena batch memang didesain langsung tersimpan (dengan needsReview). */
-    const ocrFieldSummary = new Map<string, {lowConfidence:boolean; hadCyto:boolean; hadBloodTypeOrAllergy:boolean}>();
+    const ocrFieldSummary = new Map<string, {lowConfidence:boolean; lowConfidenceFields:string[]; hadCyto:boolean; hadBloodTypeOrAllergy:boolean}>();
     for (const rRaw of capped) {
       const r = rRaw;
       /* SARAN PENINGKATAN #10: pakai buildOcrSafeApply() yang SAMA dengan
@@ -9990,8 +6325,18 @@ export default function App() {
         date: v.date,
         time: v.time,
         room: v.room,
-        surgeon: sanitize(capOcrText(r.surgeon || "", 80)),
-        anesthesiologist: sanitize(capOcrText(r.anesthesiologist || "", 80)),
+        surgeon: (() => {
+          const rawName = sanitize(capOcrText(r.surgeon || "", 80));
+          if (!rawName) return rawName;
+          const candidates = staff.filter((s:any)=>s.type==="surgeon").map((s:any)=>s.name);
+          return findBestStaffMatch(rawName, candidates) || rawName;
+        })(),
+        anesthesiologist: (() => {
+          const rawName = sanitize(capOcrText(r.anesthesiologist || "", 80));
+          if (!rawName || looksLikeNonDoctorAnesthesiaValue(rawName)) return rawName;
+          const candidates = staff.filter((s:any)=>s.type==="anesthesiologist").map((s:any)=>s.name);
+          return findBestStaffMatch(rawName, candidates) || rawName;
+        })(),
         procedure: sanitize(capOcrText(r.procedure || "")),
         diagnosis: sanitize(capOcrText(r.diagnosis || "")),
         allergy: sanitize(capOcrText(r.allergy || "Tidak Ada", 120)),
@@ -10005,6 +6350,7 @@ export default function App() {
       } as Operation);
       ocrFieldSummary.set(newId, {
         lowConfidence: r.confidence==="low",
+        lowConfidenceFields: r.lowConfidenceFields||[],
         hadCyto: suspectedCyto,
         hadBloodTypeOrAllergy: !!(r.bloodType || r.allergy),
       });
@@ -10023,6 +6369,11 @@ export default function App() {
        sukses. Sekarang: SEMUA upsert ditunggu (Promise.allSettled) dulu,
        baru setOps/toast/pindah tab dijalankan — dan toast secara eksplisit
        membedakan berapa yang benar-benar tersimpan vs gagal. */
+    /* PENAMBAHAN #8 (offline queue): cek status koneksi SEKALI di awal
+       batch — kalau offline, tidak perlu buang waktu mencoba network yang
+       sudah pasti gagal untuk tiap item; langsung masuk antrean lokal. */
+    const wasOffline = !navigator.onLine;
+
     const upsertResults = await Promise.allSettled(
       newOps.map(async (newOp) => {
         logAudit("Tambah (OCR batch)", newOp);
@@ -10032,7 +6383,7 @@ export default function App() {
           role === "admin" ? "Admin" : "Perawat",
           "TAMBAH_PASIEN",
           `Tambah pasien dari scan OCR (auto-batch): ${newOp.patient || "(nama belum terisi)"} (RM: ${newOp.rm || "-"})`,
-          { ...newOp, ocrAuditTrail: { sumberBatch: true, confidenceRendah: !!summary?.lowConfidence, dugaanCytoTerdeteksi: !!summary?.hadCyto, adaGolonganDarahAtauAlergi: !!summary?.hadBloodTypeOrAllergy } }
+          { ...newOp, ocrAuditTrail: { sumberBatch: true, confidenceRendah: !!summary?.lowConfidence, fieldRaguRagu: summary?.lowConfidenceFields||[], dugaanCytoTerdeteksi: !!summary?.hadCyto, adaGolonganDarahAtauAlergi: !!summary?.hadBloodTypeOrAllergy } }
         );
         if (newOp.specialNeeds?.includes("CYTO")) {
           AmbilLogMedis(
@@ -10043,16 +6394,28 @@ export default function App() {
             { ...newOp }
           );
         }
+        if (wasOffline) {
+          enqueueOfflineOp(newOp.id, newOp);
+          return { newOp, res: { ok: false }, offlineQueued: true };
+        }
         const res = await upsertOneToSupa("kb_operasi", newOp);
-        return { newOp, res };
+        if (!res?.ok && !navigator.onLine) {
+          // Koneksi putus DI TENGAH request (bukan sejak awal) — tetap
+          // masuk antrean supaya tidak hilang begitu saja.
+          enqueueOfflineOp(newOp.id, newOp);
+          return { newOp, res, offlineQueued: true };
+        }
+        return { newOp, res, offlineQueued: false };
       })
     );
 
     const savedOps: Operation[] = [];
     const failedOps: { newOp: Operation; error: string }[] = [];
+    let queuedCount = 0;
     for (const r of upsertResults) {
       if (r.status === "fulfilled") {
         if (r.value.res?.ok) savedOps.push(r.value.newOp);
+        else if (r.value.offlineQueued) { savedOps.push(r.value.newOp); queuedCount++; }
         else failedOps.push({ newOp: r.value.newOp, error: r.value.res?.error || "kesalahan tidak diketahui" });
       } else {
         // newOp tidak diketahui di sini karena reject terjadi sebelum return —
@@ -10085,6 +6448,7 @@ export default function App() {
     const jumlahDugaanCyto = savedOps.filter(o=>o.specialNeeds?.includes("CYTO")).length;
     const bagianDup = skippedDup>0 ? ` (${skippedDup} entri dilewati karena sudah terdaftar sebelumnya)` : "";
     const bagianGagal = failedOps.length>0 ? ` — ⚠ ${failedOps.length} entri GAGAL tersimpan (lihat notifikasi merah), coba scan ulang untuk entri tsb.` : "";
+    const bagianQueued = queuedCount>0 ? ` — 📴 ${queuedCount} entri disimpan LOKAL (offline), akan otomatis sinkron ke database saat koneksi kembali.` : "";
     if (newOps.length === 0 && skippedDup > 0) {
       showToast(`⚠ Semua ${skippedDup} entri hasil scan sudah terdaftar sebelumnya — tidak ada yang disimpan (cegah duplikat).`, C.w);
     } else if (savedOps.length === 0) {
@@ -10092,8 +6456,8 @@ export default function App() {
     } else {
       showToast(
         jumlahDugaanCyto>0
-          ? `✓ ${savedOps.length} pasien otomatis tersimpan${bagianDup}${bagianGagal} — ⚠ ${jumlahDugaanCyto} di antaranya DIDUGA CYTO, segera verifikasi manual!`
-          : `✓ ${savedOps.length} pasien otomatis tersimpan${bagianDup}${bagianGagal} — mohon lengkapi & periksa data yang belum lengkap`,
+          ? `✓ ${savedOps.length} pasien otomatis tersimpan${bagianDup}${bagianGagal}${bagianQueued} — ⚠ ${jumlahDugaanCyto} di antaranya DIDUGA CYTO, segera verifikasi manual!`
+          : `✓ ${savedOps.length} pasien otomatis tersimpan${bagianDup}${bagianGagal}${bagianQueued} — mohon lengkapi & periksa data yang belum lengkap`,
         (jumlahDugaanCyto>0 || failedOps.length>0) ? C.d : C.s
       );
     }
@@ -10178,14 +6542,28 @@ export default function App() {
           { ...updatedOp }
         );
       }
-      upsertOneToSupa("kb_operasi", updatedOp).then((res:any)=>{
-        if(!res?.ok) {
-          setOps(p=>p.map(o=>o.id===editingOp.id ? editingOp : o));
-          showToast(`⚠ Gagal menyimpan ke Supabase: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
-        } else {
-          showToast("✓ Jadwal diperbarui & tersimpan ke Supabase",C.s);
-        }
-      });
+      if (!navigator.onLine) {
+        /* PENAMBAHAN #8 (offline queue): jangan buang waktu coba network
+           yang sudah pasti gagal — langsung antrekan, tetap tampilkan di
+           UI secara optimistic (sudah di-setOps di atas), dengan pesan
+           jujur bahwa ini baru tersimpan lokal. */
+        enqueueOfflineOp(updatedOp.id, updatedOp);
+        showToast("📴 Offline — perubahan tersimpan LOKAL, akan otomatis sinkron saat koneksi kembali.", "#E65100");
+      } else {
+        upsertOneToSupa("kb_operasi", updatedOp).then((res:any)=>{
+          if(!res?.ok) {
+            if (!navigator.onLine) {
+              enqueueOfflineOp(updatedOp.id, updatedOp);
+              showToast("📴 Koneksi terputus — perubahan tersimpan LOKAL, akan otomatis sinkron saat online.", "#E65100");
+            } else {
+              setOps(p=>p.map(o=>o.id===editingOp.id ? editingOp : o));
+              showToast(`⚠ Gagal menyimpan ke Supabase: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
+            }
+          } else {
+            showToast("✓ Jadwal diperbarui & tersimpan ke Supabase",C.s);
+          }
+        });
+      }
     } else {
       const newOp={...clean,id:gId(),status:"scheduled",reminders:[],requests:[],createdAt:fNow(),updated_at:new Date().toISOString()} as Operation;
       logAudit("Tambah",clean);
@@ -10201,14 +6579,27 @@ export default function App() {
           { ...newOp }
         );
       }
-      upsertOneToSupa("kb_operasi", newOp).then((res:any)=>{
-        if(!res?.ok) {
-          showToast(`⚠ Gagal menyimpan ke Supabase: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
-        } else {
-          setOps(p=>{ if(p.some((o:any)=>o.id===newOp.id)) return p; return [...p, newOp]; });
-          showToast("✓ Jadwal tersimpan ke Supabase",C.s);
-        }
-      });
+      if (!navigator.onLine) {
+        enqueueOfflineOp(newOp.id, newOp);
+        setOps(p=>{ if(p.some((o:any)=>o.id===newOp.id)) return p; return [...p, newOp]; });
+        showToast("📴 Offline — pasien tersimpan LOKAL, akan otomatis sinkron saat koneksi kembali.", "#E65100");
+      } else {
+        upsertOneToSupa("kb_operasi", newOp).then((res:any)=>{
+          if(!res?.ok) {
+            if (!navigator.onLine) {
+              enqueueOfflineOp(newOp.id, newOp);
+              setOps(p=>{ if(p.some((o:any)=>o.id===newOp.id)) return p; return [...p, newOp]; });
+              showToast("📴 Koneksi terputus — pasien tersimpan LOKAL, akan otomatis sinkron saat online.", "#E65100");
+            } else {
+              showToast(`⚠ Gagal menyimpan ke Supabase: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
+            }
+          } else {
+            setOps(p=>{ if(p.some((o:any)=>o.id===newOp.id)) return p; return [...p, newOp]; });
+            showToast("✓ Jadwal tersimpan ke Supabase",C.s);
+            fireConfettiBurst();
+          }
+        });
+      }
     }
     resetOp();
     setTab("jadwal");
@@ -10334,7 +6725,7 @@ export default function App() {
   );
 
   if(!pinLoaded) return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#5FA39A,#3FA897,#16685F)"}}>
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#0B1220,#151F35 55%,#0B1220)"}}>
       <div style={{textAlign:"center",color:"#fff"}}>
         <img src="/logo.jpeg" style={{width:80,height:80,borderRadius:"50%",objectFit:"cover",marginBottom:16,display:"block",margin:"0 auto 16px"}}/>
         <div style={{fontSize:16,fontWeight:700,marginBottom:8}}>SISTEM KOORDINASI KAMAR BEDAH</div>
@@ -10350,35 +6741,53 @@ export default function App() {
   const content = (
     <ErrorBoundary>
       {tab==="home" && (
-        <div style={{paddingBottom:32}}>
+        <div style={{paddingBottom:32,position:"relative"}}>
+          {/* #1 Aurora Background versi SUBTLE (opacity rendah) — benang
+              merah visual dengan layar login, tanpa ganggu keterbacaan
+              data dashboard. */}
+          <AuroraBackground opacity={0.12}/>
+          <div style={{position:"relative",zIndex:1}}>
           {/* Welcome Banner */}
-          <div style={{background:"linear-gradient(135deg,#1e3a8a,#0284c7)",borderRadius:16,padding:"28px 24px",marginBottom:20,color:"#fff",boxShadow:"0 4px 20px rgba(30,58,138,.30)"}}>
-            <div style={{fontSize:11,fontWeight:700,letterSpacing:2,opacity:.75,textTransform:"uppercase",marginBottom:6}}>Selamat Datang</div>
-            <div style={{fontSize:22,fontWeight:900,lineHeight:1.2,marginBottom:6}}>Sistem Koordinasi<br/>Kamar Bedah</div>
-            <div style={{fontSize:13,opacity:.85}}>RS Panti Rini · {new Date().toLocaleDateString("id-ID",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</div>
-          </div>
+          <ScrollReveal>
+          <HomeParallaxBanner/>
+          </ScrollReveal>
 
-          {/* Quick Stats */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:20}}>
-            {/* Card 1: Operasi Hari Ini */}
-            <div style={{background:"#fff",borderRadius:14,padding:"16px 14px",boxShadow:"0 2px 12px rgba(0,0,0,.07)",border:"1px solid #E3F2FD",textAlign:"center"}}>
-              <div style={{fontSize:32,fontWeight:900,color:"#1565C0",lineHeight:1}}>{todayOpsCount}</div>
-              <div style={{fontSize:11,fontWeight:700,color:"#1565C0",marginTop:4}}>Operasi</div>
-              <div style={{fontSize:10,color:"#5C677D",marginTop:2}}>Hari Ini</div>
-            </div>
-            {/* Card 2: Status Sync */}
-            <div style={{background:"#fff",borderRadius:14,padding:"16px 14px",boxShadow:"0 2px 12px rgba(0,0,0,.07)",border:`1px solid ${rtStatus==="online"?"#E8F5E9":"#FFF3E0"}`,textAlign:"center"}}>
-              <div style={{fontSize:28,lineHeight:1}}>{rtStatus==="online"?"🟢":"🟡"}</div>
-              <div style={{fontSize:11,fontWeight:700,color:rtStatus==="online"?C.s:C.w,marginTop:4}}>{rtStatus==="online"?"Online":"Offline"}</div>
-              <div style={{fontSize:10,color:"#5C677D",marginTop:2}}>Cloud Sync</div>
-            </div>
-            {/* Card 3: Staf terdaftar */}
-            <div style={{background:"#fff",borderRadius:14,padding:"16px 14px",boxShadow:"0 2px 12px rgba(0,0,0,.07)",border:"1px solid #EDE7F6",textAlign:"center"}}>
-              <div style={{fontSize:32,fontWeight:900,color:"#512DA8",lineHeight:1}}>{staff.length}</div>
-              <div style={{fontSize:11,fontWeight:700,color:"#512DA8",marginTop:4}}>Staf</div>
-              <div style={{fontSize:10,color:"#5C677D",marginTop:2}}>Terdaftar</div>
+          {/* Quick Stats — Bento grid: 1 sel besar (Operasi Hari Ini) + 2 sel kecil bertumpuk */}
+          <ScrollReveal delay={80}>
+          <div style={{display:"grid",gridTemplateColumns:"1.3fr 1fr",gap:12,marginBottom:20}}>
+            {/* Sel besar: Operasi Hari Ini — #2 SpotlightCard (cahaya
+                mengikuti kursor saat hover) */}
+            <GlareHover>
+            <SpotlightCard style={{background:"linear-gradient(135deg,#EFF6FF,#DBEAFE)",borderRadius:18,padding:"20px 18px",boxShadow:"6px 6px 16px rgba(148,163,184,.16), -4px -4px 12px rgba(255,255,255,.7)",border:"1px solid #BFDBFE",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#1565C0",letterSpacing:.5,textTransform:"uppercase",opacity:.8,marginBottom:6}}>
+                {/* #8 DecryptedText: label "teracak lalu terbentuk" saat
+                    pertama muncul — #7 ShinyText: highlight berkilau */}
+                <ShinyText style={{color:"#1565C0"}}><DecryptedText text="Operasi"/></ShinyText>
+              </div>
+              <div style={{fontSize:44,fontWeight:900,color:"#1565C0",lineHeight:1}}><AnimatedNumber value={todayOpsCount}/></div>
+              <div style={{fontSize:12,color:"#3B5A80",marginTop:6,fontWeight:600}}>Terjadwal Hari Ini</div>
+            </SpotlightCard>
+            </GlareHover>
+            {/* 2 sel kecil bertumpuk — juga SpotlightCard */}
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <SpotlightCard spotlightColor={rtStatus==="online"?"rgba(34,197,94,.25)":"rgba(250,204,21,.25)"} style={{background:rtStatus==="online"?"linear-gradient(135deg,#F1F8F4,#E8F5E9)":"linear-gradient(135deg,#FFF8F0,#FFF3E0)",borderRadius:14,padding:"12px 14px",boxShadow:"4px 4px 12px rgba(148,163,184,.14), -3px -3px 8px rgba(255,255,255,.7)",border:`1px solid ${rtStatus==="online"?"#C8E6C9":"#FFE0B2"}`,flex:1,display:"flex",alignItems:"center",gap:10}}>
+                <div style={{fontSize:20}}>{rtStatus==="online"?"🟢":"🟡"}</div>
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,color:rtStatus==="online"?C.s:C.w}}>{rtStatus==="online"?"Online":"Offline"}</div>
+                  <div style={{fontSize:9,color:"#5C677D"}}>Cloud Sync</div>
+                </div>
+              </SpotlightCard>
+              <SpotlightCard spotlightColor="rgba(168,85,247,.25)" style={{background:"linear-gradient(135deg,#F5F3FF,#EDE7F6)",borderRadius:14,padding:"12px 14px",boxShadow:"4px 4px 12px rgba(148,163,184,.14), -3px -3px 8px rgba(255,255,255,.7)",border:"1px solid #D1C4E9",flex:1,display:"flex",alignItems:"center",gap:10}}>
+                <div style={{fontSize:20,fontWeight:900,color:"#512DA8"}}><AnimatedNumber value={staff.length}/></div>
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,color:"#512DA8"}}>Staf</div>
+                  <div style={{fontSize:9,color:"#5C677D"}}>Terdaftar</div>
+                </div>
+              </SpotlightCard>
             </div>
           </div>
+          </ScrollReveal>
+
 
           {/* Operasi hari ini ringkas */}
           <Card style={{marginBottom:16}}>
@@ -10440,26 +6849,40 @@ export default function App() {
             })()}
           </Card>
 
-          {/* Quick Links */}
+          {/* Quick Links — #4 MagneticButton (tertarik halus ke kursor) +
+              #9 TiltCard (kemiringan 3D halus) — SENGAJA hanya di sini
+              (tombol navigasi), BUKAN di card data pasien, supaya kesan
+              tetap serius untuk konteks kerja klinis. */}
+          <ScrollReveal delay={140}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-            <button onClick={()=>setTab("daftar")} style={{background:"linear-gradient(135deg,#0284c7,#38bdf8)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(2,132,199,.35)",textAlign:"center",fontFamily:"inherit"}}>
-              📝 Daftar Operasi
-            </button>
-            <button onClick={()=>setTab("laporan")} style={{background:"linear-gradient(135deg,#1d4ed8,#6366f1)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(29,78,216,.30)",textAlign:"center",fontFamily:"inherit"}}>
-              📄 Laporan Kepala Jaga
-            </button>
-            <button onClick={()=>setTab("jadwal")} style={{background:"linear-gradient(135deg,#1e3a8a,#1d4ed8)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(30,58,138,.30)",textAlign:"center",fontFamily:"inherit"}}>
-              📋 Lihat Jadwal
-            </button>
+            <TiltCard maxTilt={4}>
+              <MagneticButton onClick={()=>setTab("daftar")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#0284c7,#38bdf8)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(2,132,199,.35)",textAlign:"center",fontFamily:"inherit"}}>
+                📝 Daftar Operasi
+              </MagneticButton>
+            </TiltCard>
+            <TiltCard maxTilt={4}>
+              <MagneticButton onClick={()=>setTab("laporan")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#1d4ed8,#6366f1)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(29,78,216,.30)",textAlign:"center",fontFamily:"inherit"}}>
+                📄 Laporan Kepala Jaga
+              </MagneticButton>
+            </TiltCard>
+            <TiltCard maxTilt={4}>
+              <MagneticButton onClick={()=>setTab("jadwal")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#1e3a8a,#1d4ed8)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(30,58,138,.30)",textAlign:"center",fontFamily:"inherit"}}>
+                📋 Lihat Jadwal
+              </MagneticButton>
+            </TiltCard>
             {role==="admin" && (
-              <button onClick={()=>setTab("roster_gen")} style={{background:"linear-gradient(135deg,#0369a1,#0284c7)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(3,105,161,.30)",textAlign:"center",fontFamily:"inherit"}}>
-                🗓 Generator Roster
-              </button>
+              <TiltCard maxTilt={4}>
+                <MagneticButton onClick={()=>setTab("roster_gen")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#0369a1,#0284c7)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(3,105,161,.30)",textAlign:"center",fontFamily:"inherit"}}>
+                  🗓 Generator Roster
+                </MagneticButton>
+              </TiltCard>
             )}
+          </div>
+          </ScrollReveal>
           </div>
         </div>
       )}
-      {tab==="jadwal"     && <ViewJadwal ops={ops} setOps={setOps} startEditOp={startEditOp} deleteOp={deleteOp} sendReminder={sendReminder} reqOpId={reqOpId} setReqOpId={setReqOpId} reqText={reqText} setReqText={setReqText} addReq={addReq} delReq={delReq} getPhone={getPhone} setNotifs={setNotifs} showToast={showToast} privacyMode={privacyMode} role={role} upsertOneToSupa={upsertOneToSupa}/>}
+      {tab==="jadwal"     && <ViewJadwal ops={ops} setOps={setOps} startEditOp={startEditOp} deleteOp={deleteOp} sendReminder={sendReminder} reqOpId={reqOpId} setReqOpId={setReqOpId} reqText={reqText} setReqText={setReqText} addReq={addReq} delReq={delReq} getPhone={getPhone} setNotifs={setNotifs} showToast={showToast} privacyMode={privacyMode} role={role} upsertOneToSupa={upsertOneToSupa} initialLoading={initialLoading}/>}
       {tab==="daftar"     && <ViewDaftar pendingEditOp={pendingEditOp} clearPendingEditOp={()=>setPendingEditOp(null)} saveOpFn={saveOpFn} autoSaveOcrBatch={autoSaveOcrBatch} staff={staff} setTab={setTab} templates={templates} setTemplates={setTemplates} showToast={showToast}/>}
       {tab==="laporan"    && <ViewLaporan ops={ops} staff={staff} roster={roster} showToast={showToast} role={role} privacyMode={privacyMode}/>}
       {tab==="wa"         && <ViewKirimWA ops={ops} staff={staff} setNotifs={setNotifs} showToast={showToast}/>}
@@ -10494,16 +6917,24 @@ export default function App() {
 
   return (
     <div className="kbShell" style={{color:C.t,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}>
+      <div className="kb-noise-overlay"/>
       <InstallPrompt />
+      {/* PENAMBAHAN #9 (loading bar profesional): garis progress tipis di
+          paling atas layar selama data awal dimuat dari Supabase — pola
+          umum di web app modern (GitHub/YouTube), tidak mengganggu layout
+          karena position:fixed & tinggi cuma 3px. */}
+      {initialLoading && (
+        <div className="kb-topbar"><span/></div>
+      )}
 
       {/* ── Sticky header (mobile + tablet: full header; desktop: top bar only) ── */}
-      <div className="kb-header" style={{background:"linear-gradient(135deg,#1e3a8a,#1d4ed8 55%,#0284c7)",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 16px rgba(30,58,138,.35)"}}>
+      <div className="kb-header" style={{background:"linear-gradient(135deg,rgba(11,18,32,.92),rgba(21,31,53,.90) 55%,rgba(11,18,32,.92))",backdropFilter:"blur(14px) saturate(160%)",WebkitBackdropFilter:"blur(14px) saturate(160%)",position:"sticky",top:0,zIndex:100,boxShadow:"0 4px 24px rgba(11,18,32,.35)",borderBottom:"1px solid rgba(232,206,143,.18)"}}>
         <div className="kb-header-inner" style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
             <img src="/logo.jpeg" alt="Logo KB" style={{width:50,height:50,borderRadius:"50%",objectFit:"cover",border:"2px solid rgba(255,255,255,.5)",animation:"lgFloat 3s ease-in-out infinite",flexShrink:0}}/>
             <div>
               <div style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,.6)",letterSpacing:2,textTransform:"uppercase",marginBottom:1}}>Rumah Sakit Panti Rini</div>
-              <div className="kb-title" style={{fontWeight:900,color:"#fff",letterSpacing:.5,lineHeight:1.1}}>SISTEM KOORDINASI<br/>KAMAR BEDAH</div>
+              <div className="kb-title kb-font-display" style={{fontWeight:700,color:"#fff",letterSpacing:.3,lineHeight:1.15}}>SISTEM KOORDINASI<br/>KAMAR BEDAH</div>
               <HeaderClock/>
             </div>
           </div>
@@ -10528,8 +6959,8 @@ export default function App() {
         <div className="kb-tabs">
           {TABS.map(t=>(
             <button key={t.k} data-tab={t.k} onClick={handleTabClickEvt} className="kb-tab-btn"
-              style={{border:"none",background:tab===t.k?"rgba(255,255,255,.20)":"none",color:tab===t.k?"#fff":"rgba(255,255,255,.60)",fontWeight:tab===t.k?900:600,cursor:"pointer",borderBottom:tab===t.k?"3px solid #38bdf8":"3px solid transparent",borderRadius:"8px 8px 0 0",transition:"all .15s",fontFamily:"inherit"}}>
-              {t.l}
+              style={{border:"none",background:tab===t.k?"rgba(255,255,255,.20)":"none",color:tab===t.k?"#fff":"rgba(255,255,255,.60)",fontWeight:tab===t.k?900:600,cursor:"pointer",borderBottom:tab===t.k?"3px solid #38bdf8":"3px solid transparent",borderRadius:"8px 8px 0 0",transition:"all .15s",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
+              <TabIcon k={t.k}/>{t.l}
             </button>
           ))}
         </div>
@@ -10545,8 +6976,8 @@ export default function App() {
           {TABS.filter(t=>t.k!=="arsip").map(t=>(
             <button key={t.k} data-tab={t.k} onClick={handleTabClickEvt}
               className={`kb-sidebar-btn${tab===t.k?" active":""}`}>
-              <span style={{fontSize:16,flexShrink:0}}>{t.l.split(" ")[0]}</span>
-              <span>{t.l.split(" ").slice(1).join(" ")}</span>
+              <span style={{flexShrink:0,display:"flex"}}><TabIcon k={t.k}/></span>
+              <span>{t.l}</span>
               {t.k==="jadwal" && ops.filter((o:any)=>o.status==="ongoing").length>0 && (
                 <span style={{marginLeft:"auto",background:"#F44336",color:"#fff",fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{ops.filter((o:any)=>o.status==="ongoing").length}</span>
               )}
@@ -10556,8 +6987,8 @@ export default function App() {
           {TABS.filter(t=>t.k==="arsip").map(t=>(
             <button key={t.k} data-tab={t.k} onClick={handleTabClickEvt}
               className={`kb-sidebar-btn${tab===t.k?" active":""}`}>
-              <span style={{fontSize:16,flexShrink:0}}>{t.l.split(" ")[0]}</span>
-              <span>{t.l.split(" ").slice(1).join(" ")}</span>
+              <span style={{flexShrink:0,display:"flex"}}><TabIcon k={t.k}/></span>
+              <span>{t.l}</span>
               {notifs.length>0 && <span style={{marginLeft:"auto",background:"rgba(255,255,255,.25)",color:"#fff",fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{notifs.length}</span>}
             </button>
           ))}
@@ -10572,13 +7003,15 @@ export default function App() {
 
         {/* Content area */}
         <div className="kb-content">
-          {content}
+          <div key={tab} className="kb-content-inner">
+            {content}
+          </div>
         </div>
       </div>
 
       {/* PIN Management Modal (Admin only) */}
       {showPinMgmt && role==="admin" && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:9000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+        <div className="kb-modal-backdrop" style={{position:"fixed",inset:0,background:"rgba(15,23,42,.45)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",zIndex:9000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div style={{background:C.white,borderRadius:20,padding:"28px 24px",width:"100%",maxWidth:380,boxShadow:"0 20px 60px rgba(0,0,0,.4)"}}>
             <div style={{fontSize:16,fontWeight:800,color:C.p,marginBottom:4}}>⚙ Manajemen PIN</div>
             <div style={{fontSize:12,color:C.tL,marginBottom:20}}>Ubah PIN Admin dan PIN Perawat</div>
@@ -10620,10 +7053,13 @@ export default function App() {
 
       {/* Toast */}
       {toast && (
-        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:toast.color,color:"#fff",padding:"11px 22px",borderRadius:14,fontSize:13,fontWeight:700,zIndex:9999,boxShadow:"0 4px 20px rgba(0,0,0,.2)",whiteSpace:"nowrap",maxWidth:"90vw",textAlign:"center"}}>
+        <div className="kb-toast" style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:toast.color,color:"#fff",padding:"11px 22px",borderRadius:14,fontSize:13,fontWeight:700,zIndex:9999,boxShadow:"0 4px 20px rgba(0,0,0,.2)",whiteSpace:"nowrap",maxWidth:"90vw",textAlign:"center"}}>
           {toast.msg}
         </div>
       )}
+
+      {/* Asisten Virtual — bubble melayang, global di semua tab setelah login */}
+      <FloatingAssistant autoSaveOcrBatch={autoSaveOcrBatch} showToast={showToast}/>
     </div>
   );
 }
