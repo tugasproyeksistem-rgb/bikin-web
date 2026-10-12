@@ -6959,9 +6959,9 @@ export default function App() {
                 Sync
               </span>
             )}
-            {ops.filter((o:any)=>o.status==="ongoing").length>0 && (
+            {ops.filter((o:any)=>o.status==="ongoing"&&o.date===toLocalISODate(new Date())).length>0 && (
               <span style={{background:"#F44336",color:"#fff",fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:20}}>
-                ● {ops.filter((o:any)=>o.status==="ongoing").length} berlangsung
+                ● {ops.filter((o:any)=>o.status==="ongoing"&&o.date===toLocalISODate(new Date())).length} berlangsung
               </span>
             )}
             {role==="admin" && <button onClick={()=>setShowPinMgmt(true)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,padding:"6px 10px",color:"#fff",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>⚙ PIN</button>}
@@ -6992,8 +6992,8 @@ export default function App() {
               className={`kb-sidebar-btn${tab===t.k?" active":""}`}>
               <span style={{flexShrink:0,display:"flex"}}><TabIcon k={t.k}/></span>
               <span>{t.l}</span>
-              {t.k==="jadwal" && ops.filter((o:any)=>o.status==="ongoing").length>0 && (
-                <span style={{marginLeft:"auto",background:"#F44336",color:"#fff",fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{ops.filter((o:any)=>o.status==="ongoing").length}</span>
+              {t.k==="jadwal" && ops.filter((o:any)=>o.status==="ongoing"&&o.date===toLocalISODate(new Date())).length>0 && (
+                <span style={{marginLeft:"auto",background:"#F44336",color:"#fff",fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{ops.filter((o:any)=>o.status==="ongoing"&&o.date===toLocalISODate(new Date())).length}</span>
               )}
             </button>
           ))}
