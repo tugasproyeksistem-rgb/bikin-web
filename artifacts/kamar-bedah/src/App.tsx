@@ -602,6 +602,11 @@ import { ViewLaporan } from "./components/view-laporan";
    agar dapat digunakan sebelum modul App selesai di-mount. */
 async function supabaseBackup(_cfg: SupabaseConfig, data: any, client: any): Promise<{ok: boolean; msg: string}> {
   try {
+    /* Pengaman: jangan simpan backup kalau data lokal masih kosong
+       (misal browser/perangkat baru yang datanya belum termuat). */
+    const _d: any = data || {};
+    if(!(_d.ops?.length) && !(_d.staff?.length) && !(_d.roster?.length) && !(_d.lemburPegawai?.length))
+      return {ok:false, msg:"Backup dibatalkan: data lokal masih kosong (belum termuat)"};
     const payload = { created_at: new Date().toISOString(), data: JSON.stringify(data) };
     const {error} = await client.from("kamar_bedah_backup").insert(payload);
     if(error) return {ok:false, msg:"Supabase error: " + error.message.slice(0,120)};
