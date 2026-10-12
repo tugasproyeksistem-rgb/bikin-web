@@ -605,6 +605,15 @@ async function supabaseBackup(_cfg: SupabaseConfig, data: any, client: any): Pro
     const payload = { created_at: new Date().toISOString(), data: JSON.stringify(data) };
     const {error} = await client.from("kamar_bedah_backup").insert(payload);
     if(error) return {ok:false, msg:"Supabase error: " + error.message.slice(0,120)};
+    /* Padatkan: sisakan hanya backup TERBARU per hari (hari WIB).
+       Dijalankan SETELAH insert sukses, jadi kalau gagal tidak ada data hilang. */
+    try {
+      const wib = new Date(Date.now() + 7*3600*1000);
+      const awalHariWIB = new Date(Date.UTC(wib.getUTCFullYear(), wib.getUTCMonth(), wib.getUTCDate()) - 7*3600*1000);
+      await client.from("kamar_bedah_backup").delete()
+        .gte("created_at", awalHariWIB.toISOString())
+        .lt("created_at", payload.created_at);
+    } catch { /* pemadatan non-kritis */ }
     return {ok:true, msg:"✓ Backup ke Supabase berhasil — "+fNow()};
   } catch(e: any) {
     return {ok:false, msg:"Koneksi gagal: " + (e?.message||"unknown error")};
