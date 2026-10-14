@@ -6821,6 +6821,23 @@ export default function App() {
                 const isDone = op.status==="done";
                 const isActive = !isDone && op.status!=="batal";
                 const doUpdate = (newStatus: string) => {
+                  /* Pengaman: satu kamar tidak bisa menjalankan dua operasi sekaligus.
+                     Kalau masih ada operasi lain BERLANGSUNG di kamar yang sama (biasanya
+                     karena lupa menekan Selesai), tawarkan untuk menutupnya dulu. */
+                  if(newStatus==="ongoing" && op.room){
+                    const prev=ops.filter((o:any)=>o.id!==op.id && o.status==="ongoing" && o.room===op.room);
+                    if(prev.length>0){
+                      const nama=prev.map((o:any)=>maskName(o.patient,privacyMode)).join(", ");
+                      if(!window.confirm(`Di ${op.room} masih tercatat BERLANGSUNG: ${nama}. Tandai operasi itu SELESAI lalu mulai operasi ini? (OK = ya, Batal = tidak ada perubahan)`)) return;
+                      const nowIso=new Date().toISOString();
+                      prev.forEach((o:any)=>{
+                        const closed={...o,status:"done",updated_at:nowIso};
+                        setOps((p:any[])=>p.map((x:any)=>x.id===o.id?closed:x));
+                        AmbilLogMedis("JADWAL_OPERASI","Sistem","TUTUP_OTOMATIS_SEBELUM_MULAI","Operasi ditandai selesai karena operasi berikutnya dimulai di kamar yang sama",{id:o.id,room:o.room,next:op.id});
+                        upsertOneToSupa("kb_operasi",closed).then((res:any)=>{ if(!res?.ok){ setOps((p:any[])=>p.map((x:any)=>x.id===o.id?o:x)); showToast(`⚠ Gagal menutup operasi sebelumnya: ${res?.error||"error"}`,C.d); } });
+                      });
+                    }
+                  }
                   const upd={...op,status:newStatus,updated_at:new Date().toISOString()};
                   setOps((p:any[])=>p.map((o:any)=>o.id===op.id?upd:o));
                   upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any[])=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal: ${res?.error||"error"}`,C.d); } });
