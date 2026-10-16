@@ -141,7 +141,7 @@ export function buatTeksLaporan(l: LaporanHarian, mask: (s: string) => string): 
     L.push(`${i + 1}. ${r.jam || "-"} ${mask(r.pasien)} - ${r.jenis}. Operator: ${r.operator || "-"}. Anestesi: ${r.anestesi || "-"}. Status: ${r.status}.${r.catatan ? " Catatan: " + r.catatan + "." : ""}`);
   });
   L.push("");
-  L.push(`RENCANA OPERASI (${SHIFT_LABEL[l.ke]}, ${tanggalPanjang(l.tanggalRencana)})`);
+  L.push(`RENCANA OPERASI (${rencanaHariPenuh(l.dari, l.ke) ? "Semua operasi besok" : SHIFT_LABEL[l.ke]}, ${tanggalPanjang(l.tanggalRencana)})`);
   if (!l.rencana.length) { L.push("- Tidak ada"); }
   l.rencana.forEach((r, i) => {
     L.push(`${i + 1}. ${r.jam || "-"} ${mask(r.pasien)}${r.umur ? " (" + r.umur + ")" : ""} - ${r.jenis}. Kamar: ${r.kamar || "-"}. Operator: ${r.operator || "-"}. Anestesi: ${r.anestesi || "-"}.${r.alkes ? " Alkes: " + r.alkes + "." : ""}${r.keterangan ? " Ket: " + r.keterangan + "." : ""}`);
@@ -256,4 +256,16 @@ export function shiftYangMencakup(t: unknown, malamAktif: boolean): ShiftKey[] {
   if (m >= SHIFT_JAM.siangMulai && m < SHIFT_JAM.siangSelesai) hasil.push("siang");
   if (m >= SHIFT_JAM.malamMulai || m < SHIFT_JAM.malamSelesai) hasil.push(malamAktif ? "malam" : "siang");
   return hasil;
+}
+
+/* Siang -> Pagi: Rencana Operasi berisi SEMUA operasi besok (satu hari penuh), Kandidat dikosongkan. */
+export function rencanaHariPenuh(dari: ShiftKey, ke: ShiftKey): boolean { return dari === "siang" && ke === "pagi"; }
+export function susunRencanaHariPenuh(ops: any[], tanggal: string): RencanaRow[] {
+  return (ops || [])
+    .filter((o: any) => o && o.date === tanggal && o.status !== "batal")
+    .sort(jamUrut)
+    .map((o: any): RencanaRow => ({
+      opId: String(o.id), tanggal: o.date || "", jam: o.time || "", operator: o.surgeon || "", anestesi: o.anesthesiologist || "",
+      pasien: o.patient || "", umur: teksUmur(o), kamar: o.room || "", jenis: o.procedure || "", alkes: "", keterangan: "",
+    }));
 }

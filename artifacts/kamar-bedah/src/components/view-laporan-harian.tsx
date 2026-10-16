@@ -17,7 +17,7 @@ import type { ShiftKey, LaporanHarian, JadwalRow, RencanaRow, KandidatRow } from
 import {
   SHIFT_URUT, SHIFT_LABEL, STOK_OPSI, STATUS_OPSI, ALAT_BUTIR,
   pad2, isoLokal, tanggalPanjang, fmtTgl, namaHari, shiftDariJam, shiftBerikut, tanggalTujuan,
-  susunJadwal, susunRencana, susunKandidat, buatTeksLaporan, buatWorkbookLaporan, buatPdfDariJpeg, filterLaporan, urutLaporanTurun,
+  susunJadwal, susunRencana, susunKandidat, rencanaHariPenuh, susunRencanaHariPenuh, buatTeksLaporan, buatWorkbookLaporan, buatPdfDariJpeg, filterLaporan, urutLaporanTurun,
 } from "../utils/laporan-harian";
 
 const DRAFT_KEY = "kb_laporan_harian_draft_v1";
@@ -85,7 +85,7 @@ function Lembar({ l, mask }: { l: LaporanHarian; mask: (s: string) => string }) 
       {judul("JADWAL OPERASI")}
       {tabel(["No", "Jam", "Nama Pasien", "Jenis Operasi", "Dokter Operator", "Dokter Anestesi", "Status", "Catatan"],
         l.jadwal.map((r, i) => [String(i + 1), r.jam, mask(r.pasien), r.jenis, r.operator, r.anestesi, r.status, r.catatan]), 10)}
-      {judul(`RENCANA OPERASI — ${SHIFT_LABEL[l.ke]}, ${tanggalPanjang(l.tanggalRencana)}`)}
+      {judul(`RENCANA OPERASI — ${rencanaHariPenuh(l.dari, l.ke) ? "Semua operasi besok" : SHIFT_LABEL[l.ke]}, ${tanggalPanjang(l.tanggalRencana)}`)}
       {tabel(["Tanggal", "Jam", "Dokter Operator", "Dokter Anestesi", "Nama", "Umur", "Kamar", "Jenis Operasi", "Alkes", "Keterangan"],
         l.rencana.map((r) => [fmtTgl(r.tanggal), r.jam, r.operator, r.anestesi, mask(r.pasien), r.umur, r.kamar, r.jenis, r.alkes, r.keterangan]), 4)}
       {judul("KANDIDAT (OPERASI BESOK)")}
@@ -191,9 +191,10 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
 
   const jadwalAuto = useMemo(() => susunJadwal(ops, form.tanggal, form.shift, malamAktif), [ops, form.tanggal, form.shift, malamAktif]);
   const jadwal: JadwalRow[] = useMemo(() => jadwalAuto.map((r) => { const o = form.ov["j:" + r.opId] || {}; return { ...r, status: o.status ?? r.status, catatan: o.catatan ?? r.catatan }; }), [jadwalAuto, form.ov]);
-  const rencanaAuto = useMemo(() => susunRencana(ops, tglRencana, keEff, malamAktif), [ops, tglRencana, keEff, malamAktif]);
+  const penuh = rencanaHariPenuh(dariEff, keEff);
+  const rencanaAuto = useMemo(() => penuh ? susunRencanaHariPenuh(ops, tglRencana) : susunRencana(ops, tglRencana, keEff, malamAktif), [ops, tglRencana, keEff, malamAktif, penuh]);
   const rencana: RencanaRow[] = useMemo(() => rencanaAuto.map((r) => { const o = form.ov["r:" + r.opId] || {}; return { ...r, alkes: o.alkes ?? r.alkes, keterangan: o.keterangan ?? r.keterangan }; }), [rencanaAuto, form.ov]);
-  const kandidat: KandidatRow[] = useMemo(() => susunKandidat(ops, form.tanggal), [ops, form.tanggal]);
+  const kandidat: KandidatRow[] = useMemo(() => penuh ? [] : susunKandidat(ops, form.tanggal), [ops, form.tanggal, penuh]);
 
   const jumlahOperasi = form.jumlahManual !== "" ? form.jumlahManual : String(jadwal.length);
   const totalPasien = form.totalManual !== "" ? form.totalManual : String(jadwal.filter((r) => r.status !== "Batal").length);
@@ -432,7 +433,7 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
       </Card>
 
       <Card style={{ marginTop: 12 }}>
-        <SH label={`3. Rencana operasi — ${SHIFT_LABEL[keEff]}, ${tanggalPanjang(tglRencana)}`} />
+        <SH label={`3. Rencana operasi — ${penuh ? "Semua operasi besok" : SHIFT_LABEL[keEff]}, ${tanggalPanjang(tglRencana)}`} />
         {!rencana.length && <div style={{ fontSize: 13, color: C.tL }}>Belum ada operasi terdaftar pada shift tujuan.</div>}
         {rencana.map((r) => (
           <div key={r.opId} style={{ border: `1px solid ${C.b}`, borderRadius: 10, padding: 10, marginBottom: 8 }}>
@@ -444,7 +445,7 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
             </div>
           </div>
         ))}
-        <div style={{ fontSize: 12, color: C.tL, marginTop: 4 }}>Kandidat (operasi besok, otomatis): {kandidat.length} operasi — tampil di preview.</div>
+        <div style={{ fontSize: 12, color: C.tL, marginTop: 4 }}>{penuh ? "Kandidat dikosongkan: semua operasi besok sudah ada di Rencana." : `Kandidat (operasi besok, otomatis): ${kandidat.length} operasi — tampil di preview.`}</div>
       </Card>
 
       <Card style={{ marginTop: 12 }}>
