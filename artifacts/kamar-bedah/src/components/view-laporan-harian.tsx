@@ -36,6 +36,53 @@ function formAwal(tanggal: string, shift: ShiftKey): FormState {
     instrumen: "", implan: "", alkesDipakai: "", alkesPersediaan: "", pa: "", stokLain: "", stokCatatan: "", kejadian: "", uraian: "", lama: "", baru: "", kepala: "" };
 }
 
+/* Dropdown nama petugas: bisa disaring sambil mengetik, ketikan manual tetap boleh */
+function PilihNama({ value, onChange, daftar, placeholder }: { value: string; onChange: (v: string) => void; daftar: string[]; placeholder?: string }) {
+  const [buka, setBuka] = useState(false);
+  const [aktif, setAktif] = useState(-1);
+  const wrap = useRef<HTMLDivElement>(null);
+  const cocok = daftar.includes(value);
+  const q = cocok ? "" : value.trim().toLowerCase();
+  const hasil = daftar.filter((n) => !q || n.toLowerCase().includes(q));
+  const tampil = buka && hasil.length > 0;
+  useEffect(() => {
+    const tutup = (e: Event) => { if (wrap.current && !wrap.current.contains(e.target as Node)) setBuka(false); };
+    document.addEventListener("mousedown", tutup);
+    document.addEventListener("touchstart", tutup);
+    return () => { document.removeEventListener("mousedown", tutup); document.removeEventListener("touchstart", tutup); };
+  }, []);
+  const pilih = (n: string) => { onChange(n); setBuka(false); setAktif(-1); };
+  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); setBuka(true); setAktif((a) => Math.min(a + 1, hasil.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setAktif((a) => Math.max(a - 1, 0)); }
+    else if (e.key === "Enter" && tampil && aktif >= 0 && hasil[aktif]) { e.preventDefault(); pilih(hasil[aktif]); }
+    else if (e.key === "Escape") setBuka(false);
+  };
+  return (
+    <div ref={wrap} style={{ position: "relative" }}>
+      <input style={{ ...iS, paddingRight: 38 }} value={value} placeholder={placeholder} autoComplete="off"
+        onFocus={() => setBuka(true)} onKeyDown={onKey}
+        onChange={(e) => { onChange(e.target.value); setBuka(true); setAktif(-1); }} />
+      <button type="button" tabIndex={-1} aria-label="Buka daftar nama" onClick={() => setBuka((b) => !b)}
+        style={{ position: "absolute", right: 4, top: 4, bottom: 4, width: 32, border: "none", background: "transparent", cursor: "pointer", color: C.tL, fontSize: 12, transition: "transform .2s ease", transform: tampil ? "rotate(180deg)" : "rotate(0deg)" }}>▼</button>
+      <div style={{
+        position: "absolute", left: 0, right: 0, top: "calc(100% + 6px)", zIndex: 40, background: "#fff", border: "1px solid " + C.b,
+        borderRadius: 12, boxShadow: "0 10px 28px rgba(15,23,42,.16)", maxHeight: 224, overflowY: "auto", WebkitOverflowScrolling: "touch",
+        opacity: tampil ? 1 : 0, transform: tampil ? "translateY(0)" : "translateY(-6px)", visibility: tampil ? "visible" : "hidden",
+        pointerEvents: tampil ? "auto" : "none", transition: "opacity .16s ease, transform .16s ease, visibility .16s",
+      }}>
+        {hasil.map((n, i) => (
+          <div key={n} onMouseDown={(e) => e.preventDefault()} onClick={() => pilih(n)} onMouseEnter={() => setAktif(i)}
+            style={{ padding: "11px 14px", fontSize: 14, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center",
+              background: aktif === i ? "#EEF2F7" : "#fff", fontWeight: n === value ? 700 : 500, color: C.t, borderBottom: i < hasil.length - 1 ? "1px solid #F1F5F9" : "none" }}>
+            <span>{n}</span>{n === value && <span style={{ color: C.s }}>✓</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Pilih({ value, onChange, opsi }: { value: string; onChange: (v: string) => void; opsi: { v: string; l: string; c?: string; off?: boolean }[] }) {
   return (
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -363,9 +410,10 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
 
   /* ══════════ FORM ══════════ */
   const riwayat = [...laporanList].sort(urutLaporanTurun).slice(0, 8);
+  const daftarPerawat: string[] = Array.from(new Set<string>((staff || []).filter((x: any) => x.type !== "surgeon" && x.type !== "anesthesiologist").map((x: any) => String(x.name || "").split(",")[0].trim()).filter(Boolean))).sort((a: string, b: string) => a.localeCompare(b, "id"));
   return (
     <div style={{ paddingBottom: 24 }}>
-      <datalist id="kb-lh-staf">{(staff || []).filter((s: any) => s.type !== "surgeon" && s.type !== "anesthesiologist").map((s: any) => <option key={s.id} value={String(s.name || "").split(",")[0]} />)}</datalist>
+      
 
       <Card>
         <SH label="Laporan Harian OK" />
@@ -478,9 +526,9 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
 
       <Card style={{ marginTop: 12 }}>
         <SH label="7. Serah terima" />
-        <LF label="Petugas shift lama (nama jelas)"><input style={iS} list="kb-lh-staf" value={form.lama} onChange={(e) => set({ lama: e.target.value })} /></LF>
-        <LF label="Petugas shift baru (nama jelas)"><input style={iS} list="kb-lh-staf" value={form.baru} onChange={(e) => set({ baru: e.target.value })} /></LF>
-        <LF label="Mengetahui / Kepala Kamar Bedah (nama jelas)"><input style={iS} list="kb-lh-staf" value={form.kepala} onChange={(e) => set({ kepala: e.target.value })} /></LF>
+        <LF label="Petugas shift lama (nama jelas)"><PilihNama value={form.lama} onChange={(v) => set({ lama: v })} daftar={daftarPerawat} placeholder="Pilih atau ketik nama" /></LF>
+        <LF label="Petugas shift baru (nama jelas)"><PilihNama value={form.baru} onChange={(v) => set({ baru: v })} daftar={daftarPerawat} placeholder="Pilih atau ketik nama" /></LF>
+        <LF label="Mengetahui / Kepala Kamar Bedah (nama jelas)"><PilihNama value={form.kepala} onChange={(v) => set({ kepala: v })} daftar={daftarPerawat} placeholder="Pilih atau ketik nama" /></LF>
         <Btn full onClick={keAtasPreview}>👁 Lihat preview laporan</Btn>
       </Card>
 
