@@ -6768,48 +6768,6 @@ export default function App() {
           <HomeParallaxBanner/>
           </ScrollReveal>
 
-          {/* Quick Stats — Bento grid: 1 sel besar (Operasi Hari Ini) + 2 sel kecil bertumpuk */}
-          <ScrollReveal delay={80}>
-          <div style={{display:"grid",gridTemplateColumns:"1.3fr 1fr",gap:12,marginBottom:20}}>
-            {/* Sel besar: Operasi Hari Ini — #2 SpotlightCard (cahaya
-                mengikuti kursor saat hover) */}
-            <GlareHover>
-            <SpotlightCard style={{background:"linear-gradient(135deg,#EFF6FF,#DBEAFE)",borderRadius:18,padding:"20px 18px",boxShadow:"6px 6px 16px rgba(148,163,184,.16), -4px -4px 12px rgba(255,255,255,.7)",border:"1px solid #BFDBFE",display:"flex",flexDirection:"column",justifyContent:"center"}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#1565C0",letterSpacing:.5,textTransform:"uppercase",opacity:.8,marginBottom:6}}>
-                {/* #8 DecryptedText: label "teracak lalu terbentuk" saat
-                    pertama muncul — #7 ShinyText: highlight berkilau */}
-                <ShinyText style={{color:"#1565C0"}}><DecryptedText text="Operasi"/></ShinyText>
-              </div>
-              <div style={{fontSize:44,fontWeight:900,color:"#1565C0",lineHeight:1}}><AnimatedNumber value={todayOpsCount}/></div>
-              <div style={{fontSize:12,color:"#3B5A80",marginTop:6,fontWeight:600}}>Terjadwal Hari Ini</div>
-            </SpotlightCard>
-            </GlareHover>
-            {/* 2 sel kecil bertumpuk — juga SpotlightCard */}
-            <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              <SpotlightCard spotlightColor={rtStatus==="online"?"rgba(34,197,94,.25)":"rgba(250,204,21,.25)"} style={{background:rtStatus==="online"?"linear-gradient(135deg,#F1F8F4,#E8F5E9)":"linear-gradient(135deg,#FFF8F0,#FFF3E0)",borderRadius:14,padding:"12px 14px",boxShadow:"4px 4px 12px rgba(148,163,184,.14), -3px -3px 8px rgba(255,255,255,.7)",border:`1px solid ${rtStatus==="online"?"#C8E6C9":"#FFE0B2"}`,flex:1,display:"flex",alignItems:"center",gap:10}}>
-                <div style={{fontSize:20}}>{rtStatus==="online"?"🟢":"🟡"}</div>
-                <div>
-                  <div style={{fontSize:11,fontWeight:700,color:rtStatus==="online"?C.s:C.w}}>{rtStatus==="online"?"Online":"Offline"}</div>
-                  <div style={{fontSize:9,color:"#5C677D"}}>Cloud Sync</div>
-                </div>
-              </SpotlightCard>
-              <SpotlightCard spotlightColor="rgba(168,85,247,.25)" style={{background:"linear-gradient(135deg,#F5F3FF,#EDE7F6)",borderRadius:14,padding:"12px 14px",boxShadow:"4px 4px 12px rgba(148,163,184,.14), -3px -3px 8px rgba(255,255,255,.7)",border:"1px solid #D1C4E9",flex:1,display:"flex",alignItems:"center",gap:10}}>
-                <div style={{fontSize:20,fontWeight:900,color:"#512DA8"}}><AnimatedNumber value={staff.length}/></div>
-                <div>
-                  <div style={{fontSize:11,fontWeight:700,color:"#512DA8"}}>Staf</div>
-                  <div style={{fontSize:9,color:"#5C677D"}}>Terdaftar</div>
-                </div>
-              </SpotlightCard>
-            </div>
-          </div>
-          </ScrollReveal>
-
-
-          {/* Statistik bulanan (admin + perawat) */}
-          <ScrollReveal delay={120}>
-            <StatistikBulanan ops={ops} archive={archive as any[]}/>
-          </ScrollReveal>
-
           {/* Operasi hari ini ringkas */}
           <Card style={{marginBottom:16}}>
             <SH label="📋 Operasi Hari Ini" color={C.i}/>
@@ -6886,6 +6844,48 @@ export default function App() {
               });
             })()}
           </Card>
+
+          {/* Quick Stats — Bento grid: 1 sel besar (Operasi Hari Ini) + 2 sel kecil bertumpuk */}
+          <ScrollReveal delay={80}>
+          <div style={{display:"grid",gridTemplateColumns:"1.3fr 1fr",gap:12,marginBottom:20}}>
+            {/* Sel besar: Operasi Hari Ini — #2 SpotlightCard (cahaya
+                mengikuti kursor saat hover) */}
+            <GlareHover>
+            <SpotlightCard style={{background:"linear-gradient(135deg,#EFF6FF,#DBEAFE)",borderRadius:18,padding:"20px 18px",boxShadow:"6px 6px 16px rgba(148,163,184,.16), -4px -4px 12px rgba(255,255,255,.7)",border:"1px solid #BFDBFE",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#1565C0",letterSpacing:.5,textTransform:"uppercase",opacity:.8,marginBottom:6}}>
+                {/* #8 DecryptedText: label "teracak lalu terbentuk" saat
+                    pertama muncul — #7 ShinyText: highlight berkilau */}
+                <ShinyText style={{color:"#1565C0"}}><DecryptedText text="Operasi"/></ShinyText>
+              </div>
+              <div style={{fontSize:44,fontWeight:900,color:"#1565C0",lineHeight:1}}><AnimatedNumber value={todayOpsCount}/></div>
+              <div style={{fontSize:12,color:"#3B5A80",marginTop:6,fontWeight:600}}>Terjadwal Hari Ini</div>
+            </SpotlightCard>
+            </GlareHover>
+            {/* 2 sel kecil bertumpuk — juga SpotlightCard */}
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <SpotlightCard spotlightColor={rtStatus==="online"?"rgba(34,197,94,.25)":"rgba(250,204,21,.25)"} style={{background:rtStatus==="online"?"linear-gradient(135deg,#F1F8F4,#E8F5E9)":"linear-gradient(135deg,#FFF8F0,#FFF3E0)",borderRadius:14,padding:"12px 14px",boxShadow:"4px 4px 12px rgba(148,163,184,.14), -3px -3px 8px rgba(255,255,255,.7)",border:`1px solid ${rtStatus==="online"?"#C8E6C9":"#FFE0B2"}`,flex:1,display:"flex",alignItems:"center",gap:10}}>
+                <div style={{fontSize:20}}>{rtStatus==="online"?"🟢":"🟡"}</div>
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,color:rtStatus==="online"?C.s:C.w}}>{rtStatus==="online"?"Online":"Offline"}</div>
+                  <div style={{fontSize:9,color:"#5C677D"}}>Cloud Sync</div>
+                </div>
+              </SpotlightCard>
+              <SpotlightCard spotlightColor="rgba(168,85,247,.25)" style={{background:"linear-gradient(135deg,#F5F3FF,#EDE7F6)",borderRadius:14,padding:"12px 14px",boxShadow:"4px 4px 12px rgba(148,163,184,.14), -3px -3px 8px rgba(255,255,255,.7)",border:"1px solid #D1C4E9",flex:1,display:"flex",alignItems:"center",gap:10}}>
+                <div style={{fontSize:20,fontWeight:900,color:"#512DA8"}}><AnimatedNumber value={staff.length}/></div>
+                <div>
+                  <div style={{fontSize:11,fontWeight:700,color:"#512DA8"}}>Staf</div>
+                  <div style={{fontSize:9,color:"#5C677D"}}>Terdaftar</div>
+                </div>
+              </SpotlightCard>
+            </div>
+          </div>
+          </ScrollReveal>
+
+
+          {/* Statistik bulanan (admin + perawat) */}
+          <ScrollReveal delay={120}>
+            <StatistikBulanan ops={ops} archive={archive as any[]}/>
+          </ScrollReveal>
 
           {/* Quick Links — #4 MagneticButton (tertarik halus ke kursor) +
               #9 TiltCard (kemiringan 3D halus) — SENGAJA hanya di sini
