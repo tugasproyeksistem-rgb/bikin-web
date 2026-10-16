@@ -220,6 +220,7 @@ import { ImportExcel } from "./components/import-excel";
 import { ViewArsip } from "./components/view-arsip";
 import { ViewJadwal } from "./components/view-jadwal";
 import { ViewLaporan } from "./components/view-laporan";
+import { ViewLaporanHarian } from "./components/view-laporan-harian";
 // Catatan: __ocrSelfTest tidak perlu diimpor eksplisit — mengimpor nama lain
 // dari ocr-matching.ts (file yang sama) sudah memicu window.__ocrSelfTest
 // terpasang otomatis saat modul itu dievaluasi.
@@ -6916,6 +6917,7 @@ export default function App() {
       {tab==="jadwal"     && <ViewJadwal ops={ops} setOps={setOps} startEditOp={startEditOp} deleteOp={deleteOp} sendReminder={sendReminder} reqOpId={reqOpId} setReqOpId={setReqOpId} reqText={reqText} setReqText={setReqText} addReq={addReq} delReq={delReq} getPhone={getPhone} setNotifs={setNotifs} showToast={showToast} privacyMode={privacyMode} role={role} upsertOneToSupa={upsertOneToSupa} initialLoading={initialLoading}/>}
       {tab==="daftar"     && <ViewDaftar pendingEditOp={pendingEditOp} clearPendingEditOp={()=>setPendingEditOp(null)} saveOpFn={saveOpFn} autoSaveOcrBatch={autoSaveOcrBatch} staff={staff} setTab={setTab} templates={templates} setTemplates={setTemplates} showToast={showToast}/>}
       {tab==="laporan"    && <ViewLaporan ops={ops} staff={staff} roster={roster} showToast={showToast} role={role} privacyMode={privacyMode}/>}
+      {tab==="laporan_harian" && <ViewLaporanHarian ops={ops} staff={staff} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg}/>}
       {tab==="wa"         && <ViewKirimWA ops={ops} staff={staff} setNotifs={setNotifs} showToast={showToast}/>}
       {tab==="statistik"  && <ViewStatistik ops={ops} archive={archive}/>}
       {tab==="staf"       && <ViewStaf staff={staff} setStaff={setStaff} roster={roster} setRoster={setRoster} showToast={showToast} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} upsertBulkToSupa={upsertBulkToSupa}/>}
