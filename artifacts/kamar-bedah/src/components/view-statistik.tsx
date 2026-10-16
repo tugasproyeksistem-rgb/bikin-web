@@ -9,6 +9,7 @@ import * as XLSX from "xlsx";
 import { C, OT, STS } from "../constants";
 import { fNow, todayDate, sanitizeCellForExcel } from "../utils";
 import { Row, Card, SH, MiniBar } from "./primitives";
+import { StatistikBulanan } from "./statistik-bulanan";
 
 export function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
   const [range, setRange] = useState<"all"|"30"|"90">("all");
@@ -42,7 +43,6 @@ export function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
   // Per surgeon
   const bySurgeon: Record<string,number> = {};
   filtered.forEach((o:any)=>{ if(o.surgeon) bySurgeon[o.surgeon]=(bySurgeon[o.surgeon]||0)+1; });
-  const surgeonData = Object.entries(bySurgeon).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([label,value],i)=>({label,value,color:COLORS[i%COLORS.length]}));
 
   // Per room
   const byRoom: Record<string,number> = {};
@@ -68,7 +68,6 @@ export function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
   // Per anesthesiologist
   const byAnest: Record<string,number> = {};
   filtered.forEach((o:any)=>{ if(o.anesthesiologist) byAnest[o.anesthesiologist]=(byAnest[o.anesthesiologist]||0)+1; });
-  const anestData = Object.entries(byAnest).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([label,value],i)=>({label,value,color:COLORS[i%COLORS.length]}));
 
   // Agregasi Tindakan (procedure)
   const byProcedure: Record<string,number> = {};
@@ -209,6 +208,8 @@ export function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
       </button>
       <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
 
+      <StatistikBulanan ops={ops} archive={archive}/>
+
       {/* Ringkasan */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8,marginBottom:12}}>
         <StatBox label="Total Operasi" value={total} bg={C.pBg} color={C.p}/>
@@ -240,21 +241,7 @@ export function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
         </Card>
       )}
 
-      {/* Per dokter bedah */}
-      {surgeonData.length>0 && (
-        <Card>
-          <SH label="Operasi per Dokter Bedah (Top 8)"/>
-          <MiniBar data={surgeonData}/>
-        </Card>
-      )}
 
-      {/* Per dokter anestesi */}
-      {anestData.length>0 && (
-        <Card>
-          <SH label="Operasi per Dokter Anestesi (Top 6)"/>
-          <MiniBar data={anestData}/>
-        </Card>
-      )}
 
       {/* ── Rekapitulasi Tindakan ── */}
       {procedureData.length>0 && (

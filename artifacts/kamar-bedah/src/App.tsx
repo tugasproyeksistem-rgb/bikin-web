@@ -215,6 +215,7 @@ import { DateTxt } from "./components/date-txt";
 import { ScanFormulir } from "./components/scan-formulir";
 import { ViewKirimWA } from "./components/view-kirim-wa";
 import { ViewStatistik } from "./components/view-statistik";
+import { StatistikBulanan } from "./components/statistik-bulanan";
 import { ViewStaf } from "./components/view-staf";
 import { ImportExcel } from "./components/import-excel";
 import { ViewArsip } from "./components/view-arsip";
@@ -6803,6 +6804,11 @@ export default function App() {
           </div>
           </ScrollReveal>
 
+
+          {/* Statistik bulanan (admin + perawat) */}
+          <ScrollReveal delay={120}>
+            <StatistikBulanan ops={ops} archive={archive as any[]}/>
+          </ScrollReveal>
 
           {/* Operasi hari ini ringkas */}
           <Card style={{marginBottom:16}}>
