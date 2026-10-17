@@ -118,9 +118,10 @@ function Lembar({ l, mask }: { l: LaporanHarian; mask: (s: string) => string }) 
   const kond = (v: string) => (v === "baik" ? "Baik" : v === "tidak" ? "Tidak baik" : "-");
   const baris = (a: string, b: string) => <tr><td style={{ ...td, width: "34%", fontWeight: 700 }}>{a}</td><td style={td}>{b}</td></tr>;
   return (
-    <div style={{ width: 794, boxSizing: "border-box", padding: 28, background: "#fff", color: "#111", fontFamily: "'Times New Roman',Times,serif" }}>
+    <div className="kb-lembar" style={{ width: 794, boxSizing: "border-box", padding: 28, background: "#fff", color: "#111", fontFamily: "'Times New Roman',Times,serif" }}>
+      <style>{".kb-lembar table,.kb-lembar th,.kb-lembar td{font-size:14px !important;font-family:Times New Roman,Times,serif !important}"}</style>
       <div style={{ textAlign: "center", fontWeight: 800, fontSize: 17 }}>LAPORAN HARIAN KAMAR BEDAH</div>
-      <div style={{ textAlign: "center", fontSize: 12, marginBottom: 10 }}>RS Panti Rini</div>
+      <div style={{ textAlign: "center", fontSize: 14, marginBottom: 10 }}>RS Panti Rini</div>
       <table style={{ width: "100%", borderCollapse: "collapse" }}><tbody>
         {baris("Tanggal", tanggalPanjang(l.tanggal))}
         {baris("Shift", SHIFT_LABEL[l.shift])}
@@ -159,7 +160,7 @@ function Lembar({ l, mask }: { l: LaporanHarian; mask: (s: string) => string }) 
         {baris("Ada kejadian?", l.kejadian === "ya" ? "Ya" : "Tidak")}
         {baris("Jika ada, jelaskan", l.kejadian === "ya" ? l.uraian : "-")}
       </tbody></table>
-      <div style={{ display: "flex", gap: 10, marginTop: 22, fontSize: 12, textAlign: "center" }}>
+      <div style={{ display: "flex", gap: 10, marginTop: 22, fontSize: 14, textAlign: "center" }}>
         {[["Petugas Shift Lama", l.lama], ["Petugas Shift Baru", l.baru], ["Mengetahui / Kepala Kamar Bedah", l.kepala]].map(([a, b]) => (
           <div key={a} style={{ flex: 1 }}>
             <div style={{ fontWeight: 700 }}>{a}</div>
@@ -177,6 +178,7 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
   const [now, setNow] = useState<Date>(() => new Date());
   const [laporanList, setLaporanList] = useState<LaporanHarian[]>([]);
   const [pratinjau, setPratinjau] = useState<LaporanHarian | null>(null);
+  const [lihatSaja, setLihatSaja] = useState(false);
   const [busy, setBusy] = useState(false);
   const lembarRef = useRef<HTMLDivElement>(null);
   const [dlMode, setDlMode] = useState<"tanggal" | "bulan" | "tahun">("bulan");
@@ -277,7 +279,7 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
   const keAtasPreview = () => {
     const err = validasi();
     if (err) { showToast("⚠ " + err, C.w); return; }
-    setPratinjau(bangunLaporan());
+    { setLihatSaja(false); setPratinjau(bangunLaporan()); }
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -292,17 +294,35 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
     else showToast("✓ Laporan harian tersimpan", C.s);
     try {
       const folder = (dbxCfg?.path || "/kamarbedah/").replace(/[^/]+$/, "");
-      const ym = l.tanggal.slice(0, 7);
-      const wb = buatWorkbookLaporan(filterLaporan(semua, "bulan", ym));
-      const d = await dropboxUploadExcel(`${folder}LaporanHarian_${ym}.xlsx`, wb);
+      const tgl = l.tanggal;
+      const wb = buatWorkbookLaporan(filterLaporan(semua, "tanggal", tgl));
+      const d = await dropboxUploadExcel(`${folder}LaporanHarian_${tgl}.xlsx`, wb);
       if (!d?.ok) showToast("⚠ Excel ke Dropbox gagal: " + (d?.msg || "error"), C.w);
     } catch { showToast("⚠ Excel ke Dropbox gagal", C.w); }
     AmbilLogMedis("LAPORAN_HARIAN", l.operator, "SIMPAN_LAPORAN_HARIAN",
       `Laporan harian ${l.tanggal} ${SHIFT_LABEL[l.shift]} disimpan`, { id: l.id, shift: l.shift, jumlahOperasi: l.jumlahOperasi });
-    if (res?.ok) { try { localStorage.removeItem(DRAFT_KEY); } catch { /* abaikan */ } }
+    if (res?.ok) {
+      try { localStorage.removeItem(DRAFT_KEY); } catch { /* abaikan */ }
+      const n = new Date();
+      setForm(formAwal(isoLokal(n), shiftDariJam(pad2(n.getHours()) + ":" + pad2(n.getMinutes()), malamAktif)));
+      setLihatSaja(true);
+    }
     setBusy(false);
   };
 
+  const cetak = () => {
+    const el = lembarRef.current;
+    if (!el) { showToast("Lembar belum siap dicetak", C.w); return; }
+    const ifr = document.createElement("iframe");
+    ifr.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+    document.body.appendChild(ifr);
+    const w = ifr.contentWindow;
+    if (!w) { ifr.remove(); return; }
+    w.document.open();
+    w.document.write("<!doctype html><html><head><meta charset='utf-8'><title>Laporan Harian OK</title><style>@page{size:A4;margin:6mm}body{margin:0}.kb-lembar{zoom:0.94}</style></head><body>" + el.innerHTML + "</body></html>");
+    w.document.close();
+    setTimeout(() => { w.focus(); w.print(); setTimeout(() => ifr.remove(), 3000); }, 400);
+  };
   const ambilCanvas = async () => {
     const el = lembarRef.current;
     if (!el) throw new Error("Lembar belum siap");
@@ -392,13 +412,18 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
       <div style={{ paddingBottom: 24 }}>
         <Card>
           <SH label="Preview Laporan Harian OK" />
-          <div style={{ fontSize: 12, color: C.tL, marginBottom: 10 }}>Periksa dulu. Simpan, lalu unduh PDF/JPG atau salin teks untuk dibacakan.</div>
+          {lihatSaja
+            ? <div style={{ fontSize: 14, fontWeight: 700, color: "#166534", background: "#DCFCE7", borderRadius: 10, padding: "10px 12px", marginBottom: 10 }}>✓ Laporan sudah tersimpan. Gunakan Print, PDF, JPG, atau Salin teks.</div>
+            : <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", background: "#DC2626", borderRadius: 10, padding: "14px 12px", marginBottom: 12, textAlign: "center", lineHeight: 1.4 }}>⚠ HARAP DISIMPAN!<div style={{ fontSize: 14, fontWeight: 600, marginTop: 2 }}>Tekan tombol Simpan sebelum keluar dari halaman ini</div></div>}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Btn onClick={simpan} disabled={busy}>💾 Simpan</Btn>
+            {!lihatSaja && <Btn onClick={simpan} disabled={busy}>💾 Simpan</Btn>}
+            <Btn outline onClick={cetak} disabled={busy}>🖨 Print</Btn>
             <Btn outline onClick={unduhPdf} disabled={busy}>⬇ PDF</Btn>
             <Btn outline onClick={unduhJpg} disabled={busy}>⬇ JPG</Btn>
             <Btn outline onClick={salinTeks} disabled={busy}>📋 Salin teks</Btn>
-            <Btn outline onClick={() => setPratinjau(null)} disabled={busy}>← Kembali edit</Btn>
+            {lihatSaja
+              ? <><Btn outline onClick={() => buka(pratinjau)} disabled={busy}>✎ Edit</Btn><Btn outline onClick={() => setPratinjau(null)} disabled={busy}>✕ Tutup</Btn></>
+              : <Btn outline onClick={() => setPratinjau(null)} disabled={busy}>← Kembali edit</Btn>}
           </div>
         </Card>
         <div style={{ overflowX: "auto", marginTop: 12, background: "#E5E7EB", padding: 8, borderRadius: 10 }}>
@@ -539,7 +564,8 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
           <div key={l.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: `1px solid ${C.b}` }}>
             <div style={{ fontSize: 13 }}><b>{fmtTgl(l.tanggal)}</b> • {SHIFT_LABEL[l.shift]} • {l.jumlahOperasi} operasi</div>
             <div style={{ display: "flex", gap: 6 }}>
-              <Btn sm outline onClick={() => buka(l)}>Buka</Btn>
+              <Btn sm outline onClick={() => { setLihatSaja(true); setPratinjau(l); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Buka</Btn>
+              <Btn sm outline onClick={() => { setLihatSaja(true); setPratinjau(l); window.scrollTo({ top: 0 }); setTimeout(cetak, 700); }}>🖨 Print</Btn>
               {role === "admin" && <Btn sm outline color={C.d} onClick={() => hapus(l)}>Hapus</Btn>}
             </div>
           </div>

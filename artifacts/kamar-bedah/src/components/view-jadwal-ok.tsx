@@ -4,7 +4,7 @@
    bisa diedit. Disimpan ke Supabase (kb_jadwal_ok, realtime) dan Excel harian
    ke Dropbox. Unduh per hari / bulan / tahun. Font Times New Roman 14. */
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { C, iS } from "../constants";
 import { maskName } from "../utils";
 import { SUPA_CLIENT, AmbilLogMedis } from "../services/supabase";
@@ -38,6 +38,8 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
   const [genStatus, setGenStatus] = useState<"muat" | "ada" | "kosong">("muat");
   const [form, setForm] = useState<FormJ>({ perawat: KOSONG, baris: [] });
   const [dirty, setDirty] = useState(false);
+  const [lihat, setLihat] = useState<JadwalOK | null>(null); /* lihatHasil */
+  const lembarRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false);
   const [dlMode, setDlMode] = useState<"tanggal" | "bulan" | "tahun">("bulan");
   const [dlTgl, setDlTgl] = useState(hariIni);
@@ -169,6 +171,64 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
       style={{ flex: 1, padding: "8px 10px", borderRadius: 10, border: `1.5px solid ${dlMode === v ? C.p : C.b}`, background: dlMode === v ? C.p : "#FAFBFD", color: dlMode === v ? "#fff" : C.t, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: FONT }}>{l}</button>
   );
 
+  /* ── hasil jadi (Buka dari Riwayat) ── */
+  const cetak = () => {
+    const el = lembarRef.current;
+    if (!el) { showToast("Lembar belum siap dicetak", C.w); return; }
+    const ifr = document.createElement("iframe");
+    ifr.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+    document.body.appendChild(ifr);
+    const w = ifr.contentWindow;
+    if (!w) { ifr.remove(); return; }
+    w.document.open();
+    w.document.write("<!doctype html><html><head><meta charset='utf-8'><title>Jadwal Operasi Kamar Bedah</title><style>@page{size:A4 landscape;margin:6mm}body{margin:0}.kb-lembar{zoom:0.74}</style></head><body>" + el.innerHTML + "</body></html>");
+    w.document.close();
+    setTimeout(() => { w.focus(); w.print(); setTimeout(() => ifr.remove(), 3000); }, 400);
+  };
+  if (lihat) {
+    const L = lihat;
+    const hth: React.CSSProperties = { border: "1px solid #111", padding: "6px 8px", fontSize: 14, fontWeight: 700, textAlign: "center", background: "#EEEEEE", fontFamily: FONT };
+    const htd: React.CSSProperties = { border: "1px solid #111", padding: "6px 8px", fontSize: 14, verticalAlign: "top", fontFamily: FONT, minHeight: 28, height: 30 };
+    const jumlah = Math.max(10, L.baris.length);
+    const p = { ...KOSONG, ...(L.perawat || {}) };
+    const barisJaga: [string, string][] = [["PERAWAT JAGA PAGI", p.pagi], ["PG", p.pg], ["SORE", p.sore], ["SG", p.sg], ["CUTI (T)", p.cuti]];
+    return (
+      <div style={{ paddingBottom: 24, fontFamily: FONT, fontSize: 14 }}>
+        <Card>
+          <SH label="Hasil Jadwal Operasi" />
+          <div style={{ fontWeight: 700, marginBottom: 10 }}>{tanggalPanjang(L.tanggal)}</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Btn onClick={cetak}>🖨 Print</Btn>
+            <Btn outline onClick={() => { setLihat(null); gantiTanggal(L.tanggal); window.scrollTo({ top: 0, behavior: "smooth" }); }}>✎ Edit</Btn>
+            <Btn outline onClick={() => setLihat(null)}>✕ Tutup</Btn>
+          </div>
+        </Card>
+        <div style={{ overflowX: "auto", marginTop: 12, background: "#E5E7EB", padding: 8, borderRadius: 10 }}>
+          <div ref={lembarRef} style={{ width: 1400 }}>
+            <div className="kb-lembar" style={{ width: 1400, boxSizing: "border-box", padding: 28, background: "#fff", color: "#111", fontFamily: "'Times New Roman',Times,serif", fontSize: 14 }}>
+              <div style={{ textAlign: "center", fontWeight: 800, fontSize: 18 }}>JADWAL OPERASI KAMAR BEDAH</div>
+              <div style={{ textAlign: "center", fontWeight: 700, marginBottom: 10 }}>{tanggalPanjang(L.tanggal)}</div>
+              {barisJaga.map(([a, b]) => <div key={a} style={{ marginBottom: 3 }}><b>{a} :</b> {b}</div>)}
+              <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
+                <thead><tr><th style={hth}>TANGGAL</th>{KOLOM.map((k) => <th key={k.k} style={hth}>{k.l}</th>)}</tr></thead>
+                <tbody>
+                  {Array.from({ length: jumlah }).map((_, i) => {
+                    const b: any = L.baris[i];
+                    return (
+                      <tr key={i}>
+                        <td style={htd}>{b ? fmtTgl(L.tanggal) : ""}</td>
+                        {KOLOM.map((k) => <td key={k.k} style={htd}>{b ? (k.k === "pasien" ? maskName(String(b.pasien || ""), privacyMode) : String(b[k.k] ?? "")) : ""}</td>)}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div style={{ paddingBottom: 24, fontFamily: FONT, fontSize: 14 }}>
       <Card>
@@ -242,7 +302,8 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
           <div key={l.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: `1px solid ${C.b}` }}>
             <div><b>{fmtTgl(l.tanggal)}</b> • {l.hari} • {l.baris.length} baris</div>
             <div style={{ display: "flex", gap: 6 }}>
-              <Btn sm outline onClick={() => gantiTanggal(l.tanggal)}>Buka</Btn>
+              <Btn sm outline onClick={() => { setLihat(l); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Buka</Btn>
+              <Btn sm outline onClick={() => { setLihat(l); window.scrollTo({ top: 0 }); setTimeout(cetak, 700); }}>🖨 Print</Btn>
               {role === "admin" && <Btn sm outline color={C.d} onClick={() => hapus(l)}>Hapus</Btn>}
             </div>
           </div>
