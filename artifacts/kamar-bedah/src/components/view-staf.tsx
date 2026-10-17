@@ -7,6 +7,7 @@
 import { useState, useRef } from "react";
 import * as XLSX from "xlsx";
 import type { ViewStafProps } from "../types";
+import { UploadJadwalPerawat } from "./upload-jadwal-perawat";
 import { C, ST, iS } from "../constants";
 import { downloadBlob, parseCSV, sanitize, normalizePhone62, isValidPhone62, normalizeStaffType, toISODateStrict, gId, todayDate, tmrwDate, fD } from "../utils";
 import { AmbilLogMedis } from "../services/supabase";
@@ -245,6 +246,7 @@ export function ViewStaf({staff,setStaff,roster,setRoster,showToast,upsertOneToS
           </div>
         )}
       </Card>
+      <UploadJadwalPerawat showToast={showToast} upsertOneToSupa={upsertOneToSupa}/>
       {show && (
         <Card hi="#00897B66">
           <div style={{fontSize:14,fontWeight:700,color:C.p,marginBottom:14}}>{editing?"Edit Staf":"Tambah Staf Baru"}</div>
