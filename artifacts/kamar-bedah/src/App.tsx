@@ -604,12 +604,32 @@ import { ViewJadwalOK } from "./components/view-jadwal-ok";
 
 /* supabaseBackup & supabaseRestore kini menerima SUPA_CLIENT sebagai parameter
    agar dapat digunakan sebelum modul App selesai di-mount. */
+/* Tiga tabel yang tidak ada di state App: dibaca langsung dari Supabase saat backup.
+   Kalau satu tabel gagal dibaca, field-nya dihilangkan (bukan dikirim kosong). */
+async function ambilDataTabelBaru(): Promise<Record<string, any[]>> {
+  const baca = async (tabel: string): Promise<any[] | null> => {
+    try {
+      const r: any = await SUPA_CLIENT.from(tabel).select("data");
+      if (r.error) return null;
+      return (r.data || []).map((x: any) => x.data).filter(Boolean);
+    } catch { return null; }
+  };
+  const [laporanHarian, jadwalOk, jadwalPerawat] = await Promise.all([
+    baca("kb_laporan_harian"), baca("kb_jadwal_ok"), baca("kb_jadwal_perawat"),
+  ]);
+  const hasil: Record<string, any[]> = {};
+  if (laporanHarian) hasil.laporanHarian = laporanHarian;
+  if (jadwalOk) hasil.jadwalOk = jadwalOk;
+  if (jadwalPerawat) hasil.jadwalPerawat = jadwalPerawat;
+  return hasil;
+}
+
 async function supabaseBackup(_cfg: SupabaseConfig, data: any, client: any): Promise<{ok: boolean; msg: string}> {
   try {
     /* Pengaman: jangan simpan backup kalau data lokal masih kosong
        (misal browser/perangkat baru yang datanya belum termuat). */
     const _d: any = data || {};
-    if(!(_d.ops?.length) && !(_d.staff?.length) && !(_d.roster?.length) && !(_d.lemburPegawai?.length))
+    if(!(_d.ops?.length) && !(_d.staff?.length))
       return {ok:false, msg:"Backup dibatalkan: data lokal masih kosong (belum termuat)"};
     const payload = { created_at: new Date().toISOString(), data: JSON.stringify(data) };
     const {error} = await client.from("kamar_bedah_backup").insert(payload);
@@ -5274,7 +5294,7 @@ export default function App() {
     if(!hasSupa && !hasDbx) return;
     if(dualRtRef.current) clearTimeout(dualRtRef.current);
     dualRtRef.current = setTimeout(async()=>{
-      const data = {exportedAt:fNow(), ...latestDataRef.current};
+      const data = {exportedAt:fNow(), ...latestDataRef.current, ...(await ambilDataTabelBaru())};
       const tasks: Promise<any>[] = [];
       if(hasSupa) tasks.push(supabaseBackup(supaCfg, data, SUPA_CLIENT).then(r=>{ if(r.ok) setSupaCfg(p=>({...p,lastBackup:fNow()})); }));
       if(hasDbx)  tasks.push(dropboxUpload(dbxCfg, data).then(r=>{ if(r.ok) setDbxCfg(p=>({...p,lastBackup:fNow()})); }));
@@ -5934,7 +5954,7 @@ export default function App() {
     const ms = supaCfg.backupInterval * 60 * 1000;
     autoBackupRef.current = setInterval(async ()=>{
       const d = latestDataRef.current;
-      const data = {exportedAt:fNow(), ...d};
+      const data = {exportedAt:fNow(), ...d, ...(await ambilDataTabelBaru())};
       const res = await supabaseBackup(supaCfg, data, SUPA_CLIENT);
       if(res.ok) setSupaCfg(p=>({...p,lastBackup:fNow()}));
     }, ms);
@@ -6054,7 +6074,7 @@ export default function App() {
       const twoYearsAgo = new Date(); twoYearsAgo.setFullYear(twoYearsAgo.getFullYear()-2);
       await SUPA_CLIENT.from("kamar_bedah_backup").delete().lt("created_at", twoYearsAgo.toISOString());
     }catch{ /* auto-delete non-critical */ }
-    const data = {exportedAt:fNow(), ...latestDataRef.current};
+    const data = {exportedAt:fNow(), ...latestDataRef.current, ...(await ambilDataTabelBaru())};
     const res = await supabaseBackup(supaCfg, data, SUPA_CLIENT);
     setSupaStatus(res);
     if(res.ok) {
@@ -6148,7 +6168,7 @@ export default function App() {
     setDbxBacking(true); setDbxStatus(null);
     AmbilLogMedis("LAPORAN_BACKUP","Sistem","BACKUP_DROPBOX_MULAI","Backup manual ke Dropbox dimulai",{path:dbxCfg.path});
     const {ops:o, archive:ar, notifs:nf, lemburPegawai:lp, lemburData:ld, monitoringEntries:me, monitoringCfg:mc} = latestDataRef.current;
-    const data = {ops:o, archive:ar, notifs:nf, lemburPegawai:lp, lemburData:ld, monitoringEntries:me, monitoringCfg:mc};
+    const data = {ops:o, archive:ar, notifs:nf, lemburPegawai:lp, lemburData:ld, monitoringEntries:me, monitoringCfg:mc, ...(await ambilDataTabelBaru())};
     const res = await dropboxUpload(dbxCfg, data);
     setDbxStatus(res);
     if(res.ok) {
