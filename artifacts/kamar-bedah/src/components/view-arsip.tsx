@@ -262,8 +262,8 @@ export function ViewArsip(props: ViewArsipProps) {
         const cfg2:any = raw.monitoringCfg||raw.data?.monitoringCfg||monitoringCfg;
         const filtered=me.filter((e:any)=>e.tanggal?.startsWith(month));
         if(!filtered.length){showToast("Tidak ada data monitoring "+ymLabel(month)+" di Supabase",C.w);return;}
-        const h=["Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"];
-        const rows=filtered.map((e:any)=>[e.tanggal||"",e.jam||"",e.suhu??"",e.kelembaban??"",monIsOK(e.suhu,e.kelembaban,cfg2)?"SESUAI":"TIDAK SESUAI",e.petugas||""]);
+        const h=["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"];
+        const rows=filtered.map((e:any)=>[e.ruang||"",e.tanggal||"",e.jam||"",e.suhu??"",e.kelembaban??"",monIsOK(e.suhu,e.kelembaban,cfg2)?"SESUAI":"TIDAK SESUAI",e.petugas||""]);
         buildAndDownloadXlsx("Monitoring "+ymLabel(month),h,rows,`Monitoring_Supa_${month}.xlsx`);
         showToast(`✓ ${rows.length} data monitoring ${ymLabel(month)} dari Supabase`,C.s);
       }
@@ -307,8 +307,8 @@ export function ViewArsip(props: ViewArsipProps) {
         const cfg2:any = raw.monitoringCfg||raw.data?.monitoringCfg||monitoringCfg;
         const filtered=me.filter((e:any)=>e.tanggal?.startsWith(month));
         if(!filtered.length){showToast("Tidak ada data monitoring "+ymLabel(month)+" di Dropbox",C.w);return;}
-        const h=["Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"];
-        const rows=filtered.map((e:any)=>[e.tanggal||"",e.jam||"",e.suhu??"",e.kelembaban??"",monIsOK(e.suhu,e.kelembaban,cfg2)?"SESUAI":"TIDAK SESUAI",e.petugas||""]);
+        const h=["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"];
+        const rows=filtered.map((e:any)=>[e.ruang||"",e.tanggal||"",e.jam||"",e.suhu??"",e.kelembaban??"",monIsOK(e.suhu,e.kelembaban,cfg2)?"SESUAI":"TIDAK SESUAI",e.petugas||""]);
         buildAndDownloadXlsx("Monitoring "+ymLabel(month),h,rows,`Monitoring_Dbx_${month}.xlsx`);
         showToast(`✓ ${rows.length} data monitoring ${ymLabel(month)} dari Dropbox`,C.s);
       }
