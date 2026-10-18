@@ -36,6 +36,9 @@ export async function callDbxProxy(body: Record<string, any>): Promise<{ok:boole
 }
 
 export async function dropboxUpload(cfg: DropboxConfig, data: any): Promise<{ok:boolean;msg:string}> {
+  const d: any = data || {};
+  if(!(d.ops?.length) && !(d.staff?.length) && !(d.archive?.length))
+    return {ok:false, msg:"Backup Dropbox dibatalkan: data lokal masih kosong (belum termuat)"};
   return callDbxProxy({action:"backup", path:cfg.path, payload:data});
 }
 
