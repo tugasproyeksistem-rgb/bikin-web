@@ -131,7 +131,7 @@ export interface ViewArsipProps {
     onRestoreOps: () => Promise<void>;
     onRestoreLembur: () => Promise<void>;
     onRestoreMonitoring: () => Promise<void>;
-    onRestoreAll: () => Promise<void>;
+    onRestoreAll: () => Promise<void>; onRestoreTabelBaru: () => Promise<void>;
   };
   dropbox: {
     cfg: DropboxConfig; setCfg: React.Dispatch<React.SetStateAction<DropboxConfig>>;

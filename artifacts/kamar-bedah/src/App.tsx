@@ -6126,6 +6126,42 @@ export default function App() {
     setSupaBU(false);
   }, [supaCfg]);
 
+    /* Pulihkan Laporan Harian OK, Jadwal & Peserta, Jadwal Perawat dari backup Supabase terakhir.
+     Hanya menambahkan baris yang HILANG; baris yang sudah ada tidak pernah ditimpa. */
+  const handleSupaRestoreTabelBaru = useCallback(async () => {
+    if(!window.confirm("Pulihkan Laporan Harian OK, Jadwal & Peserta, dan Jadwal Perawat dari backup Supabase terakhir?\nHanya data yang hilang yang dikembalikan. Data yang sudah ada tidak ditimpa.")) return;
+    setSupaBU(true); setSupaStatus(null);
+    const res = await supabaseRestore(supaCfg, SUPA_CLIENT);
+    setSupaStatus({ok:res.ok, msg:res.msg});
+    if(!(res.ok && res.data)){ showToast(res.msg, C.d); setSupaBU(false); return; }
+    const peta: [string,string,string][] = [
+      ["laporanHarian","kb_laporan_harian","Laporan"],
+      ["jadwalOk","kb_jadwal_ok","Jadwal"],
+      ["jadwalPerawat","kb_jadwal_perawat","Jadwal perawat"],
+    ];
+    const ringkas: string[] = [];
+    for(const [field, tabel, label] of peta){
+      const baris = res.data[field];
+      if(!Array.isArray(baris)){ ringkas.push(`${label}: tidak ada di backup`); continue; }
+      const ada = new Set<string>();
+      let gagalBaca = false;
+      for(let dari=0;;dari+=1000){
+        const r:any = await SUPA_CLIENT.from(tabel).select("id").range(dari, dari+999);
+        if(r.error){ gagalBaca = true; break; }
+        (r.data||[]).forEach((x:any)=>ada.add(String(x.id)));
+        if((r.data||[]).length<1000) break;
+      }
+      if(gagalBaca){ ringkas.push(`${label}: gagal membaca tabel, dilewati`); continue; }
+      const hilang = baris.filter((b:any)=>b && b.id && !ada.has(String(b.id)));
+      if(!hilang.length){ ringkas.push(`${label}: 0 dikembalikan`); continue; }
+      const w = await upsertBulkToSupa(tabel, hilang);
+      ringkas.push(w.ok ? `${label}: ${hilang.length} dikembalikan` : `${label}: gagal (${w.error})`);
+    }
+    showToast("✓ "+ringkas.join(" • "), "#3ECF8E");
+    setSupaBU(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supaCfg]);
+
   const handleSupaRestoreAll = useCallback(async () => {
     if(!window.confirm("Pulihkan SEMUA data dari Supabase?\nOperasi, Lembur, dan Monitoring lokal akan ditimpa dengan data dari Supabase.")) return;
     setSupaBU(true); setSupaStatus(null);
@@ -6960,7 +6996,7 @@ export default function App() {
         supabase={{
           cfg: supaCfg, setCfg: setSupaCfg, status: supaStatus, backingUp: supaBackingUp,
           onBackup: handleSupaBackup, onRestoreOps: handleSupaRestoreOps, onRestoreLembur: handleSupaRestoreLembur,
-          onRestoreMonitoring: handleSupaRestoreMonitoring, onRestoreAll: handleSupaRestoreAll,
+          onRestoreMonitoring: handleSupaRestoreMonitoring, onRestoreAll: handleSupaRestoreAll, onRestoreTabelBaru: handleSupaRestoreTabelBaru,
         }}
         dropbox={{
           cfg: dbxCfg, setCfg: setDbxCfg, status: dbxStatus, backingUp: dbxBacking,

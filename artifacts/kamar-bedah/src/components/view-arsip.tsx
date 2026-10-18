@@ -24,7 +24,7 @@ export function ViewArsip(props: ViewArsipProps) {
   const { mode: privacyMode, setMode: setPrivacyMode } = props.privacy;
   const { cfg: supaCfg, setCfg: setSupaCfg, status: supaStatus, backingUp: supaBackingUp,
           onBackup: onSupaBackup, onRestoreOps: onSupaRestoreOps, onRestoreLembur: onSupaRestoreLembur,
-          onRestoreMonitoring: onSupaRestoreMonitoring, onRestoreAll: onSupaRestoreAll } = props.supabase;
+          onRestoreMonitoring: onSupaRestoreMonitoring, onRestoreAll: onSupaRestoreAll, onRestoreTabelBaru: onSupaRestoreTabelBaru } = props.supabase;
   const { cfg: dbxCfg, setCfg: setDbxCfg, status: dbxStatus, backingUp: dbxBacking,
           onBackup: onDbxBackup, onRestoreOps: onDbxRestoreOps, onRestoreLembur: onDbxRestoreLembur,
           onBackupOpsXls: onDbxBackupOpsXls, onBackupLemburXls: onDbxBackupLemburXls,
@@ -638,6 +638,9 @@ export function ViewArsip(props: ViewArsipProps) {
               </div>
               <Btn full color="#065F46" onClick={onSupaRestoreAll} disabled={supaBackingUp} style={{background:"#065F46",color:"#fff",border:"none",width:"100%"}}>
                 ♻ Pulihkan SEMUA Data dari Supabase
+              </Btn>
+              <Btn full outline color="#065F46" onClick={onSupaRestoreTabelBaru} disabled={supaBackingUp} style={{marginTop:8,width:"100%"}}>
+                📋 Pulihkan Laporan & Jadwal (hanya yang hilang)
               </Btn>
             </div>
           </Card>
