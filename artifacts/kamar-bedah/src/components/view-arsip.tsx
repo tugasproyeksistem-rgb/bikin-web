@@ -1,3 +1,4 @@
+import { KOLOM_TAMBAHAN_OPS, nilaiTambahanOps } from "../utils/operasi-excel";
 /* src/components/view-arsip.tsx
    Tab "Arsip" — log notifikasi, arsip harian, download data per bulan
    (lokal/Supabase/Dropbox), import Excel, audit trail, dan pengaturan
@@ -58,8 +59,8 @@ export function ViewArsip(props: ViewArsipProps) {
   const downloadArsipExcel = () => {
     if(arsipTipe==="laporan_operasi"||arsipTipe==="jadwal_operasi") {
       if(!filteredOpsArsip.length){showToast("Tidak ada data operasi untuk periode ini",C.w);return;}
-      const h = ["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status"];
-      const rows = filteredOpsArsip.map((o:any,i:number)=>[String(i+1),o.date,o.time,o.patient||"",o.age||"",o.rm||"",o.opType||"elektif",o.diagnosis||"",o.procedure||"",o.room||"",o.surgeon||"",o.anesthesiologist||"",o.assistantNurse||"",o.circulatingNurse||"",o.anesthesiaNurse||"",o.onloopNurse||"",o.rrKatim||"",o.status||""]);
+      const h = ["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status",...KOLOM_TAMBAHAN_OPS];
+      const rows = filteredOpsArsip.map((o:any,i:number)=>[String(i+1),o.date,o.time,o.patient||"",o.age||"",o.rm||"",o.opType||"elektif",o.diagnosis||"",o.procedure||"",o.room||"",o.surgeon||"",o.anesthesiologist||"",o.assistantNurse||"",o.circulatingNurse||"",o.anesthesiaNurse||"",o.onloopNurse||"",o.rrKatim||"",o.status||"",...nilaiTambahanOps(o)]);
       const ws = XLSX.utils.aoa_to_sheet([h,...rows]);
       ws["!cols"]=[{wch:4},{wch:12},{wch:7},{wch:22},{wch:5},{wch:12},{wch:10},{wch:28},{wch:28},{wch:14},{wch:22},{wch:22},{wch:22},{wch:22},{wch:18},{wch:18},{wch:16},{wch:12}];
       const wb = XLSX.utils.book_new();
@@ -201,9 +202,9 @@ export function ViewArsip(props: ViewArsipProps) {
     if(!month){showToast("Pilih bulan terlebih dahulu",C.w);return;}
     if(type==="ops"){
       const rows = ops.filter((o:any)=>o.date?.startsWith(month))
-        .map((o:any,i:number)=>[i+1,o.date||"",o.time||"",o.patient||"",o.age||"",o.rm||"",o.opType||"",o.diagnosis||"",o.procedure||"",o.room||"",o.surgeon||"",o.anesthesiologist||"",o.assistantNurse||"",o.circulatingNurse||"",o.anesthesiaNurse||"",o.onloopNurse||"",o.rrKatim||"",o.status||""]);
+        .map((o:any,i:number)=>[i+1,o.date||"",o.time||"",o.patient||"",o.age||"",o.rm||"",o.opType||"",o.diagnosis||"",o.procedure||"",o.room||"",o.surgeon||"",o.anesthesiologist||"",o.assistantNurse||"",o.circulatingNurse||"",o.anesthesiaNurse||"",o.onloopNurse||"",o.rrKatim||"",o.status||"",...nilaiTambahanOps(o)]);
       if(!rows.length){showToast("Tidak ada data operasi "+ymLabel(month),C.w);return;}
-      const h=["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status"];
+      const h=["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status",...KOLOM_TAMBAHAN_OPS];
       buildAndDownloadXlsx("Operasi "+ymLabel(month),h,rows,`Operasi_${month}.xlsx`);
       showToast(`✓ Excel Operasi ${ymLabel(month)} diunduh (${rows.length} data)`,C.s);
     } else if(type==="lembur"){
@@ -238,9 +239,9 @@ export function ViewArsip(props: ViewArsipProps) {
       if(type==="ops"){
         const allOps:any[] = raw.ops||raw.data?.ops||[];
         const rows = allOps.filter((o:any)=>o.date?.startsWith(month))
-          .map((o:any,i:number)=>[i+1,o.date||"",o.time||"",o.patient||"",o.age||"",o.rm||"",o.opType||"",o.diagnosis||"",o.procedure||"",o.room||"",o.surgeon||"",o.anesthesiologist||"",o.assistantNurse||"",o.circulatingNurse||"",o.anesthesiaNurse||"",o.onloopNurse||"",o.rrKatim||"",o.status||""]);
+          .map((o:any,i:number)=>[i+1,o.date||"",o.time||"",o.patient||"",o.age||"",o.rm||"",o.opType||"",o.diagnosis||"",o.procedure||"",o.room||"",o.surgeon||"",o.anesthesiologist||"",o.assistantNurse||"",o.circulatingNurse||"",o.anesthesiaNurse||"",o.onloopNurse||"",o.rrKatim||"",o.status||"",...nilaiTambahanOps(o)]);
         if(!rows.length){showToast("Tidak ada data operasi "+ymLabel(month)+" di Supabase",C.w);return;}
-        const h=["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status"];
+        const h=["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status",...KOLOM_TAMBAHAN_OPS];
         buildAndDownloadXlsx("Operasi "+ymLabel(month),h,rows,`Operasi_Supa_${month}.xlsx`);
         showToast(`✓ ${rows.length} data operasi ${ymLabel(month)} dari Supabase`,C.s);
       } else if(type==="lembur"){
@@ -283,9 +284,9 @@ export function ViewArsip(props: ViewArsipProps) {
       if(type==="ops"){
         const allOps:any[] = raw.ops||raw.data?.ops||[];
         const rows = allOps.filter((o:any)=>o.date?.startsWith(month))
-          .map((o:any,i:number)=>[i+1,o.date||"",o.time||"",o.patient||"",o.age||"",o.rm||"",o.opType||"",o.diagnosis||"",o.procedure||"",o.room||"",o.surgeon||"",o.anesthesiologist||"",o.assistantNurse||"",o.circulatingNurse||"",o.anesthesiaNurse||"",o.onloopNurse||"",o.rrKatim||"",o.status||""]);
+          .map((o:any,i:number)=>[i+1,o.date||"",o.time||"",o.patient||"",o.age||"",o.rm||"",o.opType||"",o.diagnosis||"",o.procedure||"",o.room||"",o.surgeon||"",o.anesthesiologist||"",o.assistantNurse||"",o.circulatingNurse||"",o.anesthesiaNurse||"",o.onloopNurse||"",o.rrKatim||"",o.status||"",...nilaiTambahanOps(o)]);
         if(!rows.length){showToast("Tidak ada data operasi "+ymLabel(month)+" di Dropbox",C.w);return;}
-        const h=["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status"];
+        const h=["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status",...KOLOM_TAMBAHAN_OPS];
         buildAndDownloadXlsx("Operasi "+ymLabel(month),h,rows,`Operasi_Dbx_${month}.xlsx`);
         showToast(`✓ ${rows.length} data operasi ${ymLabel(month)} dari Dropbox`,C.s);
       } else if(type==="lembur"){

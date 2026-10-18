@@ -1,3 +1,4 @@
+import { KOLOM_TAMBAHAN_OPS, nilaiTambahanOps } from "./utils/operasi-excel";
 /*
  * SISTEM KOORDINASI KAMAR BEDAH — RS Panti Rini
  * Versi FINAL · Zero Bug · Zero Demo Data · Semua Real
@@ -5300,8 +5301,8 @@ export default function App() {
       const stamp = toLocalISODate(new Date());
       /* — Operasi Excel — */
       const wbOps = XLSX.utils.book_new();
-      const h = ["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status","Dibuat"];
-      const rows = [...currentOps].sort((a:any,b:any)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map((o:any,i:number)=>[i+1,o.date,o.time,sanitizeCellForExcel(o.patient||""),o.age||"",o.rm||"",o.opType||"",sanitizeCellForExcel(o.diagnosis||""),sanitizeCellForExcel(o.procedure||""),o.room||"",sanitizeCellForExcel(o.surgeon||""),sanitizeCellForExcel(o.anesthesiologist||""),sanitizeCellForExcel(o.assistantNurse||""),sanitizeCellForExcel(o.circulatingNurse||""),sanitizeCellForExcel(o.anesthesiaNurse||""),sanitizeCellForExcel(o.onloopNurse||""),sanitizeCellForExcel(o.rrKatim||""),o.status||"",o.createdAt||""]);
+      const h = ["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status","Dibuat",...KOLOM_TAMBAHAN_OPS];
+      const rows = [...currentOps].sort((a:any,b:any)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map((o:any,i:number)=>[i+1,o.date,o.time,sanitizeCellForExcel(o.patient||""),o.age||"",o.rm||"",o.opType||"",sanitizeCellForExcel(o.diagnosis||""),sanitizeCellForExcel(o.procedure||""),o.room||"",sanitizeCellForExcel(o.surgeon||""),sanitizeCellForExcel(o.anesthesiologist||""),sanitizeCellForExcel(o.assistantNurse||""),sanitizeCellForExcel(o.circulatingNurse||""),sanitizeCellForExcel(o.anesthesiaNurse||""),sanitizeCellForExcel(o.onloopNurse||""),sanitizeCellForExcel(o.rrKatim||""),o.status||"",o.createdAt||"",...nilaiTambahanOps(o)]);
       const wsOps = XLSX.utils.aoa_to_sheet([h,...rows]);
       XLSX.utils.book_append_sheet(wbOps, wsOps, "Jadwal Operasi");
       const resOps = await dropboxUploadExcel(`${folder}Auto_Operasi_${stamp}.xlsx`, wbOps);
@@ -6165,10 +6166,10 @@ export default function App() {
     setDbxBacking(true); setDbxStatus(null);
     const {ops:o} = latestDataRef.current;
     const wb = XLSX.utils.book_new();
-    const h = ["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status","Dibuat"];
+    const h = ["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status","Dibuat",...KOLOM_TAMBAHAN_OPS];
     /* FIX AUDIT #33 (HIGH, lanjutan): sanitasi konsisten dengan export lain agar
        tidak jadi celah formula injection yang luput di path backup manual ini. */
-    const rows = [...o].sort((a:any,b:any)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map((op:any,i:number)=>[i+1,op.date,op.time,sanitizeCellForExcel(op.patient||""),op.age||"",op.rm||"",op.opType||"",sanitizeCellForExcel(op.diagnosis||""),sanitizeCellForExcel(op.procedure||""),op.room||"",sanitizeCellForExcel(op.surgeon||""),sanitizeCellForExcel(op.anesthesiologist||""),sanitizeCellForExcel(op.assistantNurse||""),sanitizeCellForExcel(op.circulatingNurse||""),sanitizeCellForExcel(op.anesthesiaNurse||""),sanitizeCellForExcel(op.onloopNurse||""),sanitizeCellForExcel(op.rrKatim||""),op.status||"",op.createdAt||""]);
+    const rows = [...o].sort((a:any,b:any)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map((op:any,i:number)=>[i+1,op.date,op.time,sanitizeCellForExcel(op.patient||""),op.age||"",op.rm||"",op.opType||"",sanitizeCellForExcel(op.diagnosis||""),sanitizeCellForExcel(op.procedure||""),op.room||"",sanitizeCellForExcel(op.surgeon||""),sanitizeCellForExcel(op.anesthesiologist||""),sanitizeCellForExcel(op.assistantNurse||""),sanitizeCellForExcel(op.circulatingNurse||""),sanitizeCellForExcel(op.anesthesiaNurse||""),sanitizeCellForExcel(op.onloopNurse||""),sanitizeCellForExcel(op.rrKatim||""),op.status||"",op.createdAt||"",...nilaiTambahanOps(op)]);
     const ws = XLSX.utils.aoa_to_sheet([h,...rows]);
     ws["!cols"]=[{wch:4},{wch:12},{wch:7},{wch:22},{wch:5},{wch:10},{wch:9},{wch:26},{wch:26},{wch:14},{wch:22},{wch:22},{wch:20},{wch:20},{wch:16},{wch:16},{wch:14},{wch:12},{wch:20}];
     XLSX.utils.book_append_sheet(wb, ws, "Jadwal Operasi");
