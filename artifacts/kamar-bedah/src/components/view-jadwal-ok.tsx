@@ -8,7 +8,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { C, iS } from "../constants";
 import { maskName } from "../utils";
 import { SUPA_CLIENT, AmbilLogMedis } from "../services/supabase";
-import { callDbxProxy } from "../services/dropbox";
+import { dropboxUploadBytes } from "../services/dropbox";
 import { Card, SH, Btn } from "./primitives";
 import { isoLokal, fmtTgl, namaHari, tanggalPanjang } from "../utils/laporan-harian";
 import type { JadwalOK, BarisOK, PerawatJaga } from "../utils/jadwal-ok";
@@ -130,8 +130,8 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
     showToast("✓ Jadwal operasi tersimpan", C.s);
     try {
       const folder = (dbxCfg?.path || "/kamarbedah/").replace(/[^/]+$/, "");
-      const base64 = await workbookKeBase64(buatWorkbookJadwalOK([data]));
-      const d = await callDbxProxy({ action: "upload_excel", path: `${folder}JadwalOK_${data.tanggal}.xlsx`, base64 });
+      const buf = await buatWorkbookJadwalOK([data]).xlsx.writeBuffer();
+      const d = await dropboxUploadBytes(`${folder}JadwalOK_${data.tanggal}.xlsx`, buf as unknown as ArrayBuffer);
       if (!d.ok) showToast("⚠ Excel ke Dropbox gagal: " + d.msg, C.w);
     } catch { showToast("⚠ Excel ke Dropbox gagal", C.w); }
     AmbilLogMedis("JADWAL_OK", data.operator, "SIMPAN_JADWAL_OK", `Jadwal operasi ${data.tanggal} disimpan`, { id: data.id, jumlahBaris: data.baris.length });

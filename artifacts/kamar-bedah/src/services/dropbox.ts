@@ -44,22 +44,23 @@ export async function dropboxDownload(cfg: DropboxConfig): Promise<{ok:boolean;d
 }
 
 /* Upload Excel per-kategori ke Dropbox (lewat proxy — payload dikirim base64) */
+/* SATU-SATUNYA jalur upload Excel ke Dropbox: semua tab memakai fungsi ini.
+   Menerima ArrayBuffer atau Uint8Array (SheetJS maupun ExcelJS), menolak file kosong. */
+export async function dropboxUploadBytes(path: string, data: ArrayBuffer | Uint8Array): Promise<{ok:boolean;msg:string}> {
+  try {
+    const u8 = data instanceof Uint8Array ? data : new Uint8Array(data);
+    if (!u8.length) return {ok:false, msg:"File Excel kosong, tidak diunggah ke Dropbox"};
+    const CHUNK = 8192;
+    let bin = "";
+    for (let i = 0; i < u8.length; i += CHUNK) bin += String.fromCharCode(...u8.subarray(i, i + CHUNK));
+    return callDbxProxy({action:"upload_excel", path, base64: btoa(bin)});
+  } catch(e:any){ return {ok:false, msg:"Gagal menyiapkan file Excel: "+(e?.message||"unknown error")}; }
+}
+
+/* Workbook SheetJS (Laporan Harian, Monitoring, dll.) */
 export async function dropboxUploadExcel(path: string, wb: any): Promise<{ok:boolean;msg:string}> {
   try {
-    const buf = XLSX.write(wb, {type:"array", bookType:"xlsx"}) as Uint8Array;
-    /* FIX AUDIT #13 (MEDIUM — O(n²) Base64 Encoding):
-       String concatenation per-byte dalam loop menciptakan O(n²) alokasi memori
-       karena setiap `+=` membuat string baru (JavaScript string immutable).
-       Untuk file Excel 500+ baris ini bisa menyebabkan browser freeze.
-       Fix: chunk-based approach — proses 8192 byte sekaligus menggunakan
-       spread operator + String.fromCharCode(), lalu gabungkan chunk-nya.
-       Ini mempertahankan keamanan btoa() sambil mengurangi alokasi ke O(n). */
-    const CHUNK = 8192;
-    let binary = "";
-    for (let i = 0; i < buf.length; i += CHUNK) {
-      binary += String.fromCharCode(...buf.subarray(i, i + CHUNK));
-    }
-    const base64 = btoa(binary);
-    return callDbxProxy({action:"upload_excel", path, base64});
+    const buf = XLSX.write(wb, {type:"array", bookType:"xlsx"}) as ArrayBuffer;
+    return dropboxUploadBytes(path, buf);
   } catch(e:any){ return {ok:false, msg:"Gagal menyiapkan file Excel: "+(e?.message||"unknown error")}; }
 }

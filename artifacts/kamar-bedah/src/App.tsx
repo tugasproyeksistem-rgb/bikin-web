@@ -175,7 +175,7 @@ import {
    tempat createClient() dipanggil sekarang (di services/supabase.ts). */
 import {
   SUPA_URL, SUPA_ANON, SUPA_CLIENT, AmbilLogMedis, defaultSupaCfg,
-  DBX_PROXY_SECRET, DBX_PROXY_FN, defaultDbxCfg, callDbxProxy, dropboxUpload, dropboxDownload, dropboxUploadExcel,
+  DBX_PROXY_SECRET, DBX_PROXY_FN, defaultDbxCfg, callDbxProxy, dropboxUpload, dropboxDownload, dropboxUploadExcel, dropboxUploadBytes,
   callOcrScanEndpoint, runWorkerOcrScan, runWorkerOcrScanText,
 } from "./services";
 
@@ -4701,11 +4701,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
       const folder = (dbxCfg?.path||"/kamarbedah/").replace(/[^/]+$/,"");
       const stamp  = `${year}-${String(month+1).padStart(2,"0")}`;
       const path   = `${folder}Jadwal_KamarBedah_${stamp}.xlsx`;
-      const buf    = await wb.xlsx.writeBuffer() as unknown as Uint8Array;
-      const CHUNK=8192; let bin="";
-      for(let i=0;i<buf.length;i+=CHUNK) bin+=String.fromCharCode(...buf.subarray(i,i+CHUNK));
-      const b64 = btoa(bin);
-      const res = await callDbxProxy({action:"upload_excel", path, base64: b64});
+      const res = await dropboxUploadBytes(path, await wb.xlsx.writeBuffer() as unknown as ArrayBuffer);
       if(res.ok) showToast("✅ Roster berhasil di-backup ke Dropbox!", "#0061FF");
       else showToast("⚠ Gagal backup Dropbox: " + res.msg, "#D62828");
     } catch(e:any) {
