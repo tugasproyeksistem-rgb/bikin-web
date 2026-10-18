@@ -17,7 +17,7 @@ import type { ShiftKey, LaporanHarian, JadwalRow, RencanaRow, KandidatRow } from
 import {
   SHIFT_URUT, SHIFT_LABEL, STOK_OPSI, STATUS_OPSI, ALAT_BUTIR,
   pad2, isoLokal, tanggalPanjang, fmtTgl, namaHari, shiftDariJam, shiftBerikut, tanggalTujuan,
-  susunJadwal, susunRencana, susunKandidat, rencanaHariPenuh, susunRencanaHariPenuh, buatTeksLaporan, buatPdfDariJpeg, filterLaporan, urutLaporanTurun,
+  susunJadwal, susunRencana, susunKandidat, susunKandidatLusa, pakaiKandidatLusa, tglLusa, judulKandidat, KOSONG_OPERASI, rencanaHariPenuh, susunRencanaHariPenuh, buatTeksLaporan, buatPdfDariJpeg, filterLaporan, urutLaporanTurun,
 } from "../utils/laporan-harian";
 
 import { buatWorkbookLaporanLengkap } from "../utils/laporan-harian-excel";
@@ -114,7 +114,7 @@ function Lembar({ l, mask }: { l: LaporanHarian; mask: (s: string) => string }) 
     return (
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead><tr>{head.map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
-        <tbody>{isi.map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j} style={td}>{c}</td>)}</tr>)}</tbody>
+        <tbody>{rows.length ? isi.map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j} style={td}>{c}</td>)}</tr>) : <tr><td colSpan={head.length} style={{ ...td, textAlign: "center", fontStyle: "italic" }}>{KOSONG_OPERASI}</td></tr>}</tbody>
       </table>
     );
   };
@@ -139,7 +139,7 @@ function Lembar({ l, mask }: { l: LaporanHarian; mask: (s: string) => string }) 
       {judul(`RENCANA OPERASI — ${rencanaHariPenuh(l.dari, l.ke) ? "Semua operasi besok" : SHIFT_LABEL[l.ke]}, ${tanggalPanjang(l.tanggalRencana)}`)}
       {tabel(["Tanggal", "Jam", "Dokter Operator", "Dokter Anestesi", "Nama", "Umur", "Kamar", "Jenis Operasi", "Alkes", "Keterangan"],
         l.rencana.map((r) => [fmtTgl(r.tanggal), r.jam, r.operator, r.anestesi, mask(r.pasien), r.umur, r.kamar, r.jenis, r.alkes, r.keterangan]), 4)}
-      {judul("KANDIDAT (OPERASI BESOK)")}
+      {judul(judulKandidat(l))}
       {tabel(["Tanggal", "Jam", "Dokter", "Nama", "Umur", "Jenis Operasi", "Keterangan"],
         l.kandidat.map((r) => [fmtTgl(r.tanggal), r.jam, r.dokter, mask(r.pasien), r.umur, r.jenis, r.keterangan]), 3)}
       {judul("KONDISI PERALATAN & KAMAR")}
@@ -246,7 +246,8 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
   const penuh = rencanaHariPenuh(dariEff, keEff);
   const rencanaAuto = useMemo(() => penuh ? susunRencanaHariPenuh(ops, tglRencana) : susunRencana(ops, tglRencana, keEff, malamAktif), [ops, tglRencana, keEff, malamAktif, penuh]);
   const rencana: RencanaRow[] = useMemo(() => rencanaAuto.map((r) => { const o = form.ov["r:" + r.opId] || {}; return { ...r, alkes: o.alkes ?? r.alkes, keterangan: o.keterangan ?? r.keterangan }; }), [rencanaAuto, form.ov]);
-  const kandidat: KandidatRow[] = useMemo(() => penuh ? [] : susunKandidat(ops, form.tanggal), [ops, form.tanggal, penuh]);
+  const lusa = pakaiKandidatLusa(form.shift, malamAktif);
+  const kandidat: KandidatRow[] = useMemo(() => lusa ? susunKandidatLusa(ops, form.tanggal) : susunKandidat(ops, form.tanggal), [ops, form.tanggal, lusa]);
 
   const jumlahOperasi = form.jumlahManual !== "" ? form.jumlahManual : String(jadwal.length);
   const totalPasien = form.totalManual !== "" ? form.totalManual : String(jadwal.filter((r) => r.status !== "Batal").length);
@@ -270,7 +271,7 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
     const iso = new Date().toISOString();
     return {
       id, tanggal: form.tanggal, hari: namaHari(form.tanggal), shift: form.shift, dari: dariEff, ke: keEff, tanggalRencana: tglRencana,
-      jumlahOperasi, adaCyto, totalPasien, jadwal, rencana, kandidat,
+      jumlahOperasi, adaCyto, totalPasien, jadwal, rencana, kandidat, tanggalKandidat: lusa ? tglLusa(form.tanggal) : undefined,
       alat: form.alat, alatLain: form.alatLain, alatCatatan: form.alatCatatan,
       instrumen: form.instrumen, implan: form.implan, alkesDipakai: form.alkesDipakai, alkesPersediaan: form.alkesPersediaan, pa: form.pa,
       stokLain: form.stokLain, stokCatatan: form.stokCatatan, kejadian: form.kejadian as "ya" | "tidak", uraian: form.uraian,
@@ -526,7 +527,7 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
             </div>
           </div>
         ))}
-        <div style={{ fontSize: 12, color: C.tL, marginTop: 4 }}>{penuh ? "Kandidat dikosongkan: semua operasi besok sudah ada di Rencana." : `Kandidat (operasi besok, otomatis): ${kandidat.length} operasi — tampil di preview.`}</div>
+        <div style={{ fontSize: 12, color: C.tL, marginTop: 4 }}>{`Kandidat (${lusa ? "operasi lusa" : "operasi besok"}, otomatis): ${kandidat.length} operasi — tampil di preview.`}</div>
       </Card>
 
       <Card style={{ marginTop: 12 }}>

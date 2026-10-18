@@ -32,7 +32,7 @@ export interface LaporanHarian {
   id: string; tanggal: string; hari: string;
   shift: ShiftKey; dari: ShiftKey; ke: ShiftKey; tanggalRencana: string;
   jumlahOperasi: string; adaCyto: "ya" | "tidak"; totalPasien: string;
-  jadwal: JadwalRow[]; rencana: RencanaRow[]; kandidat: KandidatRow[];
+  jadwal: JadwalRow[]; rencana: RencanaRow[]; kandidat: KandidatRow[]; tanggalKandidat?: string;
   alat: Record<string, string>; alatLain: string; alatCatatan: string;
   instrumen: string; implan: string; alkesDipakai: string; alkesPersediaan: string; pa: string; stokLain: string; stokCatatan: string;
   kejadian: "ya" | "tidak"; uraian: string;
@@ -64,7 +64,7 @@ export function menitDariJam(t: unknown): number | null {
 export function shiftDariJam(t: unknown, malamAktif: boolean): ShiftKey {
   const m = menitDariJam(t);
   if (m === null) return "siang";                                   /* jam kosong → Siang */
-  if (m < SHIFT_BATAS.pagiMulai) return malamAktif ? "malam" : "siang"; /* dini hari */
+  if (m < (malamAktif ? 7 * 60 : SHIFT_BATAS.pagiMulai)) return malamAktif ? "malam" : "siang"; /* dini hari */
   if (m < SHIFT_BATAS.siangMulai) return "pagi";
   if (m < SHIFT_BATAS.malamMulai) return "siang";
   return malamAktif ? "malam" : "siang";
@@ -136,19 +136,19 @@ export function buatTeksLaporan(l: LaporanHarian, mask: (s: string) => string): 
   L.push(`Jumlah operasi: ${l.jumlahOperasi} | Cyto/darurat: ${l.adaCyto === "ya" ? "Ya" : "Tidak"} | Total pasien: ${l.totalPasien}`);
   L.push("");
   L.push("JADWAL OPERASI");
-  if (!l.jadwal.length) { L.push("- Tidak ada"); }
+  if (!l.jadwal.length) { L.push("- Tidak ada acara operasi"); }
   l.jadwal.forEach((r, i) => {
     L.push(`${i + 1}. ${r.jam || "-"} ${mask(r.pasien)} - ${r.jenis}. Operator: ${r.operator || "-"}. Anestesi: ${r.anestesi || "-"}. Status: ${r.status}.${r.catatan ? " Catatan: " + r.catatan + "." : ""}`);
   });
   L.push("");
   L.push(`RENCANA OPERASI (${rencanaHariPenuh(l.dari, l.ke) ? "Semua operasi besok" : SHIFT_LABEL[l.ke]}, ${tanggalPanjang(l.tanggalRencana)})`);
-  if (!l.rencana.length) { L.push("- Tidak ada"); }
+  if (!l.rencana.length) { L.push("- Tidak ada acara operasi"); }
   l.rencana.forEach((r, i) => {
     L.push(`${i + 1}. ${r.jam || "-"} ${mask(r.pasien)}${r.umur ? " (" + r.umur + ")" : ""} - ${r.jenis}. Kamar: ${r.kamar || "-"}. Operator: ${r.operator || "-"}. Anestesi: ${r.anestesi || "-"}.${r.alkes ? " Alkes: " + r.alkes + "." : ""}${r.keterangan ? " Ket: " + r.keterangan + "." : ""}`);
   });
   L.push("");
-  L.push("KANDIDAT (OPERASI BESOK)");
-  if (!l.kandidat.length) { L.push("- Tidak ada"); }
+  L.push(judulKandidat(l));
+  if (!l.kandidat.length) { L.push("- Tidak ada acara operasi"); }
   l.kandidat.forEach((r, i) => {
     L.push(`${i + 1}. ${fmtTgl(r.tanggal)} ${r.jam || "-"} ${mask(r.pasien)}${r.umur ? " (" + r.umur + ")" : ""} - ${r.jenis}. Dokter: ${r.dokter || "-"}.`);
   });
@@ -252,9 +252,11 @@ export function shiftYangMencakup(t: unknown, malamAktif: boolean): ShiftKey[] {
   const m = menitDariJam(t);
   if (m === null) return ["siang"];
   const hasil: ShiftKey[] = [];
-  if (m >= SHIFT_JAM.pagiMulai && m < SHIFT_JAM.pagiSelesai) hasil.push("pagi");
+  const pagiMulai = malamAktif ? 7 * 60 : SHIFT_JAM.pagiMulai;
+  const malamSelesai = malamAktif ? 7 * 60 : SHIFT_JAM.malamSelesai;
+  if (m >= pagiMulai && m < SHIFT_JAM.pagiSelesai) hasil.push("pagi");
   if (m >= SHIFT_JAM.siangMulai && m < SHIFT_JAM.siangSelesai) hasil.push("siang");
-  if (m >= SHIFT_JAM.malamMulai || m < SHIFT_JAM.malamSelesai) hasil.push(malamAktif ? "malam" : "siang");
+  if (m >= SHIFT_JAM.malamMulai || m < malamSelesai) hasil.push(malamAktif ? "malam" : "siang");
   return hasil;
 }
 
@@ -268,4 +270,22 @@ export function susunRencanaHariPenuh(ops: any[], tanggal: string): RencanaRow[]
       opId: String(o.id), tanggal: o.date || "", jam: o.time || "", operator: o.surgeon || "", anestesi: o.anesthesiologist || "",
       pasien: o.patient || "", umur: teksUmur(o), kamar: o.room || "", jenis: o.procedure || "", alkes: "", keterangan: "",
     }));
+}
+
+/* Kandidat lusa: dinas Siang, atau Shift Malam aktif */
+export const KOSONG_OPERASI = "Tidak ada acara operasi";
+export function pakaiKandidatLusa(shift: ShiftKey, malamAktif: boolean): boolean { return shift === "siang" || malamAktif; }
+export function tglLusa(tanggal: string): string { return geserHari(tanggal, 2); }
+export function susunKandidatLusa(ops: any[], tanggal: string): KandidatRow[] {
+  const tgl = tglLusa(tanggal);
+  return (ops || [])
+    .filter((o: any) => o && o.date === tgl && o.status !== "batal")
+    .sort(jamUrut)
+    .map((o: any): KandidatRow => ({
+      opId: String(o.id), tanggal: o.date || "", jam: o.time || "", dokter: o.surgeon || "", pasien: o.patient || "",
+      umur: teksUmur(o), jenis: o.procedure || "", keterangan: "",
+    }));
+}
+export function judulKandidat(l: LaporanHarian): string {
+  return l.tanggalKandidat ? `KANDIDAT (OPERASI LUSA, ${tanggalPanjang(l.tanggalKandidat)})` : "KANDIDAT (OPERASI BESOK)";
 }

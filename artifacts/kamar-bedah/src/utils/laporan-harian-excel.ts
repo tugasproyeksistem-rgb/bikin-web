@@ -1,6 +1,6 @@
 /* Excel Laporan Harian OK mengikuti preview: satu sheet per laporan, Times New Roman 14. */
 import ExcelJS from "exceljs";
-import { ALAT_BUTIR, SHIFT_LABEL, fmtTgl, tanggalPanjang, rencanaHariPenuh, urutLaporanTurun } from "./laporan-harian";
+import { ALAT_BUTIR, SHIFT_LABEL, fmtTgl, tanggalPanjang, rencanaHariPenuh, urutLaporanTurun, judulKandidat, KOSONG_OPERASI } from "./laporan-harian";
 import type { LaporanHarian } from "./laporan-harian";
 
 const NAMA = "Times New Roman";
@@ -67,6 +67,15 @@ function tabel(ws: ExcelJS.Worksheet, head: string[], rows: unknown[][], minimal
     c.border = TIPIS;
     c.fill = ABU;
   });
+  if (!rows.length) {
+    const k = ws.addRow([KOSONG_OPERASI]);
+    ws.mergeCells(k.number, 1, k.number, N);
+    for (let i = 1; i <= N; i++) k.getCell(i).border = TIPIS;
+    k.getCell(1).font = { name: NAMA, size: 14, italic: true };
+    k.getCell(1).alignment = { horizontal: "center", vertical: "middle" };
+    k.height = 24;
+    return;
+  }
   const total = Math.max(minimal, rows.length);
   for (let i = 0; i < total; i++) {
     const nilai: string[] = rows[i] ? rows[i].map(t) : head.map(() => "");
@@ -101,7 +110,7 @@ function tambahSheet(wb: ExcelJS.Workbook, l: LaporanHarian, nama: string): void
   tabel(ws, ["Tanggal", "Jam", "Dokter Operator", "Dokter Anestesi", "Nama", "Umur", "Kamar", "Jenis Operasi", "Alkes", "Keterangan"],
     l.rencana.map((r) => [fmtTgl(r.tanggal), r.jam, r.operator, r.anestesi, r.pasien, r.umur, r.kamar, r.jenis, r.alkes, r.keterangan]), 4);
 
-  bagian(ws, "KANDIDAT (OPERASI BESOK)");
+  bagian(ws, judulKandidat(l));
   tabel(ws, ["Tanggal", "Jam", "Dokter", "Nama", "Umur", "Jenis Operasi", "Keterangan"],
     l.kandidat.map((r) => [fmtTgl(r.tanggal), r.jam, r.dokter, r.pasien, r.umur, r.jenis, r.keterangan]), 3);
 
