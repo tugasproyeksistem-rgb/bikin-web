@@ -1,3 +1,5 @@
+import { KolomSaran } from "./components/kolom-saran";
+import { DAFTAR_DIAGNOSA, DAFTAR_TINDAKAN } from "./data/daftar-diagnosa-tindakan";
 import { KOLOM_TAMBAHAN_OPS, nilaiTambahanOps } from "./utils/operasi-excel";
 /*
  * SISTEM KOORDINASI KAMAR BEDAH — RS Panti Rini
@@ -1190,8 +1192,8 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
           </div>
         </LF>
         {opForm.opType==="cyto" && <LF label="Ruang Asal Pasien"><input style={iStyle("ruangAsal")} placeholder="IGD, ICU, Bangsal..." value={opForm.ruangAsal||""} onChange={ev=>set("ruangAsal",ev.target.value)} onFocus={onFoc("ruangAsal")} onBlur={onBlr} autoComplete="off" spellCheck={false}/></LF>}
-        <LF label="Diagnosa Medis" req err={e.diagnosis}><input style={iStyle("diagnosis")} placeholder="Cth: Hernia Inguinalis Dextra, Appendicitis Akut" value={opForm.diagnosis} onChange={(ev:any)=>set("diagnosis",ev.target.value)} onFocus={onFoc("diagnosis")} onBlur={onBlr} autoComplete="off" spellCheck={false}/></LF>
-        <LF label="Nama Tindakan / Prosedur" req err={e.procedure}><input style={iStyle("procedure")} placeholder="Cth: Hernioraphy Open, Laparoscopic Cholecystectomy" value={opForm.procedure} onChange={(ev:any)=>set("procedure",ev.target.value)} onFocus={onFoc("procedure")} onBlur={onBlr} autoComplete="off" spellCheck={false}/></LF>
+        <LF label="Diagnosa Medis" req err={e.diagnosis}><KolomSaran daftar={DAFTAR_DIAGNOSA} style={iStyle("diagnosis")} placeholder="Cth: Hernia Inguinalis Dextra, Appendicitis Akut" value={opForm.diagnosis} onChange={(v:string)=>set("diagnosis",v)} onFocus={onFoc("diagnosis")} onBlur={onBlr}/></LF>
+        <LF label="Nama Tindakan / Prosedur" req err={e.procedure}><KolomSaran daftar={DAFTAR_TINDAKAN} style={iStyle("procedure")} placeholder="Cth: Hernioraphy Open, Laparoscopic Cholecystectomy" value={opForm.procedure} onChange={(v:string)=>set("procedure",v)} onFocus={onFoc("procedure")} onBlur={onBlr}/></LF>
         <div style={{display:"flex",gap:12}}>
           <div style={{flex:1}}><LF label="Tanggal" req><DateTxt style={iStyle("date")} value={opForm.date||""} onChange={(v:string)=>setR("date",v)}/></LF>{e.date&&<div style={{fontSize:11,color:C.d,marginTop:-8,marginBottom:8}}>⚠ {e.date}</div>}</div>
           <div style={{flex:1}}><LF label="Jam Mulai" req><input style={iStyle("time")} type="time" value={opForm.time} onChange={(ev:any)=>setR("time",ev.target.value)}/></LF>{e.time&&<div style={{fontSize:11,color:C.d,marginTop:-8,marginBottom:8}}>⚠ {e.time}</div>}</div>
