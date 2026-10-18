@@ -17,8 +17,11 @@ import type { ShiftKey, LaporanHarian, JadwalRow, RencanaRow, KandidatRow } from
 import {
   SHIFT_URUT, SHIFT_LABEL, STOK_OPSI, STATUS_OPSI, ALAT_BUTIR,
   pad2, isoLokal, tanggalPanjang, fmtTgl, namaHari, shiftDariJam, shiftBerikut, tanggalTujuan,
-  susunJadwal, susunRencana, susunKandidat, rencanaHariPenuh, susunRencanaHariPenuh, buatTeksLaporan, buatWorkbookLaporan, buatPdfDariJpeg, filterLaporan, urutLaporanTurun,
+  susunJadwal, susunRencana, susunKandidat, rencanaHariPenuh, susunRencanaHariPenuh, buatTeksLaporan, buatPdfDariJpeg, filterLaporan, urutLaporanTurun,
 } from "../utils/laporan-harian";
+
+import { buatWorkbookLaporanLengkap } from "../utils/laporan-harian-excel";
+import { dropboxUploadBytes } from "../services/dropbox";
 
 const DRAFT_KEY = "kb_laporan_harian_draft_v1";
 
@@ -295,8 +298,8 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
     try {
       const folder = (dbxCfg?.path || "/kamarbedah/").replace(/[^/]+$/, "");
       const tgl = l.tanggal;
-      const wb = buatWorkbookLaporan(filterLaporan(semua, "tanggal", tgl));
-      const d = await dropboxUploadExcel(`${folder}LaporanHarian_${tgl}.xlsx`, wb);
+      const buf = await buatWorkbookLaporanLengkap(filterLaporan(semua, "tanggal", tgl)).xlsx.writeBuffer();
+      const d = await dropboxUploadBytes(`${folder}LaporanHarian_${tgl}.xlsx`, buf as unknown as ArrayBuffer);
       if (!d?.ok) showToast("⚠ Excel ke Dropbox gagal: " + (d?.msg || "error"), C.w);
     } catch { showToast("⚠ Excel ke Dropbox gagal", C.w); }
     AmbilLogMedis("LAPORAN_HARIAN", l.operator, "SIMPAN_LAPORAN_HARIAN",
@@ -378,7 +381,12 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
     const nilai = dlMode === "tanggal" ? dlTgl : dlMode === "bulan" ? dlBln : dlThn;
     const list = filterLaporan(laporanList, dlMode, nilai);
     if (!list.length) { showToast("Tidak ada laporan harian untuk " + nilai, C.w); return; }
-    XLSX.writeFile(buatWorkbookLaporan(list), `LaporanHarianOK_${nilai}.xlsx`);
+    buatWorkbookLaporanLengkap(list).xlsx.writeBuffer().then((buf) => {
+      const url = URL.createObjectURL(new Blob([buf as unknown as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = `LaporanHarianOK_${nilai}.xlsx`; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    }).catch((e) => showToast("Gagal membuat Excel: " + ((e as any)?.message || "error"), C.d));
     showToast(`✓ Excel diunduh (${list.length} laporan)`, C.s);
   };
 
