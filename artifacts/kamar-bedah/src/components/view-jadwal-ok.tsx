@@ -5,6 +5,8 @@
    ke Dropbox. Unduh per hari / bulan / tahun. Font Times New Roman 14. */
 
 import { useState, useEffect, useMemo, useRef } from "react";
+import html2canvas from "html2canvas";
+import { downloadElementAsWord } from "../utils/word-export";
 import { C, iS } from "../constants";
 import { maskName } from "../utils";
 import { SUPA_CLIENT, AmbilLogMedis } from "../services/supabase";
@@ -162,8 +164,20 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
     setBusy(false);
   };
 
-  const gayaInput: React.CSSProperties = { ...iS, fontFamily: FONT, fontSize: 14, width: "100%", boxSizing: "border-box", padding: "6px 8px" };
-  const th: React.CSSProperties = { border: "1px solid #111", padding: "6px 8px", fontSize: 14, fontWeight: 700, textAlign: "center", background: "#EEEEEE", whiteSpace: "nowrap" };
+  const unduhExcelIni = async (data: JadwalOK) => {
+    setBusy(true);
+    try {
+      const blob = await workbookKeBlob(buatWorkbookJadwalOK([data]));
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `JadwalOK_${data.tanggal}.xlsx`; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      showToast("✓ Excel diunduh", C.s);
+    } catch (e: any) { showToast("Gagal membuat Excel: " + (e?.message || "error"), C.d); }
+    setBusy(false);
+  };
+  const gayaInput: React.CSSProperties = { ...iS, fontFamily: FONT, fontSize: 15, width: "100%", boxSizing: "border-box", padding: "6px 8px" };
+  const th: React.CSSProperties = { border: "1px solid #111", padding: "6px 8px", fontSize: 15, fontWeight: 700, textAlign: "center", background: "#EEEEEE", whiteSpace: "nowrap" };
   const td: React.CSSProperties = { border: "1px solid #111", padding: 2, verticalAlign: "middle" };
   const riwayat = [...list].sort((a, b) => b.tanggal.localeCompare(a.tanggal)).slice(0, 8);
   const segmen = (v: "tanggal" | "bulan" | "tahun", l: string) => (
@@ -187,25 +201,46 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
   };
   if (lihat) {
     const L = lihat;
-    const hth: React.CSSProperties = { border: "1px solid #111", padding: "6px 8px", fontSize: 14, fontWeight: 700, textAlign: "center", background: "#EEEEEE", fontFamily: FONT };
-    const htd: React.CSSProperties = { border: "1px solid #111", padding: "6px 8px", fontSize: 14, verticalAlign: "top", fontFamily: FONT, minHeight: 28, height: 30 };
+    const unduhJpg = async () => {
+      const el = lembarRef.current;
+      if (!el) { showToast("Lembar belum siap", C.w); return; }
+      setBusy(true);
+      try {
+        const cv = await html2canvas(el, { backgroundColor: "#ffffff", scale: 3 });
+        const a = document.createElement("a");
+        a.href = cv.toDataURL("image/jpeg", 0.95); a.download = `JadwalOK_${L.tanggal}.jpg`; a.click();
+        showToast("✓ JPG diunduh", C.s);
+      } catch (e: any) { showToast("Gagal membuat JPG: " + (e?.message || "error"), C.d); }
+      setBusy(false);
+    };
+    const unduhWord = () => {
+      const el = lembarRef.current;
+      if (!el) { showToast("Lembar belum siap", C.w); return; }
+      downloadElementAsWord(el, `JadwalOK_${L.tanggal}.doc`, true);
+      showToast("✓ Word diunduh", C.s);
+    };
+    const hth: React.CSSProperties = { border: "1px solid #111", padding: "6px 8px", fontSize: 15, fontWeight: 700, textAlign: "center", background: "#EEEEEE", fontFamily: FONT };
+    const htd: React.CSSProperties = { border: "1px solid #111", padding: "6px 8px", fontSize: 15, verticalAlign: "top", fontFamily: FONT, minHeight: 28, height: 30 };
     const jumlah = Math.max(10, L.baris.length);
     const p = { ...KOSONG, ...(L.perawat || {}) };
     const barisJaga: [string, string][] = [["PERAWAT JAGA PAGI", p.pagi], ["PG", p.pg], ["SORE", p.sore], ["SG", p.sg], ["CUTI (T)", p.cuti]];
     return (
-      <div style={{ paddingBottom: 24, fontFamily: FONT, fontSize: 14 }}>
+      <div style={{ paddingBottom: 24, fontFamily: FONT, fontSize: 15 }}>
         <Card>
           <SH label="Hasil Jadwal Operasi" />
           <div style={{ fontWeight: 700, marginBottom: 10 }}>{tanggalPanjang(L.tanggal)}</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <Btn onClick={cetak}>🖨 Print</Btn>
             <Btn outline onClick={() => { setLihat(null); gantiTanggal(L.tanggal); window.scrollTo({ top: 0, behavior: "smooth" }); }}>✎ Edit</Btn>
+            <Btn outline onClick={() => unduhExcelIni(L)} disabled={busy}>⬇ Excel</Btn>
+            <Btn outline onClick={unduhJpg} disabled={busy}>⬇ JPG</Btn>
+            <Btn outline onClick={unduhWord} disabled={busy}>⬇ Word</Btn>
             <Btn outline onClick={() => setLihat(null)}>✕ Tutup</Btn>
           </div>
         </Card>
         <div style={{ overflowX: "auto", marginTop: 12, background: "#E5E7EB", padding: 8, borderRadius: 10 }}>
           <div ref={lembarRef} style={{ width: 1400 }}>
-            <div className="kb-lembar" style={{ width: 1400, boxSizing: "border-box", padding: 28, background: "#fff", color: "#111", fontFamily: "'Times New Roman',Times,serif", fontSize: 14 }}>
+            <div className="kb-lembar" style={{ width: 1400, boxSizing: "border-box", padding: 28, background: "#fff", color: "#111", fontFamily: "'Times New Roman',Times,serif", fontSize: 15 }}>
               <div style={{ textAlign: "center", fontWeight: 800, fontSize: 18 }}>JADWAL OPERASI KAMAR BEDAH</div>
               <div style={{ textAlign: "center", fontWeight: 700, marginBottom: 10 }}>{tanggalPanjang(L.tanggal)}</div>
               {barisJaga.map(([a, b]) => <div key={a} style={{ marginBottom: 3 }}><b>{a} :</b> {b}</div>)}
@@ -230,7 +265,7 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
     );
   }
   return (
-    <div style={{ paddingBottom: 24, fontFamily: FONT, fontSize: 14 }}>
+    <div style={{ paddingBottom: 24, fontFamily: FONT, fontSize: 15 }}>
       <Card>
         <SH label="Jadwal Operasi & Peserta Kamar Bedah" />
         <div style={{ textAlign: "center", fontWeight: 800, fontSize: 18, marginBottom: 10 }}>JADWAL OPERASI KAMAR BEDAH</div>
@@ -292,6 +327,7 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
           <Btn outline onClick={tambahBaris} disabled={busy}>+ Tambah baris</Btn>
           <Btn outline onClick={muatUlang} disabled={busy}>↺ Muat ulang dari jadwal</Btn>
           <Btn onClick={simpan} disabled={busy}>💾 Simpan</Btn>
+          <Btn outline onClick={() => unduhExcelIni(bangun())} disabled={busy}>⬇ Excel</Btn>
         </div>
       </Card>
 

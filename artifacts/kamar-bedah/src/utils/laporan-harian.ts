@@ -10,7 +10,7 @@ export type ShiftKey = "pagi" | "siang" | "malam";
 export const SHIFT_URUT: ShiftKey[] = ["pagi", "siang", "malam"];
 export const SHIFT_LABEL: Record<ShiftKey, string> = { pagi: "Shift Pagi", siang: "Shift Siang", malam: "Shift Malam" };
 /* Batas shift dalam menit sejak 00:00: pagi 07:00, siang 14:00, malam 20:30 */
-export const SHIFT_BATAS = { pagiMulai: 2 * 60, siangMulai: 14 * 60, malamMulai: 20 * 60 + 30 };
+export const SHIFT_BATAS = { pagiMulai: 2 * 60, siangMulai: 13 * 60 + 30, malamMulai: 20 * 60 + 30 };
 export const STOK_OPSI: string[] = ["Tersedia", "Kurang"];
 export const STATUS_OPSI: string[] = ["Terjadwal", "Proses", "Selesai", "Tunda", "Batal"];
 export const ALAT_BUTIR: { k: string; l: string }[] = [
@@ -244,7 +244,7 @@ export function buatPdfDariJpeg(halaman: { jpeg: Uint8Array; w: number; h: numbe
    operasi di rentang itu muncul di KEDUA shift), malam 20:30-07:00 (kalau malam mati, masuk siang).
    shiftDariJam di atas hanya dipakai untuk menebak shift awal dari jam sekarang. */
 export const SHIFT_JAM = {
-  pagiMulai: 2 * 60, pagiSelesai: 14 * 60,
+  pagiMulai: 2 * 60, pagiSelesai: 13 * 60 + 30,
   siangMulai: 13 * 60 + 30, siangSelesai: 20 * 60 + 30,
   malamMulai: 20 * 60 + 30, malamSelesai: 2 * 60,
 };

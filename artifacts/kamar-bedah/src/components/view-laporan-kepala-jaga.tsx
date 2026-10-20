@@ -5,6 +5,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import html2canvas from "html2canvas";
+import { downloadElementAsWord } from "../utils/word-export";
 import { C, iS } from "../constants";
 import { maskName } from "../utils";
 import { SUPA_CLIENT, AmbilLogMedis } from "../services/supabase";
@@ -72,7 +73,7 @@ function Lembar2({ d, mask }: { d: any; mask: (s: string) => string }) {
   const L: LaporanHarian | null = d.v1;
   const th: CSSProperties = { border: "1px solid #111", padding: "4px 5px", fontSize: 11, fontWeight: 700, textAlign: "center", background: "#EEF2F7" };
   const td: CSSProperties = { border: "1px solid #111", padding: "4px 5px", fontSize: 11, verticalAlign: "top", height: 20 };
-  const judul = (t: string) => <div style={{ fontWeight: 800, fontSize: 13, margin: "14px 0 5px" }}>{t}</div>;
+  const judul = (t: string) => <div style={{ fontWeight: 800, fontSize: 15, margin: "14px 0 5px" }}>{t}</div>;
   const tabel = (head: string[], lebar: string[], rows: ReactNode[][], minRows: number) => {
     const isi: ReactNode[][] = [...rows];
     while (isi.length < minRows) isi.push(head.map(() => ""));
@@ -97,9 +98,9 @@ function Lembar2({ d, mask }: { d: any; mask: (s: string) => string }) {
   const kepalaLebar = ["5%", "8%", "17%", "20%", "14%", "14%", "22%"];
   return (
     <div className="kb-lembar" style={{ width: 794, boxSizing: "border-box", padding: 28, background: "#fff", color: "#111", fontFamily: "'Times New Roman',Times,serif" }}>
-      <style>{".kb-lembar table,.kb-lembar th,.kb-lembar td{font-size:14px !important;font-family:Times New Roman,Times,serif !important}"}</style>
+      <style>{".kb-lembar table,.kb-lembar th,.kb-lembar td{font-size:15px !important;font-family:Times New Roman,Times,serif !important}"}</style>
       <div style={{ textAlign: "center", fontWeight: 800, fontSize: 17 }}>LAPORAN KEPALA JAGA KAMAR BEDAH</div>
-      <div style={{ textAlign: "center", fontSize: 14, marginBottom: 10 }}>RS Panti Rini</div>
+      <div style={{ textAlign: "center", fontSize: 15, marginBottom: 10 }}>RS Panti Rini</div>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
         <table style={{ flex: 1, minWidth: 0, borderCollapse: "collapse" }}><tbody>
           {baris("Tanggal", tanggalPanjang(d.tanggal), "38%")}
@@ -145,7 +146,7 @@ function Lembar2({ d, mask }: { d: any; mask: (s: string) => string }) {
         {baris("Ada kejadian?", L ? (L.kejadian === "ya" ? "Ya" : "Tidak") : "-")}
         {baris("Jika ada, jelaskan", L && L.kejadian === "ya" ? L.uraian : "-")}
       </tbody></table>
-      <div style={{ display: "flex", gap: 10, marginTop: 22, fontSize: 14, textAlign: "center" }}>
+      <div style={{ display: "flex", gap: 10, marginTop: 22, fontSize: 15, textAlign: "center" }}>
         {[["Petugas Shift Lama", L?.lama], ["Petugas Shift Baru", L?.baru], ["Mengetahui / Kepala Kamar Bedah", L?.kepala]].map(([a, b]) => (
           <div key={String(a)} style={{ flex: 1 }}>
             <div style={{ fontWeight: 700 }}>{a}</div>
@@ -166,6 +167,7 @@ export function ViewLaporanKepalaJaga({ ops, roster, showToast, role, privacyMod
   const [lihat, setLihat] = useState<any | null>(null);
   const [busy, setBusy] = useState(false);
   const [segar, setSegar] = useState(0);
+  const [manual, setManual] = useState<Record<string, string>>({});
   const lembarRef = useRef<HTMLDivElement>(null);
   const mask = (s: string) => maskName(s, privacyMode);
 
@@ -204,20 +206,30 @@ export function ViewLaporanKepalaJaga({ ops, roster, showToast, role, privacyMod
   const perawat = (id: string): string[] => {
     const o = peta[id];
     if (!o) return [];
-    const pasang: [string, any][] = [["Asisten", o.assistantNurse], ["Sirkuler", o.circulatingNurse], ["Anestesi", o.anesthesiaNurse], ["Onloop", o.onloopNurse]];
+    const pasang: [string, any][] = [["Asisten", o.assistantNurse], ["Instrumen", o.circulatingNurse], ["Anestesi", o.anesthesiaNurse], ["Onloop", o.onloopNurse]];
     return pasang.filter(([, v]) => String(v || "").trim()).map(([k, v]) => `${k}: ${String(v).trim()}`);
   };
 
+    const pecah = (t: string): string[] => t.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+  const mOk = manual.tgl === tanggal;
+  const autoSiaga = {
+    anest: rs ? daftarDari(rs.anestJagaList, rs.anestJaga) : [],
+    cyto: rs ? daftarDari(rs.anestCytoList, rs.anestCyto) : [],
+    nurses: rs ? (rs.nurses || []).map((x: any) => String(x || "").trim()).filter(Boolean) : [],
+    hp: rs ? String(rs.pembawaHP || "").trim() : "",
+  };
+  const nilaiSiaga = (k: "anest" | "cyto" | "nurses" | "hp"): string => (mOk && manual[k] !== undefined ? manual[k] : k === "hp" ? autoSiaga.hp : (autoSiaga[k] as string[]).join(", "));
+  const ubahSiaga = (k: string, v: string) => setManual((p) => ({ ...(p.tgl === tanggal ? p : { tgl: tanggal }), [k]: v }));
   const live: any = {
     id: "kj_" + tanggal,
     tanggal,
     shiftTeks: malamAktif ? "Pagi, Siang, Malam" : "Pagi, Siang",
     jumlah: opsHari.length,
     adaCyto: opsHari.some((o: any) => o.opType === "cyto"),
-    anest: rs ? daftarDari(rs.anestJagaList, rs.anestJaga) : [],
-    cyto: rs ? daftarDari(rs.anestCytoList, rs.anestCyto) : [],
-    nurses: rs ? (rs.nurses || []).map((x: any) => String(x || "").trim()).filter(Boolean) : [],
-    pembawaHP: rs ? String(rs.pembawaHP || "").trim() : "",
+    anest: mOk && manual.anest !== undefined ? pecah(manual.anest) : autoSiaga.anest,
+    cyto: mOk && manual.cyto !== undefined ? pecah(manual.cyto) : autoSiaga.cyto,
+    nurses: mOk && manual.nurses !== undefined ? pecah(manual.nurses) : autoSiaga.nurses,
+    pembawaHP: mOk && manual.hp !== undefined ? manual.hp.trim() : autoSiaga.hp,
     pagi: pagi.map((r: any) => ({ ...r, perawat: perawat(r.opId) })),
     siang: siang.map((r: any) => ({ ...r, perawat: perawat(r.opId) })),
     besok: besok.map((r: any) => ({ ...r })),
@@ -279,18 +291,18 @@ export function ViewLaporanKepalaJaga({ ops, roster, showToast, role, privacyMod
     w.document.close();
     setTimeout(() => { w.focus(); w.print(); setTimeout(() => ifr.remove(), 3000); }, 400);
   };
-  const ambilCanvas = async () => {
+  const ambilCanvas = async (skala = 2) => {
     const el = lembarRef.current;
     if (!el) throw new Error("Lembar belum siap");
-    return html2canvas(el, { backgroundColor: "#ffffff", scale: 2 });
+    return html2canvas(el, { backgroundColor: "#ffffff", scale: skala });
   };
   const namaFile = (ext: string) => `LaporanKepalaJaga_${tampil.tanggal}.${ext}`;
   const unduhJpg = async () => {
     setBusy(true);
     try {
-      const cv = await ambilCanvas();
+      const cv = await ambilCanvas(3);
       const a = document.createElement("a");
-      a.href = cv.toDataURL("image/jpeg", 0.92); a.download = namaFile("jpg"); a.click();
+      a.href = cv.toDataURL("image/jpeg", 0.95); a.download = namaFile("jpg"); a.click();
       showToast("✓ JPG diunduh", C.s);
     } catch (e: any) { showToast("Gagal membuat JPG: " + (e?.message || "error"), C.d); }
     setBusy(false);
@@ -327,6 +339,12 @@ export function ViewLaporanKepalaJaga({ ops, roster, showToast, role, privacyMod
     try { await navigator.clipboard.writeText(buatTeks(tampil, mask)); showToast("✓ Teks laporan disalin", C.s); }
     catch { showToast("Gagal menyalin teks", C.w); }
   };
+  const unduhWord = () => {
+    const el = lembarRef.current;
+    if (!el) { showToast("Lembar belum siap", C.w); return; }
+    downloadElementAsWord(el, namaFile("doc"));
+    showToast("✓ Word diunduh", C.s);
+  };
   const unduhExcel = () => {
     buatWorkbookKepalaJaga([tampil]).xlsx.writeBuffer().then((buf) => {
       const url = URL.createObjectURL(new Blob([buf as unknown as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
@@ -362,6 +380,18 @@ export function ViewLaporanKepalaJaga({ ops, roster, showToast, role, privacyMod
               </div>
             </>}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+          {!lihat && (
+            <div style={{ flexBasis: "100%", border: "1px solid " + C.b, borderRadius: 10, padding: 10 }}>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>✎ Siaga dan Pembawa HP (isi manual bila ada perubahan)</div>
+              {([["anest", "Siaga anestesi"], ["cyto", "Siaga anestesi cyto"], ["nurses", "Perawat siaga"], ["hp", "Pembawa HP"]] as const).map(([k, l]) => (
+                <div key={k} style={{ marginBottom: 6 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 2 }}>{l}</div>
+                  <input style={iS} value={nilaiSiaga(k)} onChange={(e) => ubahSiaga(k, e.target.value)} placeholder={k === "hp" ? "Nama pembawa HP" : "Pisahkan nama dengan koma"} />
+                </div>
+              ))}
+              <Btn sm outline onClick={() => setManual({})}>↺ Kembalikan ke jadwal</Btn>
+            </div>
+          )}
           {!lihat && (() => {
             const sudah = daftar.some((x) => x.id === live.id);
             return (
@@ -385,6 +415,7 @@ export function ViewLaporanKepalaJaga({ ops, roster, showToast, role, privacyMod
           <Btn outline onClick={unduhJpg} disabled={busy}>⬇ JPG</Btn>
           <Btn outline onClick={salinTeks} disabled={busy}>📋 Salin teks</Btn>
           <Btn outline onClick={unduhExcel} disabled={busy}>⬇ Excel</Btn>
+          <Btn outline onClick={unduhWord} disabled={busy}>⬇ Word</Btn>
           {lihat && <Btn outline onClick={() => setLihat(null)} disabled={busy}>✕ Tutup</Btn>}
         </div>
       </Card>
