@@ -226,6 +226,7 @@ import { ViewJadwal } from "./components/view-jadwal";
 import { ViewLaporan } from "./components/view-laporan";
 import { LaporanOKTab } from "./components/view-laporan-kepala-jaga";
 import { ViewJadwalOK } from "./components/view-jadwal-ok";
+import { ViewBesetJadwal } from "./components/view-beset-jadwal";
 // Catatan: __ocrSelfTest tidak perlu diimpor eksplisit — mengimpor nama lain
 // dari ocr-matching.ts (file yang sama) sudah memicu window.__ocrSelfTest
 // terpasang otomatis saat modul itu dievaluasi.
@@ -616,13 +617,13 @@ async function ambilDataTabelBaru(): Promise<Record<string, any[]>> {
       return (r.data || []).map((x: any) => x.data).filter(Boolean);
     } catch { return null; }
   };
-  const [laporanHarian, jadwalOk, jadwalPerawat, laporanKepalaJaga] = await Promise.all([
-    baca("kb_laporan_harian"), baca("kb_jadwal_ok"), baca("kb_jadwal_perawat"), baca("kb_laporan_kepala_jaga"),
+  const [laporanHarian, jadwalOk, jadwalPerawat, laporanKepalaJaga, besetJadwal] = await Promise.all([
+    baca("kb_laporan_harian"), baca("kb_jadwal_ok"), baca("kb_jadwal_perawat"), baca("kb_laporan_kepala_jaga"), baca("kb_beset_jadwal"),
   ]);
   const hasil: Record<string, any[]> = {};
   if (laporanHarian) hasil.laporanHarian = laporanHarian;
   if (jadwalOk) hasil.jadwalOk = jadwalOk;
-  if (jadwalPerawat) hasil.jadwalPerawat = jadwalPerawat; if (laporanKepalaJaga) hasil.laporanKepalaJaga = laporanKepalaJaga;
+  if (jadwalPerawat) hasil.jadwalPerawat = jadwalPerawat; if (laporanKepalaJaga) hasil.laporanKepalaJaga = laporanKepalaJaga; if (besetJadwal) hasil.besetJadwal = besetJadwal;
   return hasil;
 }
 
@@ -6131,7 +6132,7 @@ export default function App() {
     /* Pulihkan Laporan Harian OK, Jadwal & Peserta, Jadwal Perawat dari backup Supabase terakhir.
      Hanya menambahkan baris yang HILANG; baris yang sudah ada tidak pernah ditimpa. */
   const handleSupaRestoreTabelBaru = useCallback(async () => {
-    if(!window.confirm("Pulihkan Laporan Harian OK, Laporan Kepala Jaga, Jadwal & Peserta, dan Jadwal Perawat dari backup Supabase terakhir?\nHanya data yang hilang yang dikembalikan. Data yang sudah ada tidak ditimpa.")) return;
+    if(!window.confirm("Pulihkan Laporan Harian OK, Laporan Kepala Jaga, Beset Jadwal, Jadwal & Peserta, dan Jadwal Perawat dari backup Supabase terakhir?\nHanya data yang hilang yang dikembalikan. Data yang sudah ada tidak ditimpa.")) return;
     setSupaBU(true); setSupaStatus(null);
     const res = await supabaseRestore(supaCfg, SUPA_CLIENT);
     setSupaStatus({ok:res.ok, msg:res.msg});
@@ -6139,7 +6140,7 @@ export default function App() {
     const peta: [string,string,string][] = [
       ["laporanHarian","kb_laporan_harian","Laporan"],
       ["jadwalOk","kb_jadwal_ok","Jadwal"],
-      ["jadwalPerawat","kb_jadwal_perawat","Jadwal perawat"], ["laporanKepalaJaga","kb_laporan_kepala_jaga","Laporan kepala jaga"],
+      ["jadwalPerawat","kb_jadwal_perawat","Jadwal perawat"], ["laporanKepalaJaga","kb_laporan_kepala_jaga","Laporan kepala jaga"], ["besetJadwal","kb_beset_jadwal","Beset jadwal"],
     ];
     const ringkas: string[] = [];
     for(const [field, tabel, label] of peta){
@@ -6156,7 +6157,7 @@ export default function App() {
       if(gagalBaca){ ringkas.push(`${label}: gagal membaca tabel, dilewati`); continue; }
       const hilang = baris.filter((b:any)=>b && b.id && !ada.has(String(b.id)));
       if(!hilang.length){ ringkas.push(`${label}: 0 dikembalikan`); continue; }
-      const w:any = tabel === "kb_laporan_kepala_jaga" ? await (async()=>{ try { const ts=new Date().toISOString(); const {error}=await SUPA_CLIENT.from(tabel).upsert(hilang.map((r:any)=>({id:String(r.id), data:r, updated_at:r.updated_at||ts})),{onConflict:"id"}); return error?{ok:false,error:error.message}:{ok:true}; } catch(e:any){ return {ok:false,error:e?.message||"error"}; } })() : await upsertBulkToSupa(tabel, hilang);
+      const w:any = (tabel === "kb_laporan_kepala_jaga" || tabel === "kb_beset_jadwal") ? await (async()=>{ try { const ts=new Date().toISOString(); const {error}=await SUPA_CLIENT.from(tabel).upsert(hilang.map((r:any)=>({id:String(r.id), data:r, updated_at:r.updated_at||ts})),{onConflict:"id"}); return error?{ok:false,error:error.message}:{ok:true}; } catch(e:any){ return {ok:false,error:e?.message||"error"}; } })() : await upsertBulkToSupa(tabel, hilang);
       ringkas.push(w.ok ? `${label}: ${hilang.length} dikembalikan` : `${label}: gagal (${w.error})`);
     }
     showToast("✓ "+ringkas.join(" • "), "#3ECF8E");
@@ -6980,6 +6981,7 @@ export default function App() {
       {tab==="daftar"     && <ViewDaftar pendingEditOp={pendingEditOp} clearPendingEditOp={()=>setPendingEditOp(null)} saveOpFn={saveOpFn} autoSaveOcrBatch={autoSaveOcrBatch} staff={staff} setTab={setTab} templates={templates} setTemplates={setTemplates} showToast={showToast}/>}
       {tab==="laporan"    && <ViewLaporan ops={ops} staff={staff} roster={roster} showToast={showToast} role={role} privacyMode={privacyMode}/>}
       {tab==="laporan_harian" && <LaporanOKTab roster={roster} ops={ops} staff={staff} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg}/>}
+      {tab==="beset_jadwal" && <ViewBesetJadwal staff={staff} showToast={showToast} role={role} cekAdmin={(p:string)=>verifyPin(p,pinAdmin)}/>}
       {tab==="jadwal_ok" && <ViewJadwalOK ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg}/>}
       {tab==="wa"         && <ViewKirimWA ops={ops} staff={staff} setNotifs={setNotifs} showToast={showToast}/>}
       {tab==="statistik"  && <ViewStatistik ops={ops} archive={archive}/>}
