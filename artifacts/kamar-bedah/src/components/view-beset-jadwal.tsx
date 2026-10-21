@@ -19,9 +19,9 @@ const NAMA_BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Jul
 interface Beset {
   id: string; bulan: string; buka: boolean;
   sel: Record<string, string>; ket: Record<string, string>; warna: Record<string, string>;
-  perawat: { id: string; name: string }[]; updated_at?: string;
+  perawat: { id: string; name: string }[]; urutan: string[]; hilang: string[]; updated_at?: string;
 }
-const kosong = (bulan: string): Beset => ({ id: "beset_" + bulan, bulan, buka: false, sel: {}, ket: {}, warna: {}, perawat: [] });
+const kosong = (bulan: string): Beset => ({ id: "beset_" + bulan, bulan, buka: false, sel: {}, ket: {}, warna: {}, perawat: [], urutan: [], hilang: [] });
 const labelBulan = (b: string) => { const [y, m] = b.split("-").map(Number); return `${NAMA_BULAN[(m || 1) - 1]} ${y}`; };
 
 export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
@@ -33,6 +33,7 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
   const [pinMode, setPinMode] = useState<null | "buka" | "tutup">(null);
   const [pin, setPin] = useState("");
   const dirty = useRef<Set<string>>(new Set());
+  const struktur = useRef(false);
 
   const muat = useCallback(async (b: string) => {
     try {
@@ -43,7 +44,7 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
       const ada = semua.find((x) => x.bulan === b);
       setD(ada ? { ...kosong(b), ...ada } : kosong(b));
     } catch { setD(kosong(b)); }
-    dirty.current.clear(); setAdaUbah(false);
+    dirty.current.clear(); struktur.current = false; setAdaUbah(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => { muat(bulan); }, [bulan, muat]);
@@ -58,8 +59,18 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
     const m = new Map<string, { id: string; name: string }>();
     sumber.forEach((s: any) => m.set(String(s.id), { id: String(s.id), name: String(s.name) }));
     (d.perawat || []).forEach((p) => { if (!m.has(p.id)) m.set(p.id, p); });
-    return Array.from(m.values()).sort((a, b) => a.name.localeCompare(b.name));
-  }, [sumber, d.perawat]);
+    const hil = new Set(d.hilang || []);
+    const urut = d.urutan || [];
+    const arr = Array.from(m.values()).filter((p) => !hil.has(p.id));
+    arr.sort((a, b) => {
+      const ia = urut.indexOf(a.id), ib = urut.indexOf(b.id);
+      if (ia >= 0 && ib >= 0) return ia - ib;
+      if (ia >= 0) return -1;
+      if (ib >= 0) return 1;
+      return a.name.localeCompare(b.name);
+    });
+    return arr;
+  }, [sumber, d.perawat, d.urutan, d.hilang]);
 
   const warnaMap = useMemo(() => {
     const w: Record<string, string> = { ...(d.warna || {}) };
@@ -89,6 +100,31 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
     dirty.current.add("k|" + id); setAdaUbah(true);
   };
 
+  const pindahUrut = (id: string, posisi: number) => {
+    if (role !== "admin") return;
+    const ids = baris.map((b) => b.id).filter((x) => x !== id);
+    ids.splice(posisi - 1, 0, id);
+    setD((p) => ({ ...p, urutan: ids }));
+    struktur.current = true; setAdaUbah(true);
+  };
+  const hapusPerawat = (b: { id: string; name: string }) => {
+    if (role !== "admin") return;
+    if (!window.confirm("Hapus " + b.name + " dari tabel beset " + labelBulan(bulan) + "? Isian tanggal dan keterangannya ikut dihapus.")) return;
+    Object.keys(d.sel).forEach((k) => { if (k.startsWith(b.id + "|")) dirty.current.add("s|" + k); });
+    dirty.current.add("k|" + b.id);
+    setD((p) => {
+      const sel = { ...p.sel }; Object.keys(sel).forEach((k) => { if (k.startsWith(b.id + "|")) delete sel[k]; });
+      const ket = { ...p.ket }; delete ket[b.id];
+      return { ...p, sel, ket, hilang: [...(p.hilang || []), b.id], urutan: (p.urutan || []).filter((x) => x !== b.id) };
+    });
+    struktur.current = true; setAdaUbah(true);
+  };
+  const tampilSemua = () => {
+    if (role !== "admin") return;
+    setD((p) => ({ ...p, hilang: [] }));
+    struktur.current = true; setAdaUbah(true);
+  };
+
   /* Simpan: ambil data terbaru dari server, timpa HANYA sel/keterangan yang diubah di layar ini. */
   const simpan = async (statusBuka?: boolean): Promise<boolean> => {
     setBusy(true);
@@ -104,12 +140,14 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
       });
       const warna = { ...server.warna, ...Object.fromEntries(Object.entries(warnaMap).filter(([id]) => !server.warna?.[id])) };
       const nowIso = new Date().toISOString();
-      const data: Beset = { ...server, id: d.id, bulan, buka: statusBuka ?? server.buka, sel, ket, warna, perawat: baris, updated_at: nowIso };
+      const urutan = struktur.current ? baris.map((b) => b.id) : (server.urutan || []);
+      const hilang = struktur.current ? (d.hilang || []) : (server.hilang || []);
+      const data: Beset = { ...server, id: d.id, bulan, buka: statusBuka ?? server.buka, sel, ket, warna, perawat: baris, urutan, hilang, updated_at: nowIso };
       const { error } = await SUPA_CLIENT.from(TABEL).upsert({ id: data.id, data, updated_at: nowIso }, { onConflict: "id" });
       if (error) showToast("⚠ Gagal menyimpan ke server: " + (error.message || "error"), C.d);
       else {
         ok = true;
-        setD(data); dirty.current.clear(); setAdaUbah(false);
+        setD(data); dirty.current.clear(); struktur.current = false; setAdaUbah(false);
         setList((x) => [data, ...x.filter((r2) => r2.id !== data.id)]);
         showToast("✓ Beset jadwal tersimpan", C.s);
       }
@@ -249,6 +287,12 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
 
       <Card style={{ marginTop: 12 }}>
         <SH label="Tabel beset" />
+        {role === "admin" && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8, fontSize: 13 }}>
+            <span>Admin: ubah urutan lewat kotak No, hapus nama dengan ✕, lalu klik Simpan.</span>
+            {(d.hilang || []).length > 0 && <Btn sm outline onClick={tampilSemua}>↺ Tampilkan perawat yang dihapus</Btn>}
+          </div>
+        )}
         {!baris.length && <div style={{ color: C.tL }}>Belum ada perawat di tab Staf.</div>}
         <div style={{ overflowX: "auto" }}>
           <table style={{ borderCollapse: "collapse" }}>
@@ -262,9 +306,13 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
             <tbody>
               {baris.map((b, i) => (
                 <tr key={b.id}>
-                  <td style={{ ...tdS, textAlign: "center" }}>{i + 1}</td>
+                  <td style={{ ...tdS, textAlign: "center", padding: 2 }}>
+                    {role === "admin"
+                      ? <select value={i + 1} onChange={(e) => pindahUrut(b.id, Number(e.target.value))} style={{ fontFamily: FONT, fontSize: 15, fontWeight: 700, border: "none", background: "transparent" }}>{baris.map((_, n) => <option key={n} value={n + 1}>{n + 1}</option>)}</select>
+                      : i + 1}
+                  </td>
                   <td style={{ ...tdS, whiteSpace: "nowrap" }}>
-                    <span style={{ display: "inline-block", width: 12, height: 12, background: warnaMap[b.id], border: "1px solid #111", marginRight: 6 }} />{b.name}
+                    <span style={{ display: "inline-block", width: 12, height: 12, background: warnaMap[b.id], border: "1px solid #111", marginRight: 6 }} />{b.name}{role === "admin" && <button type="button" aria-label="Hapus perawat" onClick={() => hapusPerawat(b)} style={{ border: "none", background: "transparent", color: C.d, fontSize: 16, cursor: "pointer", marginLeft: 6 }}>✕</button>}
                   </td>
                   {hari.map((h) => {
                     const v = d.sel[`${b.id}|${h}`] || "";

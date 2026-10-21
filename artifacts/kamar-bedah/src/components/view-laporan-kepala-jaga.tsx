@@ -6,6 +6,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import html2canvas from "html2canvas";
 import { downloadElementAsWord } from "../utils/word-export";
+import { normalizePhone62 } from "../utils";
 import { C, iS } from "../constants";
 import { maskName } from "../utils";
 import { SUPA_CLIENT, AmbilLogMedis } from "../services/supabase";
@@ -159,7 +160,7 @@ function Lembar2({ d, mask }: { d: any; mask: (s: string) => string }) {
   );
 }
 
-export function ViewLaporanKepalaJaga({ ops, roster, showToast, role, privacyMode, dbxCfg }: any) {
+export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, privacyMode, dbxCfg }: any) {
   const [tanggal, setTanggal] = useState<string>(() => isoLokal(new Date()));
   const [malamAktif, setMalamAktif] = useState(false);
   const [harian, setHarian] = useState<LaporanHarian[]>([]);
@@ -168,6 +169,9 @@ export function ViewLaporanKepalaJaga({ ops, roster, showToast, role, privacyMod
   const [busy, setBusy] = useState(false);
   const [segar, setSegar] = useState(0);
   const [manual, setManual] = useState<Record<string, string>>({});
+  const [waBuka, setWaBuka] = useState(false);
+  const [waCari, setWaCari] = useState("");
+  const [waTerkirim, setWaTerkirim] = useState<string[]>([]);
   const lembarRef = useRef<HTMLDivElement>(null);
   const mask = (s: string) => maskName(s, privacyMode);
 
@@ -206,7 +210,7 @@ export function ViewLaporanKepalaJaga({ ops, roster, showToast, role, privacyMod
   const perawat = (id: string): string[] => {
     const o = peta[id];
     if (!o) return [];
-    const pasang: [string, any][] = [["Asisten", o.assistantNurse], ["Instrumen", o.circulatingNurse], ["Anestesi", o.anesthesiaNurse], ["Onloop", o.onloopNurse]];
+    const pasang: [string, any][] = [["Asisten", o.assistantNurse], ["Instrumen", o.circulatingNurse], ["Anestesi", o.anesthesiaNurse], ["Onloop", o.onloopNurse], ["RR/Katim", o.rrKatim]];
     return pasang.filter(([, v]) => String(v || "").trim()).map(([k, v]) => `${k}: ${String(v).trim()}`);
   };
 
@@ -339,6 +343,21 @@ export function ViewLaporanKepalaJaga({ ops, roster, showToast, role, privacyMod
     try { await navigator.clipboard.writeText(buatTeks(tampil, mask)); showToast("✓ Teks laporan disalin", C.s); }
     catch { showToast("Gagal menyalin teks", C.w); }
   };
+  const labelStaf = (s: any): string => (s.type === "surgeon" ? "Dokter bedah" : s.type === "anesthesiologist" ? "Dokter anestesi" : "Perawat");
+  const daftarWa = (): any[] => {
+    const q = waCari.trim().toLowerCase();
+    return (staff || [])
+      .filter((s: any) => s && s.name && String(s.phone || "").trim() && (!q || String(s.name).toLowerCase().includes(q)))
+      .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)));
+  };
+  const kirimWa = (s: any) => {
+    const ph = normalizePhone62(String(s.phone));
+    window.open("https://wa.me/" + ph + "?text=" + encodeURIComponent(buatTeks(tampil, mask)), "_blank");
+    setWaTerkirim((x) => (x.includes(String(s.id)) ? x : [...x, String(s.id)]));
+  };
+  const kirimWaBebas = () => {
+    window.open("https://wa.me/?text=" + encodeURIComponent(buatTeks(tampil, mask)), "_blank");
+  };
   const unduhWord = () => {
     const el = lembarRef.current;
     if (!el) { showToast("Lembar belum siap", C.w); return; }
@@ -416,6 +435,27 @@ export function ViewLaporanKepalaJaga({ ops, roster, showToast, role, privacyMod
           <Btn outline onClick={salinTeks} disabled={busy}>📋 Salin teks</Btn>
           <Btn outline onClick={unduhExcel} disabled={busy}>⬇ Excel</Btn>
           <Btn outline onClick={unduhWord} disabled={busy}>⬇ Word</Btn>
+          <button type="button" onClick={() => setWaBuka((v) => !v)} disabled={busy}
+            style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "#16A34A", color: "#fff", fontSize: 15, fontWeight: 800, cursor: "pointer", boxShadow: "0 2px 8px rgba(22,163,74,.5)" }}>📲 KIRIM WA</button>
+          {waBuka && (
+            <div style={{ flexBasis: "100%", border: "2px solid #16A34A", borderRadius: 10, padding: 10, background: "#F0FDF4" }}>
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>Pilih penerima laporan ({fmtTgl(tampil.tanggal)})</div>
+              <input style={iS} value={waCari} onChange={(e) => setWaCari(e.target.value)} placeholder="Cari nama..." />
+              <div style={{ maxHeight: 260, overflowY: "auto", marginTop: 8 }}>
+                {daftarWa().map((s: any) => (
+                  <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid " + C.b }}>
+                    <div style={{ fontSize: 14 }}><b>{s.name}</b><div style={{ fontSize: 12, color: C.tL }}>{labelStaf(s)}</div></div>
+                    <button type="button" onClick={() => kirimWa(s)}
+                      style={{ padding: "8px 14px", borderRadius: 10, border: "none", background: waTerkirim.includes(String(s.id)) ? "#15803D" : "#16A34A", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
+                      {waTerkirim.includes(String(s.id)) ? "✓ Kirim lagi" : "Kirim"}
+                    </button>
+                  </div>
+                ))}
+                {!daftarWa().length && <div style={{ fontSize: 13, color: C.tL, padding: "6px 0" }}>Tidak ada staf bernomor WA yang cocok.</div>}
+              </div>
+              <div style={{ marginTop: 8 }}><Btn sm outline onClick={kirimWaBebas}>Pilih kontak / grup di WhatsApp</Btn></div>
+            </div>
+          )}
           {lihat && <Btn outline onClick={() => setLihat(null)} disabled={busy}>✕ Tutup</Btn>}
         </div>
       </Card>
