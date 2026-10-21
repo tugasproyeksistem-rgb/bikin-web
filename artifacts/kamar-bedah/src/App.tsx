@@ -227,6 +227,7 @@ import { ViewLaporan } from "./components/view-laporan";
 import { LaporanOKTab } from "./components/view-laporan-kepala-jaga";
 import { ViewJadwalOK } from "./components/view-jadwal-ok";
 import { ViewBesetJadwal } from "./components/view-beset-jadwal";
+import { BesetBanner } from "./components/beset-banner";
 // Catatan: __ocrSelfTest tidak perlu diimpor eksplisit — mengimpor nama lain
 // dari ocr-matching.ts (file yang sama) sudah memicu window.__ocrSelfTest
 // terpasang otomatis saat modul itu dievaluasi.
@@ -6824,6 +6825,8 @@ export default function App() {
           <ScrollReveal>
           <HomeParallaxBanner/>
           </ScrollReveal>
+
+          <BesetBanner setTab={setTab}/>
 
           {/* Operasi hari ini ringkas */}
           <Card style={{marginBottom:16}}>
