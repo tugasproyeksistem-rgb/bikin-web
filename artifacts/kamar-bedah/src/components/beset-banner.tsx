@@ -17,9 +17,8 @@ export function BesetBanner({ setTab }: any) {
     const muat = async () => {
       try {
         const now = new Date();
-        const cur = isoLokal(now).slice(0, 7);
         const nx = isoLokal(new Date(now.getFullYear(), now.getMonth() + 1, 1)).slice(0, 7);
-        const r: any = await SUPA_CLIENT.from("kb_beset_jadwal").select("data").in("id", ["beset_" + cur, "beset_" + nx]);
+        const r: any = await SUPA_CLIENT.from("kb_beset_jadwal").select("data").eq("id", "beset_" + nx);
         if (!batal && !r.error) setRows((r.data || []).map((x: any) => x.data).filter(Boolean));
       } catch { /* offline: banner tidak tampil */ }
     };
