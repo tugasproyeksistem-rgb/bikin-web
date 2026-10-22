@@ -13,15 +13,16 @@ import ExcelJS from "exceljs";
 
 const TABEL = "kb_beset_jadwal";
 const FONT = "'Times New Roman',Times,serif";
+const LIBUR_WARNA = "#FCA5A5";
 const PALET = ["#F87171", "#FACC15", "#4ADE80", "#60A5FA", "#C084FC", "#FB923C", "#2DD4BF", "#F472B6", "#A3E635", "#94A3B8", "#FB7185", "#38BDF8"];
 const NAMA_BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 
 interface Beset {
   id: string; bulan: string; buka: boolean;
   sel: Record<string, string>; ket: Record<string, string>; warna: Record<string, string>;
-  perawat: { id: string; name: string }[]; urutan: string[]; hilang: string[]; updated_at?: string;
+  perawat: { id: string; name: string }[]; urutan: string[]; hilang: string[]; libur: number[]; updated_at?: string;
 }
-const kosong = (bulan: string): Beset => ({ id: "beset_" + bulan, bulan, buka: false, sel: {}, ket: {}, warna: {}, perawat: [], urutan: [], hilang: [] });
+const kosong = (bulan: string): Beset => ({ id: "beset_" + bulan, bulan, buka: false, sel: {}, ket: {}, warna: {}, perawat: [], urutan: [], hilang: [], libur: [] });
 const labelBulan = (b: string) => { const [y, m] = b.split("-").map(Number); return `${NAMA_BULAN[(m || 1) - 1]} ${y}`; };
 
 export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
@@ -119,6 +120,20 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
     });
     struktur.current = true; setAdaUbah(true);
   };
+  const toggleLibur = (h: number) => {
+    if (role !== "admin") return;
+    setD((p) => {
+      const ada = (p.libur || []).includes(h);
+      return { ...p, libur: ada ? (p.libur || []).filter((x) => x !== h) : [...(p.libur || []), h].sort((a, b) => a - b) };
+    });
+    struktur.current = true; setAdaUbah(true);
+  };
+  const kosongkanLibur = () => {
+    if (role !== "admin") return;
+    setD((p) => ({ ...p, libur: [] }));
+    struktur.current = true; setAdaUbah(true);
+  };
+  const isLibur = (h: number) => (d.libur || []).includes(h);
   const tampilSemua = () => {
     if (role !== "admin") return;
     setD((p) => ({ ...p, hilang: [] }));
@@ -142,7 +157,8 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
       const nowIso = new Date().toISOString();
       const urutan = struktur.current ? baris.map((b) => b.id) : (server.urutan || []);
       const hilang = struktur.current ? (d.hilang || []) : (server.hilang || []);
-      const data: Beset = { ...server, id: d.id, bulan, buka: statusBuka ?? server.buka, sel, ket, warna, perawat: baris, urutan, hilang, updated_at: nowIso };
+      const libur = struktur.current ? (d.libur || []) : (server.libur || []);
+      const data: Beset = { ...server, id: d.id, bulan, buka: statusBuka ?? server.buka, sel, ket, warna, perawat: baris, urutan, hilang, libur, updated_at: nowIso };
       const { error } = await SUPA_CLIENT.from(TABEL).upsert({ id: data.id, data, updated_at: nowIso }, { onConflict: "id" });
       if (error) showToast("⚠ Gagal menyimpan ke server: " + (error.message || "error"), C.d);
       else {
@@ -198,10 +214,10 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
       ws.mergeCells(1, 1, 1, kol); put(1, 1, "BESET JADWAL PERAWAT KAMAR BEDAH", { bold: true, size: 14, garis: false });
       ws.mergeCells(2, 1, 2, kol); put(2, 1, labelBulan(bulan).toUpperCase(), { bold: true, size: 13, garis: false });
       put(4, 1, "No", { bold: true, abu: true }); put(4, 2, "Nama Perawat", { bold: true, abu: true });
-      hari.forEach((x, j) => put(4, 3 + j, x, { bold: true, abu: true }));
+      hari.forEach((x, j) => put(4, 3 + j, x, { bold: true, abu: true, warna: isLibur(x) ? LIBUR_WARNA : undefined }));
       baris.forEach((b, i) => {
         put(5 + i, 1, i + 1); put(5 + i, 2, sx(b.name), { kiri: true });
-        hari.forEach((x, j) => { const v = d.sel[b.id + "|" + x] || ""; put(5 + i, 3 + j, sx(v), { bold: !!v, warna: v ? warnaMap[b.id] : undefined }); });
+        hari.forEach((x, j) => { const v = d.sel[b.id + "|" + x] || ""; put(5 + i, 3 + j, sx(v), { bold: !!v, warna: v ? warnaMap[b.id] : isLibur(x) ? LIBUR_WARNA : undefined }); });
       });
       const k0 = 5 + baris.length + 1;
       put(k0, 1, "Keterangan", { bold: true, size: 13, kiri: true, garis: false });
@@ -231,10 +247,10 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
     const td = "border:1px solid #000;padding:3px;font-size:11pt;";
     let h = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>Beset Jadwal</title><style>@page Section1{size:29.7cm 21cm;mso-page-orientation:landscape;margin:1.2cm}div.Section1{page:Section1}body{font-family:"Times New Roman",Times,serif}table{border-collapse:collapse}</style></head><body><div class="Section1">`;
     h += `<p style="text-align:center;font-weight:bold;font-size:15pt">BESET JADWAL PERAWAT KAMAR BEDAH<br/>${escHtml(labelBulan(bulan).toUpperCase())}</p>`;
-    h += `<table style="width:100%"><tr><th style="${th}">No</th><th style="${th}">Nama Perawat</th>${hari.map((x) => `<th style="${th}">${x}</th>`).join("")}</tr>`;
+    h += `<table style="width:100%"><tr><th style="${th}">No</th><th style="${th}">Nama Perawat</th>${hari.map((x) => `<th style="${th}${isLibur(x) ? ";background:#DC2626;color:#fff" : ""}">${x}</th>`).join("")}</tr>`;
     baris.forEach((b, i) => {
       h += `<tr><td style="${td}text-align:center">${i + 1}</td><td style="${td}">${escHtml(b.name)}</td>`;
-      hari.forEach((x) => { const v = d.sel[`${b.id}|${x}`] || ""; h += `<td style="${td}text-align:center;${v ? `background:${warnaMap[b.id]};font-weight:bold` : ""}">${escHtml(v)}</td>`; });
+      hari.forEach((x) => { const v = d.sel[`${b.id}|${x}`] || ""; h += `<td style="${td}text-align:center;${v ? `background:${warnaMap[b.id]};font-weight:bold` : isLibur(x) ? "background:#FCA5A5" : ""}">${escHtml(v)}</td>`; });
       h += "</tr>";
     });
     h += `</table><p style="font-weight:bold;font-size:13pt">Keterangan</p><table style="width:100%"><tr><th style="${th}">No</th><th style="${th}">Nama</th><th style="${th}">Keterangan</th></tr>`;
@@ -294,13 +310,26 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
           </div>
         )}
         {!baris.length && <div style={{ color: C.tL }}>Belum ada perawat di tab Staf.</div>}
+        {role === "admin" && (
+          <div style={{ border: "1px solid " + C.b, borderRadius: 10, padding: 8, marginBottom: 8 }}>
+            <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14 }}>🗓 Pilih tanggal libur (blok satu hari penuh). Ketuk tanggal untuk memilih atau membatalkan, lalu klik Simpan.</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+              {hari.map((h) => (
+                <button key={h} type="button" onClick={() => toggleLibur(h)}
+                  style={{ width: 38, height: 34, borderRadius: 8, border: "1.5px solid " + (isLibur(h) ? "#DC2626" : C.b), background: isLibur(h) ? "#DC2626" : "#fff", color: isLibur(h) ? "#fff" : "#111", fontFamily: FONT, fontSize: 15, fontWeight: 700, cursor: "pointer" }}>{h}</button>
+              ))}
+            </div>
+            {(d.libur || []).length > 0 && <div style={{ marginTop: 6 }}><Btn sm outline onClick={kosongkanLibur}>Hapus semua tanda libur</Btn></div>}
+          </div>
+        )}
+        {(d.libur || []).length > 0 && <div style={{ fontSize: 13, marginBottom: 6 }}><span style={{ display: "inline-block", width: 12, height: 12, background: "#FCA5A5", border: "1px solid #111", marginRight: 6 }} />Kolom merah = tanggal libur (tetap bisa diisi untuk beset libur)</div>}
         <div style={{ overflowX: "auto" }}>
           <table style={{ borderCollapse: "collapse" }}>
             <thead>
               <tr>
                 <th style={{ ...thS, minWidth: 36 }}>No</th>
                 <th style={{ ...thS, minWidth: 170 }}>Nama Perawat</th>
-                {hari.map((h) => <th key={h} style={{ ...thS, minWidth: 36 }}>{h}</th>)}
+                {hari.map((h) => <th key={h} style={{ ...thS, minWidth: 36, ...(isLibur(h) ? { background: "#DC2626", color: "#fff" } : {}) }}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -317,7 +346,7 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
                   {hari.map((h) => {
                     const v = d.sel[`${b.id}|${h}`] || "";
                     return (
-                      <td key={h} style={{ ...tdS, padding: 0, background: v ? warnaMap[b.id] : "#fff" }}>
+                      <td key={h} style={{ ...tdS, padding: 0, background: v ? warnaMap[b.id] : isLibur(h) ? LIBUR_WARNA : "#fff" }}>
                         <input value={v} disabled={!d.buka} maxLength={6} onChange={(e) => ubahSel(b.id, h, e.target.value.toUpperCase())}
                           style={{ width: 36, border: "none", background: "transparent", textAlign: "center", fontFamily: FONT, fontSize: 15, fontWeight: 700, padding: "6px 0", color: "#111", boxSizing: "border-box" }} />
                       </td>

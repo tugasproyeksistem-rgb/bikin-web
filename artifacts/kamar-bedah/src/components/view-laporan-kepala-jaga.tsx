@@ -5,7 +5,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import html2canvas from "html2canvas";
-import { downloadElementAsWord } from "../utils/word-export";
+import { downloadElementAsWord, elementToWordBlob } from "../utils/word-export";
 import { normalizePhone62 } from "../utils";
 import { C, iS } from "../constants";
 import { maskName } from "../utils";
@@ -172,6 +172,7 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
   const [waBuka, setWaBuka] = useState(false);
   const [waCari, setWaCari] = useState("");
   const [waTerkirim, setWaTerkirim] = useState<string[]>([]);
+  const [waFormat, setWaFormat] = useState<"teks" | "jpg" | "pdf" | "word" | "excel">("teks");
   const lembarRef = useRef<HTMLDivElement>(null);
   const mask = (s: string) => maskName(s, privacyMode);
 
@@ -355,6 +356,83 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
     window.open("https://wa.me/" + ph + "?text=" + encodeURIComponent(buatTeks(tampil, mask)), "_blank");
     setWaTerkirim((x) => (x.includes(String(s.id)) ? x : [...x, String(s.id)]));
   };
+  const buatFile = async (fmt: string): Promise<{ blob: Blob; nama: string }> => {
+    if (fmt === "word") {
+      const el = lembarRef.current;
+      if (!el) throw new Error("Lembar belum siap");
+      return { blob: elementToWordBlob(el), nama: namaFile("doc") };
+    }
+    if (fmt === "excel") {
+      const buf = await buatWorkbookKepalaJaga([tampil]).xlsx.writeBuffer();
+      return { blob: new Blob([buf as unknown as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), nama: namaFile("xlsx") };
+    }
+    const cv = await ambilCanvas(fmt === "jpg" ? 3 : 2);
+    if (fmt === "jpg") {
+      const blob = await new Promise<Blob | null>((res) => cv.toBlob((b) => res(b), "image/jpeg", 0.95));
+      if (!blob) throw new Error("Gagal membuat JPG");
+      return { blob, nama: namaFile("jpg") };
+    }
+    const PW = 595.28; const PH = 841.89;
+    const tinggiHal = Math.floor((cv.width * PH) / PW);
+    const hal: { jpeg: Uint8Array; w: number; h: number }[] = [];
+    for (let y = 0; y < cv.height; y += tinggiHal) {
+      const h = Math.min(tinggiHal, cv.height - y);
+      const part = document.createElement("canvas");
+      part.width = cv.width; part.height = h;
+      const ctx = part.getContext("2d");
+      if (!ctx) throw new Error("Canvas tidak tersedia");
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, part.width, h);
+      ctx.drawImage(cv, 0, y, cv.width, h, 0, 0, cv.width, h);
+      const bin = atob(part.toDataURL("image/jpeg", 0.92).split(",")[1]);
+      const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      hal.push({ jpeg: arr, w: part.width, h });
+    }
+    return { blob: buatPdfDariJpeg(hal), nama: namaFile("pdf") };
+  };
+  const unduhBlob = (blob: Blob, nama: string) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = nama; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  };
+  const kirimWaPilihan = async (s: any | null) => {
+    if (waFormat === "teks") { if (s) kirimWa(s); else kirimWaBebas(); return; }
+    const jendela = window.open("", "_blank");
+    setBusy(true);
+    try {
+      const { blob, nama } = await buatFile(waFormat);
+      unduhBlob(blob, nama);
+      const pesan = "Laporan Kepala Jaga Kamar Bedah " + fmtTgl(tampil.tanggal) + " (file " + nama + " terlampir)";
+      const link = "https://wa.me/" + (s ? normalizePhone62(String(s.phone)) : "") + "?text=" + encodeURIComponent(pesan);
+      if (jendela) jendela.location.href = link; else window.open(link, "_blank");
+      if (s) setWaTerkirim((x) => (x.includes(String(s.id)) ? x : [...x, String(s.id)]));
+      showToast("✓ File diunduh. Lampirkan " + nama + " di chat WhatsApp", C.s);
+    } catch (e: any) {
+      if (jendela) jendela.close();
+      showToast("Gagal menyiapkan file: " + (e?.message || "error"), C.d);
+    }
+    setBusy(false);
+  };
+  const bagikanFile = async () => {
+    if (waFormat === "teks") return;
+    setBusy(true);
+    try {
+      const { blob, nama } = await buatFile(waFormat);
+      const file = new File([blob], nama, { type: blob.type || "application/octet-stream" });
+      const nav: any = navigator;
+      const pesan = "Laporan Kepala Jaga Kamar Bedah " + fmtTgl(tampil.tanggal);
+      if (nav.canShare && nav.canShare({ files: [file] })) {
+        await nav.share({ files: [file], text: pesan, title: pesan });
+      } else {
+        unduhBlob(blob, nama);
+        showToast("Perangkat ini belum mendukung bagikan file langsung. File diunduh, lampirkan manual di WhatsApp.", C.w);
+      }
+    } catch (e: any) {
+      if (e?.name !== "AbortError") showToast("Gagal membagikan file: " + (e?.message || "error"), C.d);
+    }
+    setBusy(false);
+  };
   const kirimWaBebas = () => {
     window.open("https://wa.me/?text=" + encodeURIComponent(buatTeks(tampil, mask)), "_blank");
   };
@@ -440,12 +518,25 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
           {waBuka && (
             <div style={{ flexBasis: "100%", border: "2px solid #16A34A", borderRadius: 10, padding: 10, background: "#F0FDF4" }}>
               <div style={{ fontWeight: 800, marginBottom: 6 }}>Pilih penerima laporan ({fmtTgl(tampil.tanggal)})</div>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Kirim dalam bentuk:</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                {([["teks", "💬 Teks"], ["jpg", "🖼 JPG"], ["pdf", "📄 PDF"], ["word", "📝 Word"], ["excel", "📊 Excel"]] as const).map(([k2, l]) => (
+                  <button key={k2} type="button" onClick={() => setWaFormat(k2)}
+                    style={{ padding: "8px 12px", borderRadius: 10, border: "2px solid #16A34A", background: waFormat === k2 ? "#16A34A" : "#fff", color: waFormat === k2 ? "#fff" : "#166534", fontSize: 14, fontWeight: 800, cursor: "pointer" }}>{l}</button>
+                ))}
+              </div>
+              {waFormat !== "teks" && (
+                <div style={{ marginBottom: 8 }}>
+                  <Btn onClick={bagikanFile} disabled={busy}>📤 Bagikan file {waFormat.toUpperCase()} langsung ke WhatsApp (HP)</Btn>
+                  <div style={{ fontSize: 12, color: C.tL, marginTop: 4 }}>Di HP: pilih WhatsApp lalu penerima atau grup. Tombol Kirim per nama: file diunduh, chat WhatsApp terbuka, lalu Anda tinggal melampirkan file yang baru diunduh.</div>
+                </div>
+              )}
               <input style={iS} value={waCari} onChange={(e) => setWaCari(e.target.value)} placeholder="Cari nama..." />
               <div style={{ maxHeight: 260, overflowY: "auto", marginTop: 8 }}>
                 {daftarWa().map((s: any) => (
                   <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid " + C.b }}>
                     <div style={{ fontSize: 14 }}><b>{s.name}</b><div style={{ fontSize: 12, color: C.tL }}>{labelStaf(s)}</div></div>
-                    <button type="button" onClick={() => kirimWa(s)}
+                    <button type="button" onClick={() => kirimWaPilihan(s)}
                       style={{ padding: "8px 14px", borderRadius: 10, border: "none", background: waTerkirim.includes(String(s.id)) ? "#15803D" : "#16A34A", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
                       {waTerkirim.includes(String(s.id)) ? "✓ Kirim lagi" : "Kirim"}
                     </button>
@@ -453,7 +544,7 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
                 ))}
                 {!daftarWa().length && <div style={{ fontSize: 13, color: C.tL, padding: "6px 0" }}>Tidak ada staf bernomor WA yang cocok.</div>}
               </div>
-              <div style={{ marginTop: 8 }}><Btn sm outline onClick={kirimWaBebas}>Pilih kontak / grup di WhatsApp</Btn></div>
+              <div style={{ marginTop: 8 }}><Btn sm outline onClick={() => kirimWaPilihan(null)}>Pilih kontak / grup di WhatsApp</Btn></div>
             </div>
           )}
           {lihat && <Btn outline onClick={() => setLihat(null)} disabled={busy}>✕ Tutup</Btn>}

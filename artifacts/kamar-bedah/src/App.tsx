@@ -6821,11 +6821,6 @@ export default function App() {
               data dashboard. */}
           <AuroraBackground opacity={0.12}/>
           <div style={{position:"relative",zIndex:1}}>
-          {/* Welcome Banner */}
-          <ScrollReveal>
-          <HomeParallaxBanner/>
-          </ScrollReveal>
-
           <BesetBanner setTab={setTab}/>
 
           {/* Operasi hari ini ringkas */}

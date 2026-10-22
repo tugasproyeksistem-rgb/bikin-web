@@ -36,3 +36,14 @@ export function downloadElementAsWord(el: HTMLElement, filename: string, landsca
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
+
+/* Sama seperti downloadElementAsWord, tetapi mengembalikan Blob (untuk dibagikan / dikirim WA). */
+export function elementToWordBlob(el: HTMLElement, landscape = false): Blob {
+  const klon = el.cloneNode(true) as HTMLElement;
+  [klon, ...Array.from(klon.querySelectorAll<HTMLElement>("*"))].forEach((n) => {
+    if (n.style && n.style.width.endsWith("px") && parseFloat(n.style.width) >= 600) n.style.width = "100%";
+  });
+  const ukuran = landscape ? "size:29.7cm 21cm;mso-page-orientation:landscape" : "size:21cm 29.7cm";
+  const html = '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40"><head><meta charset="utf-8"><title>Laporan</title><style>@page Section1{' + ukuran + ';margin:1.2cm}div.Section1{page:Section1}body{font-family:"Times New Roman",Times,serif}table{border-collapse:collapse}</style></head><body><div class="Section1">' + klon.innerHTML + '</div></body></html>';
+  return new Blob([html], { type: "application/msword" });
+}
