@@ -82,6 +82,22 @@ export function tanggalTujuan(tanggal: string, dari: ShiftKey, ke: ShiftKey): st
 }
 
 /* ── Penyusunan baris dari daftar operasi ── */
+/* Teks kolom "Jenis Operasi": tindakan/prosedur + diagnosa medis. */
+/* Teks kolom "Dokter" (Kandidat / Operasi Besok): dokter bedah + dokter anestesi. */
+export function dokterGabung(o: any): string {
+  const b = String(o?.surgeon ?? "").trim();
+  const a = String(o?.anesthesiologist ?? "").trim();
+  const p: string[] = [];
+  if (b) p.push("Bedah: " + b);
+  if (a) p.push("Anestesi: " + a);
+  return p.join(" / ");
+}
+export function jenisDx(o: any): string {
+  const p = String(o?.procedure ?? "").trim();
+  const d = String(o?.diagnosis ?? "").trim();
+  if (p && d) return p + " (Dx: " + d + ")";
+  return p || (d ? "Dx: " + d : "");
+}
 export function statusLabel(s: unknown): string {
   switch (s) { case "done": return "Selesai"; case "ongoing": return "Proses"; case "batal": return "Batal"; default: return "Terjadwal"; }
 }
@@ -99,7 +115,7 @@ export function susunJadwal(ops: any[], tanggal: string, shift: ShiftKey, malamA
     .filter((o: any) => o && o.date === tanggal && shiftYangMencakup(o.time, malamAktif).includes(shift))
     .sort(jamUrut)
     .map((o: any): JadwalRow => ({
-      opId: String(o.id), jam: o.time || "", pasien: o.patient || "", jenis: o.procedure || "",
+      opId: String(o.id), jam: o.time || "", pasien: o.patient || "", jenis: jenisDx(o),
       operator: o.surgeon || "", anestesi: o.anesthesiologist || "", status: statusLabel(o.status),
       catatan: "", cyto: o.opType === "cyto",
     }));
@@ -110,7 +126,7 @@ export function susunRencana(ops: any[], tanggal: string, shift: ShiftKey, malam
     .sort(jamUrut)
     .map((o: any): RencanaRow => ({
       opId: String(o.id), tanggal: o.date || "", jam: o.time || "", operator: o.surgeon || "", anestesi: o.anesthesiologist || "",
-      pasien: o.patient || "", umur: teksUmur(o), kamar: o.room || "", jenis: o.procedure || "", alkes: "", keterangan: "",
+      pasien: o.patient || "", umur: teksUmur(o), kamar: o.room || "", jenis: jenisDx(o), alkes: "", keterangan: "",
     }));
 }
 /* Kandidat = operasi besok (hari Sabtu: Minggu + Senin) */
@@ -121,8 +137,8 @@ export function susunKandidat(ops: any[], tanggal: string): KandidatRow[] {
     .filter((o: any) => o && tgl.includes(o.date) && o.status !== "batal")
     .sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)) || jamUrut(a, b))
     .map((o: any): KandidatRow => ({
-      opId: String(o.id), tanggal: o.date || "", jam: o.time || "", dokter: o.surgeon || "", pasien: o.patient || "",
-      umur: teksUmur(o), jenis: o.procedure || "", keterangan: "",
+      opId: String(o.id), tanggal: o.date || "", jam: o.time || "", dokter: dokterGabung(o), pasien: o.patient || "",
+      umur: teksUmur(o), jenis: jenisDx(o), keterangan: "",
     }));
 }
 
@@ -268,7 +284,7 @@ export function susunRencanaHariPenuh(ops: any[], tanggal: string): RencanaRow[]
     .sort(jamUrut)
     .map((o: any): RencanaRow => ({
       opId: String(o.id), tanggal: o.date || "", jam: o.time || "", operator: o.surgeon || "", anestesi: o.anesthesiologist || "",
-      pasien: o.patient || "", umur: teksUmur(o), kamar: o.room || "", jenis: o.procedure || "", alkes: "", keterangan: "",
+      pasien: o.patient || "", umur: teksUmur(o), kamar: o.room || "", jenis: jenisDx(o), alkes: "", keterangan: "",
     }));
 }
 
@@ -282,8 +298,8 @@ export function susunKandidatLusa(ops: any[], tanggal: string): KandidatRow[] {
     .filter((o: any) => o && o.date === tgl && o.status !== "batal")
     .sort(jamUrut)
     .map((o: any): KandidatRow => ({
-      opId: String(o.id), tanggal: o.date || "", jam: o.time || "", dokter: o.surgeon || "", pasien: o.patient || "",
-      umur: teksUmur(o), jenis: o.procedure || "", keterangan: "",
+      opId: String(o.id), tanggal: o.date || "", jam: o.time || "", dokter: dokterGabung(o), pasien: o.patient || "",
+      umur: teksUmur(o), jenis: jenisDx(o), keterangan: "",
     }));
 }
 export function judulKandidat(l: LaporanHarian): string {

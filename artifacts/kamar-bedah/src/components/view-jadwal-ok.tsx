@@ -12,7 +12,7 @@ import { maskName } from "../utils";
 import { SUPA_CLIENT, AmbilLogMedis } from "../services/supabase";
 import { dropboxUploadBytes } from "../services/dropbox";
 import { Card, SH, Btn } from "./primitives";
-import { isoLokal, fmtTgl, namaHari, tanggalPanjang } from "../utils/laporan-harian";
+import { isoLokal, fmtTgl, namaHari, tanggalPanjang, menitDariJam } from "../utils/laporan-harian";
 import type { JadwalOK, BarisOK, PerawatJaga } from "../utils/jadwal-ok";
 import { barisKosong, susunBarisDariOps, perawatDariGenerator, buatWorkbookJadwalOK, workbookKeBlob, workbookKeBase64, filterJadwalOK } from "../utils/jadwal-ok";
 import { perawatDariUpload } from "../utils/jadwal-perawat";
@@ -29,7 +29,8 @@ const PERAWAT_FIELD: { k: keyof PerawatJaga; l: string }[] = [
   { k: "pagi", l: "PERAWAT JAGA PAGI" }, { k: "pg", l: "PG" }, { k: "sore", l: "SORE" }, { k: "sg", l: "SG" }, { k: "cuti", l: "CUTI (T)" },
 ];
 
-interface FormJ { perawat: PerawatJaga; baris: BarisOK[]; }
+interface FormJ { perawat: PerawatJaga; baris: BarisOK[]; dihapus?: string[]; }
+const urutkanBaris = (a: BarisOK[]): BarisOK[] => [...a].sort((x, y) => (menitDariJam(x.jam) ?? 9999) - (menitDariJam(y.jam) ?? 9999));
 
 export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSupa, deleteFromSupa, dbxCfg }: any) {
   const hariIni = isoLokal(new Date());
@@ -86,15 +87,28 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
     return () => { batal = true; };
   }, [bulanKey]);
 
-  const tersimpan = useMemo(() => list.find((x) => x.id === tanggal) || null, [list, tanggal]);
+  const tersimpan = useMemo(() => list.find((x) => x.tanggal === tanggal) || null, [list, tanggal]);
   const perawatAuto = useMemo(() => (gen?.__upload ? perawatDariUpload(gen.__upload, tanggal) : perawatDariGenerator(gen, tanggal)) || KOSONG, [gen, tanggal]);
   const barisAuto = useMemo(() => susunBarisDariOps(ops, tanggal), [ops, tanggal]);
 
   /* isi form: dari salinan tersimpan, kalau belum ada dari Generator + jadwal operasi */
   useEffect(() => {
-    if (!loaded || dirty) return;
-    if (tersimpan) setForm({ perawat: { ...KOSONG, ...tersimpan.perawat }, baris: tersimpan.baris || [] });
-    else setForm({ perawat: perawatAuto, baris: barisAuto });
+    if (!loaded) return;
+    if (dirty) {
+      setForm((p) => {
+        const baru = barisAuto.filter((a) => !p.baris.some((b) => b.id === a.id) && !(p.dihapus || []).includes(a.id));
+        return baru.length ? { ...p, baris: urutkanBaris([...p.baris, ...baru]) } : p;
+      });
+      return;
+    }
+    if (tersimpan) {
+      const dh = tersimpan.dihapus || [];
+      const lama = tersimpan.baris || [];
+      const baru = barisAuto.filter((a) => !lama.some((b) => b.id === a.id) && !dh.includes(a.id));
+      setForm({ perawat: { ...KOSONG, ...tersimpan.perawat }, baris: baru.length ? urutkanBaris([...lama, ...baru]) : lama, dihapus: dh });
+      if (baru.length) setDirty(true);
+    }
+    else setForm({ perawat: perawatAuto, baris: barisAuto, dihapus: [] });
   }, [loaded, dirty, tersimpan, perawatAuto, barisAuto]);
 
   const gantiTanggal = (t: string) => {
@@ -106,15 +120,15 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
   const ubahPerawat = (k: keyof PerawatJaga, v: string) => { setForm((p) => ({ ...p, perawat: { ...p.perawat, [k]: v } })); setDirty(true); };
   const ubahBaris = (id: string, k: keyof BarisOK, v: string) => { setForm((p) => ({ ...p, baris: p.baris.map((b) => (b.id === id ? { ...b, [k]: v } : b)) })); setDirty(true); };
   const tambahBaris = () => { setForm((p) => ({ ...p, baris: [...p.baris, barisKosong()] })); setDirty(true); };
-  const hapusBaris = (id: string) => { setForm((p) => ({ ...p, baris: p.baris.filter((b) => b.id !== id) })); setDirty(true); };
+  const hapusBaris = (id: string) => { setForm((p) => ({ ...p, baris: p.baris.filter((b) => b.id !== id), dihapus: id.startsWith("op_") ? [...(p.dihapus || []), id] : (p.dihapus || []) })); setDirty(true); };
   const muatUlang = () => {
-    if (!window.confirm("Ganti isi dengan data terbaru dari Generator dan jadwal operasi? Perubahan manual akan hilang.")) return;
-    setForm({ perawat: perawatAuto, baris: barisAuto });
+    if (!window.confirm("Tambahkan operasi terbaru dari jadwal operasi? Isian manual (Kamar, dll) tidak diubah, dan baris yang pernah dihapus muncul lagi.")) return;
+    setForm((p) => ({ ...p, baris: urutkanBaris([...p.baris, ...barisAuto.filter((a) => !p.baris.some((b) => b.id === a.id))]), dihapus: [] }));
     setDirty(true);
   };
 
   const bangun = (): JadwalOK => ({
-    id: tanggal, tanggal, hari: namaHari(tanggal), perawat: form.perawat, baris: form.baris,
+    id: tersimpan?.id ?? tanggal, tanggal, hari: namaHari(tanggal), perawat: form.perawat, baris: form.baris, dihapus: form.dihapus || [],
     operator: role === "admin" ? "Admin" : "Perawat", updated_at: new Date().toISOString(),
   });
 
@@ -127,7 +141,9 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
       setBusy(false);
       return;
     }
-    setList((x) => [data, ...x.filter((r) => r.id !== data.id)]);
+    const ganda = list.filter((r) => r.tanggal === data.tanggal && r.id !== data.id);
+    setList((x) => [data, ...x.filter((r) => r.id !== data.id && r.tanggal !== data.tanggal)]);
+    ganda.forEach((r) => { deleteFromSupa?.("kb_jadwal_ok", r.id); });
     setDirty(false);
     showToast("✓ Jadwal operasi tersimpan", C.s);
     try {

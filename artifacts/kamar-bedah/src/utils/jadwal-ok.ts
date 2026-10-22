@@ -12,7 +12,7 @@ export interface BarisOK {
 }
 export interface PerawatJaga { pagi: string; pg: string; sore: string; sg: string; cuti: string; }
 export interface JadwalOK {
-  id: string; tanggal: string; hari: string; perawat: PerawatJaga; baris: BarisOK[]; operator: string; updated_at: string;
+  id: string; tanggal: string; hari: string; perawat: PerawatJaga; baris: BarisOK[]; dihapus?: string[]; operator: string; updated_at: string;
 }
 
 export function barisKosong(): BarisOK {
