@@ -35,6 +35,8 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
   const [pin, setPin] = useState("");
   const dirty = useRef<Set<string>>(new Set());
   const struktur = useRef(false);
+  const [warnaGlobal, setWarnaGlobal] = useState<Record<string, string>>({});
+  const [warnaBuka, setWarnaBuka] = useState(false);
 
   const muat = useCallback(async (b: string) => {
     try {
@@ -49,6 +51,15 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => { muat(bulan); }, [bulan, muat]);
+
+  const muatWarna = useCallback(async () => {
+    try {
+      const r: any = await SUPA_CLIENT.from("kamar_bedah_config").select("value").eq("key", "beset_warna");
+      const v = r.data?.[0]?.value;
+      if (v) setWarnaGlobal(typeof v === "string" ? JSON.parse(v) : v);
+    } catch { /* offline: pakai warna otomatis */ }
+  }, []);
+  useEffect(() => { muatWarna(); }, [bulan, muatWarna]);
 
   const sumber = useMemo(() => {
     const all = (staff || []).filter((s: any) => s && s.name);
@@ -74,7 +85,9 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
   }, [sumber, d.perawat, d.urutan, d.hilang]);
 
   const warnaMap = useMemo(() => {
-    const w: Record<string, string> = { ...(d.warna || {}) };
+    const gv = new Set(Object.values(warnaGlobal));
+    const dasar = Object.fromEntries(Object.entries(d.warna || {}).filter(([id, c]) => warnaGlobal[id] || !gv.has(c)));
+    const w: Record<string, string> = { ...dasar, ...warnaGlobal };
     const dipakai = new Set(Object.values(w));
     baris.forEach((b) => {
       if (!w[b.id]) {
@@ -83,7 +96,7 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
       }
     });
     return w;
-  }, [d.warna, baris]);
+  }, [d.warna, warnaGlobal, baris]);
 
   const [y, m] = bulan.split("-").map(Number);
   const nHari = new Date(y, m, 0).getDate();
@@ -119,6 +132,33 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
       return { ...p, sel, ket, hilang: [...(p.hilang || []), b.id], urutan: (p.urutan || []).filter((x) => x !== b.id) };
     });
     struktur.current = true; setAdaUbah(true);
+  };
+  const simpanWarnaGlobal = async (baru: Record<string, string>) => {
+    setWarnaGlobal(baru);
+    const { error } = await SUPA_CLIENT.from("kamar_bedah_config").upsert({ key: "beset_warna", value: JSON.stringify(baru) }, { onConflict: "key" });
+    if (error) showToast("⚠ Gagal menyimpan warna: " + (error.message || "error"), C.d);
+    else showToast("✓ Warna perawat tersimpan", C.s);
+  };
+  const simpanWarna = (id: string, hex: string) => {
+    if (role !== "admin") return;
+    simpanWarnaGlobal({ ...warnaGlobal, [id]: hex });
+  };
+  const kunciSemuaWarna = () => {
+    if (role !== "admin") return;
+    simpanWarnaGlobal({ ...warnaGlobal, ...Object.fromEntries(baris.map((b) => [b.id, warnaMap[b.id]])) });
+  };
+  const salinDariBulanLalu = () => {
+    if (role !== "admin") return;
+    const [yy, mm] = bulan.split("-").map(Number);
+    const prev = new Date(yy, mm - 2, 1);
+    const kb = prev.getFullYear() + "-" + String(prev.getMonth() + 1).padStart(2, "0");
+    const lalu = list.find((x) => x.bulan === kb);
+    if (!lalu) { showToast("Beset " + labelBulan(kb) + " belum tersimpan, tidak ada yang disalin", C.w); return; }
+    if (!window.confirm("Salin urutan dan daftar perawat dari " + labelBulan(kb) + "? Urutan dan daftar bulan ini akan diganti.")) return;
+    const urut = lalu.urutan && lalu.urutan.length ? lalu.urutan : (lalu.perawat || []).map((p) => p.id);
+    setD((p) => ({ ...p, urutan: urut, hilang: lalu.hilang || [] }));
+    struktur.current = true; setAdaUbah(true);
+    showToast("✓ Urutan disalin dari " + labelBulan(kb) + ". Klik Simpan.", C.s);
   };
   const toggleLibur = (h: number) => {
     if (role !== "admin") return;
@@ -306,6 +346,8 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
         {role === "admin" && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8, fontSize: 13 }}>
             <span>Admin: ubah urutan lewat kotak No, hapus nama dengan ✕, lalu klik Simpan.</span>
+            <Btn sm outline onClick={salinDariBulanLalu}>📋 Salin urutan dari bulan lalu</Btn>
+            <Btn sm outline onClick={() => setWarnaBuka((v) => !v)}>🎨 Atur warna perawat</Btn>
             {(d.hilang || []).length > 0 && <Btn sm outline onClick={tampilSemua}>↺ Tampilkan perawat yang dihapus</Btn>}
           </div>
         )}
@@ -320,6 +362,23 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
               ))}
             </div>
             {(d.libur || []).length > 0 && <div style={{ marginTop: 6 }}><Btn sm outline onClick={kosongkanLibur}>Hapus semua tanda libur</Btn></div>}
+          </div>
+        )}
+        {role === "admin" && warnaBuka && (
+          <div style={{ border: "1px solid " + C.b, borderRadius: 10, padding: 8, marginBottom: 8 }}>
+            <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14 }}>🎨 Warna tetap per perawat (berlaku di semua bulan). Warna yang dipakai perawat lain tidak bisa dipilih.</div>
+            {baris.map((b) => (
+              <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", padding: "4px 0", borderBottom: "1px solid " + C.b }}>
+                <div style={{ minWidth: 150, fontSize: 14 }}><b>{b.name}</b></div>
+                {PALET.map((c) => {
+                  const pakai = baris.some((x) => x.id !== b.id && warnaMap[x.id] === c);
+                  const aktif = warnaMap[b.id] === c;
+                  return <button key={c} type="button" disabled={pakai} onClick={() => simpanWarna(b.id, c)} aria-label={"Warna " + c}
+                    style={{ width: 26, height: 26, borderRadius: 6, background: c, border: aktif ? "3px solid #111" : "1px solid #888", opacity: pakai ? 0.25 : 1, cursor: pakai ? "default" : "pointer" }} />;
+                })}
+              </div>
+            ))}
+            <div style={{ marginTop: 6 }}><Btn sm outline onClick={kunciSemuaWarna}>🔒 Kunci semua warna saat ini</Btn></div>
           </div>
         )}
         {(d.libur || []).length > 0 && <div style={{ fontSize: 13, marginBottom: 6 }}><span style={{ display: "inline-block", width: 12, height: 12, background: "#FCA5A5", border: "1px solid #111", marginRight: 6 }} />Kolom merah = tanggal libur (tetap bisa diisi untuk beset libur)</div>}
