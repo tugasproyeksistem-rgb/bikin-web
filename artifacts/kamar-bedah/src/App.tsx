@@ -228,6 +228,8 @@ import { LaporanOKTab } from "./components/view-laporan-kepala-jaga";
 import { ViewJadwalOK } from "./components/view-jadwal-ok";
 import { ViewBesetJadwal } from "./components/view-beset-jadwal";
 import { BesetBanner } from "./components/beset-banner";
+import { ViewPengumuman } from "./components/view-pengumuman";
+import { HomeRingkas } from "./components/home-ringkas";
 // Catatan: __ocrSelfTest tidak perlu diimpor eksplisit — mengimpor nama lain
 // dari ocr-matching.ts (file yang sama) sudah memicu window.__ocrSelfTest
 // terpasang otomatis saat modul itu dievaluasi.
@@ -6815,7 +6817,7 @@ export default function App() {
   const content = (
     <ErrorBoundary>
       {tab==="home" && (
-        <div style={{paddingBottom:32,position:"relative"}}>
+        <div className="kb-home-bg" style={{paddingBottom:32,position:"relative"}}>
           {/* #1 Aurora Background versi SUBTLE (opacity rendah) — benang
               merah visual dengan layar login, tanpa ganggu keterbacaan
               data dashboard. */}
@@ -6823,9 +6825,11 @@ export default function App() {
           <div style={{position:"relative",zIndex:1}}>
           <BesetBanner setTab={setTab}/>
 
+          <HomeRingkas ops={ops}/>
+
           {/* Operasi hari ini ringkas */}
-          <Card style={{marginBottom:16}}>
-            <SH label="📋 Operasi Hari Ini" color={C.i}/>
+          <Card className="kb-kaca" style={{marginBottom:16}}>
+            <SH label="📋 Operasi Hari Ini" color="#5B4BCB"/>
             {(() => {
               const todayOps = [...ops.filter((o:any)=>o.date===todayDate()&&o.status!=="batal")]
                 .sort((a:any,b:any)=>{
@@ -6906,14 +6910,14 @@ export default function App() {
             {/* Sel besar: Operasi Hari Ini — #2 SpotlightCard (cahaya
                 mengikuti kursor saat hover) */}
             <GlareHover>
-            <SpotlightCard style={{background:"linear-gradient(135deg,#EFF6FF,#DBEAFE)",borderRadius:18,padding:"20px 18px",boxShadow:"6px 6px 16px rgba(148,163,184,.16), -4px -4px 12px rgba(255,255,255,.7)",border:"1px solid #BFDBFE",display:"flex",flexDirection:"column",justifyContent:"center"}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#1565C0",letterSpacing:.5,textTransform:"uppercase",opacity:.8,marginBottom:6}}>
+            <SpotlightCard style={{background:"linear-gradient(135deg,rgba(99,102,241,.24),rgba(59,130,246,.18))",borderRadius:18,padding:"20px 18px",boxShadow:"6px 6px 16px rgba(148,163,184,.16), -4px -4px 12px rgba(255,255,255,.7)",border:"1px solid #BFDBFE",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#4338CA",letterSpacing:.5,textTransform:"uppercase",opacity:.8,marginBottom:6}}>
                 {/* #8 DecryptedText: label "teracak lalu terbentuk" saat
                     pertama muncul — #7 ShinyText: highlight berkilau */}
-                <ShinyText style={{color:"#1565C0"}}><DecryptedText text="Operasi"/></ShinyText>
+                <ShinyText style={{color:"#4338CA"}}><DecryptedText text="Operasi"/></ShinyText>
               </div>
-              <div style={{fontSize:44,fontWeight:900,color:"#1565C0",lineHeight:1}}><AnimatedNumber value={todayOpsCount}/></div>
-              <div style={{fontSize:12,color:"#3B5A80",marginTop:6,fontWeight:600}}>Terjadwal Hari Ini</div>
+              <div style={{fontSize:44,fontWeight:900,color:"#4338CA",lineHeight:1}}><AnimatedNumber value={todayOpsCount}/></div>
+              <div style={{fontSize:12,color:"#5B5FA8",marginTop:6,fontWeight:600}}>Terjadwal Hari Ini</div>
             </SpotlightCard>
             </GlareHover>
             {/* 2 sel kecil bertumpuk — juga SpotlightCard */}
@@ -6925,7 +6929,7 @@ export default function App() {
                   <div style={{fontSize:9,color:"#5C677D"}}>Cloud Sync</div>
                 </div>
               </SpotlightCard>
-              <SpotlightCard spotlightColor="rgba(168,85,247,.25)" style={{background:"linear-gradient(135deg,#F5F3FF,#EDE7F6)",borderRadius:14,padding:"12px 14px",boxShadow:"4px 4px 12px rgba(148,163,184,.14), -3px -3px 8px rgba(255,255,255,.7)",border:"1px solid #D1C4E9",flex:1,display:"flex",alignItems:"center",gap:10}}>
+              <SpotlightCard spotlightColor="rgba(168,85,247,.25)" style={{background:"linear-gradient(135deg,rgba(139,92,246,.26),rgba(99,102,241,.18))",borderRadius:14,padding:"12px 14px",boxShadow:"4px 4px 12px rgba(148,163,184,.14), -3px -3px 8px rgba(255,255,255,.7)",border:"1px solid #D1C4E9",flex:1,display:"flex",alignItems:"center",gap:10}}>
                 <div style={{fontSize:20,fontWeight:900,color:"#512DA8"}}><AnimatedNumber value={staff.length}/></div>
                 <div>
                   <div style={{fontSize:11,fontWeight:700,color:"#512DA8"}}>Staf</div>
@@ -6949,23 +6953,23 @@ export default function App() {
           <ScrollReveal delay={140}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
             <TiltCard maxTilt={4}>
-              <MagneticButton onClick={()=>setTab("daftar")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#0284c7,#38bdf8)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(2,132,199,.35)",textAlign:"center",fontFamily:"inherit"}}>
+              <MagneticButton onClick={()=>setTab("daftar")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#3B82F6,#6366F1)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(2,132,199,.35)",textAlign:"center",fontFamily:"inherit"}}>
                 📝 Daftar Operasi
               </MagneticButton>
             </TiltCard>
             <TiltCard maxTilt={4}>
-              <MagneticButton onClick={()=>setTab("laporan")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#1d4ed8,#6366f1)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(29,78,216,.30)",textAlign:"center",fontFamily:"inherit"}}>
+              <MagneticButton onClick={()=>setTab("laporan")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#4F46E5,#7C3AED)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(29,78,216,.30)",textAlign:"center",fontFamily:"inherit"}}>
                 📄 Laporan Kepala Jaga
               </MagneticButton>
             </TiltCard>
             <TiltCard maxTilt={4}>
-              <MagneticButton onClick={()=>setTab("jadwal")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#1e3a8a,#1d4ed8)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(30,58,138,.30)",textAlign:"center",fontFamily:"inherit"}}>
+              <MagneticButton onClick={()=>setTab("jadwal")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#4338CA,#3B82F6)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(30,58,138,.30)",textAlign:"center",fontFamily:"inherit"}}>
                 📋 Lihat Jadwal
               </MagneticButton>
             </TiltCard>
             {role==="admin" && (
               <TiltCard maxTilt={4}>
-                <MagneticButton onClick={()=>setTab("roster_gen")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#0369a1,#0284c7)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(3,105,161,.30)",textAlign:"center",fontFamily:"inherit"}}>
+                <MagneticButton onClick={()=>setTab("roster_gen")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#6366F1,#8B5CF6)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(3,105,161,.30)",textAlign:"center",fontFamily:"inherit"}}>
                   🗓 Generator Roster
                 </MagneticButton>
               </TiltCard>
@@ -6979,6 +6983,7 @@ export default function App() {
       {tab==="daftar"     && <ViewDaftar pendingEditOp={pendingEditOp} clearPendingEditOp={()=>setPendingEditOp(null)} saveOpFn={saveOpFn} autoSaveOcrBatch={autoSaveOcrBatch} staff={staff} setTab={setTab} templates={templates} setTemplates={setTemplates} showToast={showToast}/>}
       {tab==="laporan"    && <ViewLaporan ops={ops} staff={staff} roster={roster} showToast={showToast} role={role} privacyMode={privacyMode}/>}
       {tab==="laporan_harian" && <LaporanOKTab roster={roster} ops={ops} staff={staff} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg}/>}
+      {tab==="pengumuman" && <ViewPengumuman staff={staff} showToast={showToast} role={role}/>}
       {tab==="beset_jadwal" && <ViewBesetJadwal staff={staff} showToast={showToast} role={role} cekAdmin={(p:string)=>verifyPin(p,pinAdmin)}/>}
       {tab==="jadwal_ok" && <ViewJadwalOK ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg}/>}
       {tab==="wa"         && <ViewKirimWA ops={ops} staff={staff} setNotifs={setNotifs} showToast={showToast}/>}
