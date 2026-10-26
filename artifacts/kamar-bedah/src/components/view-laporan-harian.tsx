@@ -104,11 +104,11 @@ function Pilih({ value, onChange, opsi }: { value: string; onChange: (v: string)
 }
 
 /* ── Lembar preview bergaya formulir kertas (juga dipakai untuk PDF/JPG) ── */
-function Lembar({ l, mask }: { l: LaporanHarian; mask: (s: string) => string }) {
+function Lembar({ l, mask, cytoIds }: { l: LaporanHarian; mask: (s: string) => string; cytoIds?: Set<string> }) {
   const th: React.CSSProperties = { border: "1px solid #111", padding: "4px 5px", fontSize: 11, fontWeight: 700, textAlign: "center", background: "#EEF2F7" };
   const td: React.CSSProperties = { border: "1px solid #111", padding: "4px 5px", fontSize: 11, verticalAlign: "top", height: 20 };
   const judul = (t: string) => <div style={{ fontWeight: 800, fontSize: 13, margin: "14px 0 5px" }}>{t}</div>;
-  const tabel = (head: string[], rows: string[][], minRows: number) => {
+  const tabel = (head: string[], rows: React.ReactNode[][], minRows: number) => {
     const isi = [...rows];
     while (isi.length < minRows) isi.push(head.map(() => ""));
     return (
@@ -119,6 +119,10 @@ function Lembar({ l, mask }: { l: LaporanHarian; mask: (s: string) => string }) 
     );
   };
   const kond = (v: string) => (v === "baik" ? "Baik" : v === "tidak" ? "Tidak baik" : "-");
+  const adaCyto = (opId: string) => !!cytoIds && cytoIds.has(String(opId));
+  const cytoCatatan = (cyto: boolean, teks: string): React.ReactNode => cyto
+    ? <div>{teks && <div>{teks}</div>}<div style={{ color: "#DC2626", fontWeight: 800, textTransform: "uppercase" }}>OPERASI CYTO</div></div>
+    : teks;
   const baris = (a: string, b: string) => <tr><td style={{ ...td, width: "34%", fontWeight: 700 }}>{a}</td><td style={td}>{b}</td></tr>;
   return (
     <div className="kb-lembar" style={{ width: 794, boxSizing: "border-box", padding: 28, background: "#fff", color: "#111", fontFamily: "'Times New Roman',Times,serif" }}>
@@ -135,13 +139,13 @@ function Lembar({ l, mask }: { l: LaporanHarian; mask: (s: string) => string }) 
       </tbody></table>
       {judul("JADWAL OPERASI")}
       {tabel(["No", "Jam", "Nama Pasien", "Jenis Operasi", "Dokter Operator", "Dokter Anestesi", "Status", "Catatan"],
-        l.jadwal.map((r, i) => [String(i + 1), r.jam, mask(r.pasien), r.jenis, r.operator, r.anestesi, r.status, r.catatan]), 10)}
+        l.jadwal.map((r, i) => [String(i + 1), r.jam, mask(r.pasien), r.jenis, r.operator, r.anestesi, r.status, cytoCatatan(!!r.cyto || adaCyto(r.opId), r.catatan)]), 10)}
       {judul(`RENCANA OPERASI — ${rencanaHariPenuh(l.dari, l.ke) ? "Semua operasi besok" : SHIFT_LABEL[l.ke]}, ${tanggalPanjang(l.tanggalRencana)}`)}
       {tabel(["Tanggal", "Jam", "Dokter Operator", "Dokter Anestesi", "Nama", "Umur", "Kamar", "Jenis Operasi", "Alkes", "Keterangan"],
-        l.rencana.map((r) => [fmtTgl(r.tanggal), r.jam, r.operator, r.anestesi, mask(r.pasien), r.umur, r.kamar, r.jenis, r.alkes, r.keterangan]), 4)}
+        l.rencana.map((r) => [fmtTgl(r.tanggal), r.jam, r.operator, r.anestesi, mask(r.pasien), r.umur, r.kamar, r.jenis, r.alkes, cytoCatatan(adaCyto(r.opId), r.keterangan)]), 4)}
       {judul(judulKandidat(l))}
       {tabel(["Tanggal", "Jam", "Dokter", "Nama", "Umur", "Jenis Operasi", "Keterangan"],
-        l.kandidat.map((r) => [fmtTgl(r.tanggal), r.jam, r.dokter, mask(r.pasien), r.umur, r.jenis, r.keterangan]), 3)}
+        l.kandidat.map((r) => [fmtTgl(r.tanggal), r.jam, r.dokter, mask(r.pasien), r.umur, r.jenis, cytoCatatan(adaCyto(r.opId), r.keterangan)]), 3)}
       {judul("KONDISI PERALATAN & KAMAR")}
       <table style={{ width: "100%", borderCollapse: "collapse" }}><tbody>
         {ALAT_BUTIR.map((b) => <tr key={b.k}>{[<td key="a" style={{ ...td, width: "34%", fontWeight: 700 }}>{b.l}</td>, <td key="b" style={td}>{kond(l.alat[b.k])}</td>]}</tr>)}
@@ -248,6 +252,7 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
   const rencana: RencanaRow[] = useMemo(() => rencanaAuto.map((r) => { const o = form.ov["r:" + r.opId] || {}; return { ...r, alkes: o.alkes ?? r.alkes, keterangan: o.keterangan ?? r.keterangan }; }), [rencanaAuto, form.ov]);
   const lusa = pakaiKandidatLusa(form.shift, malamAktif);
   const kandidat: KandidatRow[] = useMemo(() => lusa ? susunKandidatLusa(ops, form.tanggal) : susunKandidat(ops, form.tanggal), [ops, form.tanggal, lusa]);
+  const cytoIds = useMemo(() => new Set<string>((ops || []).filter((o: any) => o && o.opType === "cyto").map((o: any) => String(o.id))), [ops]);
 
   const jumlahOperasi = form.jumlahManual !== "" ? form.jumlahManual : String(jadwal.length);
   const totalPasien = form.totalManual !== "" ? form.totalManual : String(jadwal.filter((r) => r.status !== "Batal").length);
@@ -436,7 +441,7 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
           </div>
         </Card>
         <div style={{ overflowX: "auto", marginTop: 12, background: "#E5E7EB", padding: 8, borderRadius: 10 }}>
-          <div ref={lembarRef} style={{ width: 794 }}><Lembar l={pratinjau} mask={mask} /></div>
+          <div ref={lembarRef} style={{ width: 794 }}><Lembar cytoIds={cytoIds} l={pratinjau} mask={mask} /></div>
         </div>
       </div>
     );

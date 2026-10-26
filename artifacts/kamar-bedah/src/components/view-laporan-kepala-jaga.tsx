@@ -70,7 +70,7 @@ function buatTeks(d: any, mask: (s: string) => string): string {
   return out.join("\n");
 }
 
-function Lembar2({ d, mask }: { d: any; mask: (s: string) => string }) {
+function Lembar2({ d, mask, cytoIds }: { d: any; mask: (s: string) => string; cytoIds?: Set<string> }) {
   const L: LaporanHarian | null = d.v1;
   const th: CSSProperties = { border: "1px solid #111", padding: "4px 5px", fontSize: 11, fontWeight: 700, textAlign: "center", background: "#EEF2F7" };
   const td: CSSProperties = { border: "1px solid #111", padding: "4px 5px", fontSize: 11, verticalAlign: "top", height: 20 };
@@ -93,8 +93,16 @@ function Lembar2({ d, mask }: { d: any; mask: (s: string) => string }) {
   const perawatSel = (list: string[]): ReactNode => (
     <div>{(list || []).map((t: string, k: number) => <div key={k}>{t}</div>)}</div>
   );
+  const adaCyto = (opId: string) => !!cytoIds && cytoIds.has(String(opId));
+  const merah: CSSProperties = { color: "#DC2626", fontWeight: 800, textTransform: "uppercase" };
+  const pasienCyto = (opId: string, nama: string): ReactNode => adaCyto(opId)
+    ? <div><div>{nama}</div><div style={merah}>OPERASI CYTO</div></div>
+    : nama;
+  const ketCyto = (opId: string, teks: string): ReactNode => adaCyto(opId)
+    ? <div>{teks && <div>{teks}</div>}<div style={merah}>OPERASI CYTO</div></div>
+    : teks;
   const barisOp = (rows: any[]): ReactNode[][] =>
-    rows.map((r: any, i: number) => [String(i + 1), r.jam, mask(r.pasien), r.jenis, r.operator, r.anestesi, perawatSel(r.perawat)]);
+    rows.map((r: any, i: number) => [String(i + 1), r.jam, pasienCyto(r.opId, mask(r.pasien)), r.jenis, r.operator, r.anestesi, perawatSel(r.perawat)]);
   const kepalaTabel = ["No", "Jam", "Nama Pasien", "Jenis Operasi", "Dokter Operator", "Dokter Anestesi", "Perawat"];
   const kepalaLebar = ["5%", "8%", "17%", "20%", "14%", "14%", "22%"];
   return (
@@ -125,7 +133,7 @@ function Lembar2({ d, mask }: { d: any; mask: (s: string) => string }) {
       {judul("OPERASI BESOK")}
       {tabel(["Tanggal", "Jam", "Dokter", "Nama", "Umur", "Jenis Operasi", "Keterangan"],
         ["12%", "8%", "18%", "20%", "10%", "22%", "10%"],
-        (d.besok || []).map((r: any) => [fmtTgl(r.tanggal), r.jam, r.dokter, mask(r.pasien), r.umur, r.jenis, r.keterangan]), 3)}
+        (d.besok || []).map((r: any) => [fmtTgl(r.tanggal), r.jam, r.dokter, mask(r.pasien), r.umur, r.jenis, ketCyto(r.opId, r.keterangan)]), 3)}
       {judul("KONDISI PERALATAN & KAMAR")}
       <table style={{ width: "100%", borderCollapse: "collapse" }}><tbody>
         {ALAT_BUTIR.map((b) => <tr key={b.k}><td style={{ ...td, width: "34%", fontWeight: 700 }}>{b.l}</td><td style={td}>{L ? kondTeks((L.alat || {})[b.k]) : "-"}</td></tr>)}
@@ -175,6 +183,7 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
   const [waFormat, setWaFormat] = useState<"teks" | "jpg" | "pdf" | "word" | "excel">("teks");
   const lembarRef = useRef<HTMLDivElement>(null);
   const mask = (s: string) => maskName(s, privacyMode);
+  const cytoIds = useMemo(() => new Set<string>((ops || []).filter((o: any) => o && o.opType === "cyto").map((o: any) => String(o.id))), [ops]);
 
   useEffect(() => {
     let batal = false;
@@ -552,7 +561,7 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
       </Card>
 
       <div style={{ overflowX: "auto", marginTop: 12, background: "#E5E7EB", padding: 8, borderRadius: 10 }}>
-        <div ref={lembarRef} style={{ width: 794 }}><Lembar2 d={tampil} mask={mask} /></div>
+        <div ref={lembarRef} style={{ width: 794 }}><Lembar2 d={tampil} mask={mask} cytoIds={cytoIds} /></div>
       </div>
 
       <Card style={{ marginTop: 12 }}>

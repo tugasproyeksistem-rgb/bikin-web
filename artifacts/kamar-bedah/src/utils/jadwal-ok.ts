@@ -4,11 +4,11 @@
    dan buat Excel (Times New Roman 14) lewat ExcelJS. */
 
 import ExcelJS from "exceljs";
-import { fmtTgl, namaHari, teksUmur, menitDariJam } from "./laporan-harian";
+import { fmtTgl, namaHari, teksUmur, menitDariJam, jenisDx } from "./laporan-harian";
 
 export interface BarisOK {
   id: string; jam: string; bgsl: string; ok: string; dokter: string; pasien: string; umur: string;
-  jenis: string; asisten1: string; asisten2: string; onloop: string; rr: string;
+  jenis: string; asisten1: string; asisten2: string; onloop: string; rr: string; auto?: Record<string, string>;
 }
 export interface PerawatJaga { pagi: string; pg: string; sore: string; sg: string; cuti: string; }
 export interface JadwalOK {
@@ -27,7 +27,7 @@ export function susunBarisDariOps(ops: any[], tanggal: string): BarisOK[] {
     .map((o: any): BarisOK => ({
       id: "op_" + String(o.id), jam: o.time || "", bgsl: "", ok: o.room || "",
       dokter: [o.surgeon, o.anesthesiologist].filter(Boolean).join(" / "),
-      pasien: o.patient || "", umur: teksUmur(o), jenis: o.procedure || "",
+      pasien: o.patient || "", umur: teksUmur(o), jenis: jenisDx(o),
       asisten1: o.assistantNurse || "", asisten2: o.circulatingNurse || "",
       onloop: o.onloopNurse || "", rr: o.rrKatim || "",
     }));
@@ -66,8 +66,8 @@ const sx = (v: string): string => (/^[=+\-@\t\r]/.test(v) ? "'" + v : v);
 const TIPIS: Partial<ExcelJS.Borders> = { top: { style: "thin" }, left: { style: "thin" }, bottom: { style: "thin" }, right: { style: "thin" } };
 const KOLOM_EXCEL: { l: string; w: number }[] = [
   { l: "TANGGAL", w: 13 }, { l: "JAM", w: 8 }, { l: "BGSL", w: 12 }, { l: "OK", w: 16 }, { l: "DOKTER/ANESTESI", w: 30 },
-  { l: "NAMA PASIEN", w: 26 }, { l: "UMUR", w: 9 }, { l: "JENIS OPERASI", w: 28 }, { l: "ASISTEN I", w: 20 },
-  { l: "ASISTEN II", w: 20 }, { l: "ONLOOP", w: 20 }, { l: "RR", w: 16 },
+  { l: "NAMA PASIEN", w: 26 }, { l: "UMUR", w: 9 }, { l: "JENIS OPERASI", w: 28 }, { l: "ASISTEN", w: 20 },
+  { l: "INSTRUMEN", w: 20 }, { l: "ONLOOP", w: 20 }, { l: "RR", w: 16 },
 ];
 
 function barisJudul(ws: ExcelJS.Worksheet, teks: string, tebal: boolean, tengah: boolean, tinggiMin = 22): void {
@@ -141,4 +141,38 @@ export async function workbookKeBase64(wb: ExcelJS.Workbook): Promise<string> {
   let bin = "";
   for (let i = 0; i < u8.length; i += CH) bin += String.fromCharCode(...u8.subarray(i, i + CH));
   return btoa(bin);
+}
+
+/* Sinkron baris yang sudah ada dengan data operasi terbaru.
+   Kolom diperbarui hanya kalau masih kosong atau masih sama dengan nilai otomatis sebelumnya
+   (isian manual tidak pernah ditimpa). Operasi baru ditambahkan, baris yang dihapus tidak muncul lagi. */
+const KOLOM_AUTO: (keyof BarisOK)[] = ["jam", "ok", "dokter", "pasien", "umur", "jenis", "asisten1", "asisten2", "onloop", "rr"];
+export function sinkronBaris(lama: BarisOK[], auto: BarisOK[], dihapus: string[]): { baris: BarisOK[]; berubah: boolean } {
+  let berubah = false;
+  const hasil: BarisOK[] = lama.map((r) => {
+    const a = r.id.startsWith("op_") ? auto.find((x) => x.id === r.id) : undefined;
+    if (!a) return r;
+    const snap: Record<string, string> = {};
+    const baru: any = { ...r };
+    KOLOM_AUTO.forEach((k) => {
+      const nilaiBaru = String((a as any)[k] ?? "");
+      const cur = String((r as any)[k] ?? "");
+      const prev = r.auto ? String(r.auto[k] ?? "") : "";
+      snap[k] = nilaiBaru;
+      if (cur !== nilaiBaru && (cur === "" || cur === prev || (k === "jenis" && nilaiBaru.startsWith(cur + " (Dx:")))) { baru[k] = nilaiBaru; berubah = true; }
+    });
+    baru.auto = snap;
+    return baru as BarisOK;
+  });
+  const tambah: BarisOK[] = auto
+    .filter((a) => !lama.some((b) => b.id === a.id) && !dihapus.includes(a.id))
+    .map((a) => {
+      const snap: Record<string, string> = {};
+      KOLOM_AUTO.forEach((k) => { snap[k] = String((a as any)[k] ?? ""); });
+      berubah = true;
+      return { ...a, auto: snap };
+    });
+  if (!tambah.length) return { baris: hasil, berubah };
+  const semua = [...hasil, ...tambah].sort((x, y) => (menitDariJam(x.jam) ?? 9999) - (menitDariJam(y.jam) ?? 9999));
+  return { baris: semua, berubah };
 }

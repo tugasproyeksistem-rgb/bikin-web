@@ -14,7 +14,7 @@ import { dropboxUploadBytes } from "../services/dropbox";
 import { Card, SH, Btn } from "./primitives";
 import { isoLokal, fmtTgl, namaHari, tanggalPanjang, menitDariJam } from "../utils/laporan-harian";
 import type { JadwalOK, BarisOK, PerawatJaga } from "../utils/jadwal-ok";
-import { barisKosong, susunBarisDariOps, perawatDariGenerator, buatWorkbookJadwalOK, workbookKeBlob, workbookKeBase64, filterJadwalOK } from "../utils/jadwal-ok";
+import { barisKosong, sinkronBaris, susunBarisDariOps, perawatDariGenerator, buatWorkbookJadwalOK, workbookKeBlob, workbookKeBase64, filterJadwalOK } from "../utils/jadwal-ok";
 import { perawatDariUpload } from "../utils/jadwal-perawat";
 
 const FONT = "'Times New Roman',Times,serif";
@@ -22,7 +22,7 @@ const KOSONG: PerawatJaga = { pagi: "", pg: "", sore: "", sg: "", cuti: "" };
 const KOLOM: { k: keyof BarisOK; l: string; w: number }[] = [
   { k: "jam", l: "JAM", w: 80 }, { k: "bgsl", l: "BGSL", w: 110 }, { k: "ok", l: "OK", w: 130 },
   { k: "dokter", l: "DOKTER/ANESTESI", w: 230 }, { k: "pasien", l: "NAMA PASIEN", w: 200 }, { k: "umur", l: "UMUR", w: 80 },
-  { k: "jenis", l: "JENIS OPERASI", w: 220 }, { k: "asisten1", l: "ASISTEN I", w: 160 }, { k: "asisten2", l: "ASISTEN II", w: 160 },
+  { k: "jenis", l: "JENIS OPERASI", w: 220 }, { k: "asisten1", l: "ASISTEN", w: 160 }, { k: "asisten2", l: "INSTRUMEN", w: 160 },
   { k: "onloop", l: "ONLOOP", w: 160 }, { k: "rr", l: "RR", w: 130 },
 ];
 const PERAWAT_FIELD: { k: keyof PerawatJaga; l: string }[] = [
@@ -96,17 +96,17 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
     if (!loaded) return;
     if (dirty) {
       setForm((p) => {
-        const baru = barisAuto.filter((a) => !p.baris.some((b) => b.id === a.id) && !(p.dihapus || []).includes(a.id));
-        return baru.length ? { ...p, baris: urutkanBaris([...p.baris, ...baru]) } : p;
+        const h = sinkronBaris(p.baris, barisAuto, p.dihapus || []);
+        return h.berubah ? { ...p, baris: h.baris } : p;
       });
       return;
     }
     if (tersimpan) {
       const dh = tersimpan.dihapus || [];
       const lama = tersimpan.baris || [];
-      const baru = barisAuto.filter((a) => !lama.some((b) => b.id === a.id) && !dh.includes(a.id));
-      setForm({ perawat: { ...KOSONG, ...tersimpan.perawat }, baris: baru.length ? urutkanBaris([...lama, ...baru]) : lama, dihapus: dh });
-      if (baru.length) setDirty(true);
+      const h = sinkronBaris(lama, barisAuto, dh);
+      setForm({ perawat: { ...KOSONG, ...tersimpan.perawat }, baris: h.baris, dihapus: dh });
+      if (h.berubah) setDirty(true);
     }
     else setForm({ perawat: perawatAuto, baris: barisAuto, dihapus: [] });
   }, [loaded, dirty, tersimpan, perawatAuto, barisAuto]);
@@ -123,7 +123,7 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
   const hapusBaris = (id: string) => { setForm((p) => ({ ...p, baris: p.baris.filter((b) => b.id !== id), dihapus: id.startsWith("op_") ? [...(p.dihapus || []), id] : (p.dihapus || []) })); setDirty(true); };
   const muatUlang = () => {
     if (!window.confirm("Tambahkan operasi terbaru dari jadwal operasi? Isian manual (Kamar, dll) tidak diubah, dan baris yang pernah dihapus muncul lagi.")) return;
-    setForm((p) => ({ ...p, baris: urutkanBaris([...p.baris, ...barisAuto.filter((a) => !p.baris.some((b) => b.id === a.id))]), dihapus: [] }));
+    setForm((p) => ({ ...p, baris: urutkanBaris(sinkronBaris(p.baris, barisAuto, []).baris), dihapus: [] }));
     setDirty(true);
   };
 
@@ -325,7 +325,7 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
                     <td key={k.k} style={td}>
                       {k.k === "pasien" && privacyMode
                         ? <div style={{ padding: "6px 8px" }}>{maskName(String(b.pasien || ""), privacyMode)}</div>
-                        : <input style={{ ...gayaInput, border: "none", background: "transparent" }} value={b[k.k]} onChange={(e) => ubahBaris(b.id, k.k, e.target.value)} />}
+                        : <input style={{ ...gayaInput, border: "none", background: "transparent" }} value={String(b[k.k] ?? "")} onChange={(e) => ubahBaris(b.id, k.k, e.target.value)} />}
                     </td>
                   ))}
                   <td style={{ ...td, textAlign: "center" }}>
