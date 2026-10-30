@@ -197,20 +197,23 @@ export function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime,lemburPegawa
   return (
     <div className="kb-login-shell" style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#0B1220,#151F35 55%,#0B1220)",padding:16,position:"relative",overflow:"hidden"}}>
       <AuroraBackground/>
-      <MeteorsBackground count={12}/>
       <style>{`@keyframes shk{0%,100%{transform:translateX(0)}25%,75%{transform:translateX(-7px)}50%{transform:translateX(7px)}} @keyframes lgFloat{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-8px) scale(1.06)}} @keyframes lgGlow{0%,100%{box-shadow:0 4px 18px rgba(22,104,95,.3),0 0 0 3px #16685F55}50%{box-shadow:0 12px 38px rgba(22,104,95,.65),0 0 0 4px #2D9A87aa}}
         .kb-login-brand-panel{display:none;}
         @media (min-width:1024px){
-          .kb-login-shell{gap:56px;justify-content:center!important;}
-          .kb-login-brand-panel{display:flex;flex-direction:column;justify-content:center;color:#fff;max-width:420px;}
+          .kb-login-shell{justify-content:center!important;}
+          .kb-login-card{max-width:560px !important;padding:40px 44px !important;}
+          .kb-login-card img{width:140px !important;height:140px !important;}
+          .kb-login-card > div:first-child > div:not(.kb-font-display){font-size:15px !important;}
+          .kb-login-card .kb-font-display{font-size:30px !important;}
+          .kb-login-card .kb-login-judul{font-size:18px !important;}
+          .kb-login-card .kb-login-pilih{padding:22px 22px !important;gap:20px !important;}
+          .kb-login-card .kb-login-pilih > span:first-child{font-size:44px !important;}
+          .kb-login-card .kb-login-pilih > span:last-child > div:first-child{font-size:22px !important;}
+          .kb-login-card .kb-login-pilih > span:last-child > div:last-child{font-size:15px !important;}
+          
         }
       `}</style>
-      <div className="kb-login-brand-panel" style={{position:"relative",zIndex:1}}>
-        <div style={{fontSize:13,fontWeight:700,letterSpacing:3,textTransform:"uppercase",opacity:.75,marginBottom:12}}>RS Panti Rini</div>
-        <div className="kb-font-display" style={{fontSize:38,fontWeight:800,lineHeight:1.15,marginBottom:16}}>Koordinasi Kamar Bedah, Lebih Cepat &amp; Akurat</div>
-        <div style={{fontSize:15,opacity:.85,lineHeight:1.6}}>Jadwal operasi, tim medis, dan status kamar bedah — semua tersinkron real-time untuk seluruh tim perawat dan admin.</div>
-      </div>
-      <div style={{background:C.white,borderRadius:24,padding:"32px 28px",width:"100%",maxWidth:360,boxShadow:"0 20px 60px rgba(0,0,0,.3)",animation:shake?"shk .4s":"none",position:"relative",zIndex:1}}>
+      <div className="kb-login-card" style={{background:C.white,borderRadius:24,padding:"32px 28px",width:"100%",maxWidth:360,boxShadow:"0 20px 60px rgba(0,0,0,.3)",animation:shake?"shk .4s":"none",position:"relative",zIndex:1}}>
         <div style={{textAlign:"center",marginBottom:24}}>
           <img src="/logo.jpeg" alt="Logo Kamar Bedah" style={{width:104,height:104,borderRadius:"50%",objectFit:"cover",display:"block",margin:"0 auto 14px",animation:"lgFloat 3s ease-in-out infinite, lgGlow 3s ease-in-out infinite"}}/>
           <div style={{fontSize:11,fontWeight:700,color:C.g,letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>RS Panti Rini</div>
@@ -224,10 +227,10 @@ export function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime,lemburPegawa
              sesuai (quickLembur otomatis disetel). Tidak ada perubahan pada
              logika verifikasi PIN/role itu sendiri — murni urutan tampilan. */
           <>
-            <div style={{fontSize:13,fontWeight:600,color:C.t,textAlign:"center",marginBottom:16}}>Pilih Menu</div>
+            <div className="kb-login-judul" style={{fontSize:13,fontWeight:600,color:C.t,textAlign:"center",marginBottom:16}}>Pilih Menu</div>
             <button
               type="button"
-              onClick={(e)=>{fireClickSpark(e); chooseEntry("login");}}
+              className="kb-login-pilih" onClick={(e)=>{fireClickSpark(e); chooseEntry("login");}}
               style={{
                 width:"100%",display:"flex",alignItems:"center",gap:14,textAlign:"left",
                 background:C.pBg,border:`1.5px solid ${C.p}`,borderRadius:16,
@@ -242,7 +245,7 @@ export function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime,lemburPegawa
             </button>
             <button
               type="button"
-              onClick={(e)=>{fireClickSpark(e); chooseEntry("lembur");}}
+              className="kb-login-pilih" onClick={(e)=>{fireClickSpark(e); chooseEntry("lembur");}}
               style={{
                 width:"100%",display:"flex",alignItems:"center",gap:14,textAlign:"left",
                 background:"#FFF7E6",border:"1.5px solid #F2A93B",borderRadius:16,
