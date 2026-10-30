@@ -195,25 +195,25 @@ export function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime,lemburPegawa
   );
 
   return (
-    <div className="kb-login-shell" style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#0B1220,#151F35 55%,#0B1220)",padding:16,position:"relative",overflow:"hidden"}}>
+    <div className="kb-login-shell" style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#1E1B4B,#4C1D95 50%,#312E81)",padding:16,position:"relative",overflow:"hidden"}}>
       <AuroraBackground/>
       <style>{`@keyframes shk{0%,100%{transform:translateX(0)}25%,75%{transform:translateX(-7px)}50%{transform:translateX(7px)}} @keyframes lgFloat{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-8px) scale(1.06)}} @keyframes lgGlow{0%,100%{box-shadow:0 4px 18px rgba(22,104,95,.3),0 0 0 3px #16685F55}50%{box-shadow:0 12px 38px rgba(22,104,95,.65),0 0 0 4px #2D9A87aa}}
         .kb-login-brand-panel{display:none;}
         @media (min-width:1024px){
-          .kb-login-shell{justify-content:center!important;}
-          .kb-login-card{max-width:560px !important;padding:40px 44px !important;}
-          .kb-login-card img{width:140px !important;height:140px !important;}
-          .kb-login-card > div:first-child > div:not(.kb-font-display){font-size:15px !important;}
-          .kb-login-card .kb-font-display{font-size:30px !important;}
-          .kb-login-card .kb-login-judul{font-size:18px !important;}
-          .kb-login-card .kb-login-pilih{padding:22px 22px !important;gap:20px !important;}
-          .kb-login-card .kb-login-pilih > span:first-child{font-size:44px !important;}
-          .kb-login-card .kb-login-pilih > span:last-child > div:first-child{font-size:22px !important;}
-          .kb-login-card .kb-login-pilih > span:last-child > div:last-child{font-size:15px !important;}
+          .kb-login-shell{justify-content:center!important;} /* kb-login-ungu */
+          .kb-login-card{width:clamp(420px,min(48vw,96vh),820px) !important;max-width:none !important;padding:clamp(28px,min(3vw,4.4vh),56px) !important;}
+          .kb-login-card img{width:clamp(100px,min(9vw,15vh),190px) !important;height:clamp(100px,min(9vw,15vh),190px) !important;}
+          .kb-login-card > div:first-child > div:not(.kb-font-display){font-size:clamp(13px,min(1.1vw,1.9vh),20px) !important;}
+          .kb-login-card .kb-font-display{font-size:clamp(24px,min(2.3vw,3.8vh),42px) !important;}
+          .kb-login-card .kb-login-judul{font-size:clamp(15px,min(1.2vw,2vh),22px) !important;}
+          .kb-login-card .kb-login-pilih{padding:clamp(16px,min(1.6vw,2.6vh),30px) !important;gap:clamp(14px,1.6vw,26px) !important;}
+          .kb-login-card .kb-login-pilih > span:first-child{font-size:clamp(34px,min(3vw,5vh),56px) !important;}
+          .kb-login-card .kb-login-pilih > span:last-child > div:first-child{font-size:clamp(18px,min(1.6vw,2.7vh),28px) !important;}
+          .kb-login-card .kb-login-pilih > span:last-child > div:last-child{font-size:clamp(13px,min(1.05vw,1.8vh),18px) !important;}
           
         }
       `}</style>
-      <div className="kb-login-card" style={{background:C.white,borderRadius:24,padding:"32px 28px",width:"100%",maxWidth:360,boxShadow:"0 20px 60px rgba(0,0,0,.3)",animation:shake?"shk .4s":"none",position:"relative",zIndex:1}}>
+      <div className="kb-login-card" style={{background:"linear-gradient(160deg,rgba(255,255,255,.97),rgba(237,233,254,.95))",borderRadius:24,padding:"32px 28px",width:"100%",maxWidth:360,boxShadow:"0 20px 60px rgba(0,0,0,.3)",animation:shake?"shk .4s":"none",position:"relative",zIndex:1}}>
         <div style={{textAlign:"center",marginBottom:24}}>
           <img src="/logo.jpeg" alt="Logo Kamar Bedah" style={{width:104,height:104,borderRadius:"50%",objectFit:"cover",display:"block",margin:"0 auto 14px",animation:"lgFloat 3s ease-in-out infinite, lgGlow 3s ease-in-out infinite"}}/>
           <div style={{fontSize:11,fontWeight:700,color:C.g,letterSpacing:2,textTransform:"uppercase",marginBottom:4}}>RS Panti Rini</div>
@@ -233,13 +233,13 @@ export function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime,lemburPegawa
               className="kb-login-pilih" onClick={(e)=>{fireClickSpark(e); chooseEntry("login");}}
               style={{
                 width:"100%",display:"flex",alignItems:"center",gap:14,textAlign:"left",
-                background:C.pBg,border:`1.5px solid ${C.p}`,borderRadius:16,
+                background:"linear-gradient(135deg,#EEF2FF,#E4DCFF)",border:"1.5px solid #8B5CF6",borderRadius:16,
                 padding:"18px 16px",marginBottom:12,cursor:"pointer",fontFamily:"inherit"
               }}
             >
               <span style={{fontSize:28}}>🔐</span>
               <span>
-                <div style={{fontSize:15,fontWeight:800,color:C.p}}>Masuk / Login</div>
+                <div style={{fontSize:15,fontWeight:800,color:"#5B21B6"}}>Masuk / Login</div>
                 <div style={{fontSize:11,color:C.tL,marginTop:2}}>Akses penuh — Admin atau Perawat</div>
               </span>
             </button>
@@ -248,13 +248,13 @@ export function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime,lemburPegawa
               className="kb-login-pilih" onClick={(e)=>{fireClickSpark(e); chooseEntry("lembur");}}
               style={{
                 width:"100%",display:"flex",alignItems:"center",gap:14,textAlign:"left",
-                background:"#FFF7E6",border:"1.5px solid #F2A93B",borderRadius:16,
+                background:"linear-gradient(135deg,#F5F3FF,#EDE9FE)",border:"1.5px solid #A78BFA",borderRadius:16,
                 padding:"18px 16px",marginBottom:6,cursor:"pointer",fontFamily:"inherit"
               }}
             >
               <span style={{fontSize:28}}>⏰</span>
               <span>
-                <div style={{fontSize:15,fontWeight:800,color:"#B8740A"}}>Input Lembur</div>
+                <div style={{fontSize:15,fontWeight:800,color:"#6D28D9"}}>Input Lembur</div>
                 <div style={{fontSize:11,color:C.tL,marginTop:2}}>Langsung ke Catat Lembur saja</div>
               </span>
             </button>

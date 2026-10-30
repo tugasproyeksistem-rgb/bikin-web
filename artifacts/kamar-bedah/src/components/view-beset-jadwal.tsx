@@ -20,7 +20,7 @@ const NAMA_BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Jul
 interface Beset {
   id: string; bulan: string; buka: boolean;
   sel: Record<string, string>; ket: Record<string, string>; warna: Record<string, string>;
-  perawat: { id: string; name: string }[]; urutan: string[]; hilang: string[]; libur: number[]; updated_at?: string;
+  perawat: { id: string; name: string }[]; urutan: string[]; hilang: string[]; libur: number[]; waktu?: Record<string, number>; updated_at?: string;
 }
 const kosong = (bulan: string): Beset => ({ id: "beset_" + bulan, bulan, buka: false, sel: {}, ket: {}, warna: {}, perawat: [], urutan: [], hilang: [], libur: [] });
 const labelBulan = (b: string) => { const [y, m] = b.split("-").map(Number); return `${NAMA_BULAN[(m || 1) - 1]} ${y}`; };
@@ -51,6 +51,42 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => { muat(bulan); }, [bulan, muat]);
+
+  /* Realtime: perubahan dari perangkat lain langsung tampil. Isian yang belum disimpan di layar ini dipertahankan. */
+  const bulanRef = useRef(bulan);
+  bulanRef.current = bulan;
+  useEffect(() => {
+    const ch = SUPA_CLIENT.channel("kb-beset-jadwal-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: TABEL }, (p: any) => {
+        if (p.eventType === "DELETE") {
+          const id = p.old?.id;
+          if (id) { setList((x) => x.filter((r) => r.id !== id)); setD((cur) => (cur.id === id ? kosong(bulanRef.current) : cur)); }
+          return;
+        }
+        const baru = p.new?.data ? ({ ...kosong(p.new.data.bulan || bulanRef.current), ...p.new.data } as Beset) : null;
+        if (!baru) return;
+        setList((x) => [baru, ...x.filter((r) => r.id !== baru.id)]);
+        if (baru.bulan !== bulanRef.current) return;
+        if (dirty.current.size === 0 && !struktur.current) { setD(baru); return; }
+        setD((prev) => {
+          const sel = { ...baru.sel }; const ket = { ...baru.ket }; const waktu = { ...(baru.waktu || {}) };
+          dirty.current.forEach((k) => {
+            const kk = k.slice(2);
+            if (k.startsWith("s|")) {
+              if (prev.sel[kk]) { sel[kk] = prev.sel[kk]; if (prev.waktu?.[kk]) waktu[kk] = prev.waktu[kk]; }
+              else { delete sel[kk]; delete waktu[kk]; }
+            } else if (k.startsWith("k|")) {
+              if (prev.ket[kk]) ket[kk] = prev.ket[kk]; else delete ket[kk];
+            }
+          });
+          const gabung: Beset = { ...baru, sel, ket, waktu };
+          if (struktur.current) { gabung.urutan = prev.urutan; gabung.hilang = prev.hilang; gabung.libur = prev.libur; }
+          return gabung;
+        });
+      }).subscribe();
+    return () => { SUPA_CLIENT.removeChannel(ch); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const muatWarna = useCallback(async () => {
     try {
@@ -101,11 +137,24 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
   const [y, m] = bulan.split("-").map(Number);
   const nHari = new Date(y, m, 0).getDate();
   const hari = Array.from({ length: nHari }, (_, i) => i + 1);
+  /* Urutan siapa yang mengisi lebih dulu di tanggal yang sama (hanya tampil bila 2 orang atau lebih). */
+  const rankMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (let h = 1; h <= nHari; h++) {
+      const isi = baris
+        .map((b, i) => ({ k: b.id + "|" + h, i, t: d.waktu?.[b.id + "|" + h] ?? 0 }))
+        .filter((x) => String(d.sel[x.k] || "").trim());
+      if (isi.length < 2) continue;
+      isi.sort((a, b) => a.t - b.t || a.i - b.i);
+      isi.forEach((x, n) => { m[x.k] = n + 1; });
+    }
+    return m;
+  }, [baris, d.sel, d.waktu, nHari]);
 
   const ubahSel = (id: string, h: number, v: string) => {
     if (!d.buka) return;
     const k = `${id}|${h}`;
-    setD((p) => ({ ...p, sel: { ...p.sel, [k]: v } }));
+    setD((p) => { const w = { ...(p.waktu || {}) }; if (v) { if (!w[k]) w[k] = Date.now(); } else delete w[k]; return { ...p, sel: { ...p.sel, [k]: v }, waktu: w }; });
     dirty.current.add("s|" + k); setAdaUbah(true);
   };
   const ubahKet = (id: string, v: string) => {
@@ -187,10 +236,10 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
     try {
       const r: any = await SUPA_CLIENT.from(TABEL).select("data").eq("id", d.id);
       const server: Beset = r.data?.[0]?.data ? { ...kosong(bulan), ...r.data[0].data } : kosong(bulan);
-      const sel = { ...server.sel }; const ket = { ...server.ket };
+      const sel = { ...server.sel }; const ket = { ...server.ket }; const waktu = { ...(server.waktu || {}) };
       dirty.current.forEach((k) => {
         const kk = k.slice(2);
-        if (k.startsWith("s|")) { const v = d.sel[kk]; if (v) sel[kk] = v; else delete sel[kk]; }
+        if (k.startsWith("s|")) { const v = d.sel[kk]; if (v) { sel[kk] = v; waktu[kk] = d.waktu?.[kk] ?? server.waktu?.[kk] ?? Date.now(); } else { delete sel[kk]; delete waktu[kk]; } }
         else if (k.startsWith("k|")) { const v = d.ket[kk]; if (v) ket[kk] = v; else delete ket[kk]; }
       });
       const warna = { ...server.warna, ...Object.fromEntries(Object.entries(warnaMap).filter(([id]) => !server.warna?.[id])) };
@@ -198,7 +247,7 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
       const urutan = struktur.current ? baris.map((b) => b.id) : (server.urutan || []);
       const hilang = struktur.current ? (d.hilang || []) : (server.hilang || []);
       const libur = struktur.current ? (d.libur || []) : (server.libur || []);
-      const data: Beset = { ...server, id: d.id, bulan, buka: statusBuka ?? server.buka, sel, ket, warna, perawat: baris, urutan, hilang, libur, updated_at: nowIso };
+      const data: Beset = { ...server, id: d.id, bulan, buka: statusBuka ?? server.buka, sel, ket, warna, perawat: baris, urutan, hilang, libur, waktu, updated_at: nowIso };
       const { error } = await SUPA_CLIENT.from(TABEL).upsert({ id: data.id, data, updated_at: nowIso }, { onConflict: "id" });
       if (error) showToast("⚠ Gagal menyimpan ke server: " + (error.message || "error"), C.d);
       else {
@@ -257,7 +306,7 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
       hari.forEach((x, j) => put(4, 3 + j, x, { bold: true, abu: true, warna: isLibur(x) ? LIBUR_WARNA : undefined }));
       baris.forEach((b, i) => {
         put(5 + i, 1, i + 1); put(5 + i, 2, sx(b.name), { kiri: true });
-        hari.forEach((x, j) => { const v = d.sel[b.id + "|" + x] || ""; put(5 + i, 3 + j, sx(v), { bold: !!v, warna: v ? warnaMap[b.id] : isLibur(x) ? LIBUR_WARNA : undefined }); });
+        hari.forEach((x, j) => { const v = d.sel[b.id + "|" + x] || ""; put(5 + i, 3 + j, rankMap[b.id + "|" + x] ? { richText: [{ text: sx(v), font: { name: NAMA, size: 12, bold: true } }, { text: String(rankMap[b.id + "|" + x]), font: { name: NAMA, size: 8, bold: true, vertAlign: "superscript" } }] } : sx(v), { bold: !!v, warna: v ? warnaMap[b.id] : isLibur(x) ? LIBUR_WARNA : undefined }); });
       });
       const k0 = 5 + baris.length + 1;
       put(k0, 1, "Keterangan", { bold: true, size: 13, kiri: true, garis: false });
@@ -290,7 +339,7 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
     h += `<table style="width:100%"><tr><th style="${th}">No</th><th style="${th}">Nama Perawat</th>${hari.map((x) => `<th style="${th}${isLibur(x) ? ";background:#DC2626;color:#fff" : ""}">${x}</th>`).join("")}</tr>`;
     baris.forEach((b, i) => {
       h += `<tr><td style="${td}text-align:center">${i + 1}</td><td style="${td}">${escHtml(b.name)}</td>`;
-      hari.forEach((x) => { const v = d.sel[`${b.id}|${x}`] || ""; h += `<td style="${td}text-align:center;${v ? `background:${warnaMap[b.id]};font-weight:bold` : isLibur(x) ? "background:#FCA5A5" : ""}">${escHtml(v)}</td>`; });
+      hari.forEach((x) => { const v = d.sel[`${b.id}|${x}`] || ""; h += `<td style="${td}text-align:center;${v ? `background:${warnaMap[b.id]};font-weight:bold` : isLibur(x) ? "background:#FCA5A5" : ""}">${escHtml(v)}${rankMap[b.id + "|" + x] ? `<sup style="font-size:7pt">${rankMap[b.id + "|" + x]}</sup>` : ""}</td>`; });
       h += "</tr>";
     });
     h += `</table><p style="font-weight:bold;font-size:13pt">Keterangan</p><table style="width:100%"><tr><th style="${th}">No</th><th style="${th}">Nama</th><th style="${th}">Keterangan</th></tr>`;
@@ -405,7 +454,8 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
                   {hari.map((h) => {
                     const v = d.sel[`${b.id}|${h}`] || "";
                     return (
-                      <td key={h} style={{ ...tdS, padding: 0, background: v ? warnaMap[b.id] : isLibur(h) ? LIBUR_WARNA : "#fff" }}>
+                      <td key={h} style={{ ...tdS, padding: 0, position: "relative", background: v ? warnaMap[b.id] : isLibur(h) ? LIBUR_WARNA : "#fff" }}>
+                        {rankMap[`${b.id}|${h}`] ? <span style={{ position: "absolute", top: 1, left: 3, fontSize: 10, fontWeight: 800, color: "#111", lineHeight: 1, pointerEvents: "none" }}>{rankMap[`${b.id}|${h}`]}</span> : null}
                         <input value={v} disabled={!d.buka} maxLength={6} onChange={(e) => ubahSel(b.id, h, e.target.value.toUpperCase())}
                           style={{ width: 36, border: "none", background: "transparent", textAlign: "center", fontFamily: FONT, fontSize: 15, fontWeight: 700, padding: "6px 0", color: "#111", boxSizing: "border-box" }} />
                       </td>
