@@ -39,6 +39,18 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1500,
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("/exceljs/")) return "vendor-exceljs";
+          if (id.includes("/xlsx/")) return "vendor-xlsx";
+          if (id.includes("/html2canvas/")) return "vendor-html2canvas";
+          return undefined;
+        },
+      },
+    },
   },
   server: {
     port,
