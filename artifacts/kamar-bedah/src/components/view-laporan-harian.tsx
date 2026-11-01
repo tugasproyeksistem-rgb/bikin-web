@@ -104,7 +104,7 @@ function Pilih({ value, onChange, opsi }: { value: string; onChange: (v: string)
 }
 
 /* ── Lembar preview bergaya formulir kertas (juga dipakai untuk PDF/JPG) ── */
-function Lembar({ l, mask, cytoIds }: { l: LaporanHarian; mask: (s: string) => string; cytoIds?: Set<string> }) {
+function Lembar({ l, mask, cytoIds, perawatMap }: { l: LaporanHarian; mask: (s: string) => string; cytoIds?: Set<string>; perawatMap?: Record<string, string[]> }) {
   const th: React.CSSProperties = { border: "1px solid #111", padding: "4px 5px", fontSize: 11, fontWeight: 700, textAlign: "center", background: "#EEF2F7" };
   const td: React.CSSProperties = { border: "1px solid #111", padding: "4px 5px", fontSize: 11, verticalAlign: "top", height: 20 };
   const judul = (t: string) => <div style={{ fontWeight: 800, fontSize: 13, margin: "14px 0 5px" }}>{t}</div>;
@@ -120,6 +120,10 @@ function Lembar({ l, mask, cytoIds }: { l: LaporanHarian; mask: (s: string) => s
   };
   const kond = (v: string) => (v === "baik" ? "Baik" : v === "tidak" ? "Tidak baik" : "-");
   const adaCyto = (opId: string) => !!cytoIds && cytoIds.has(String(opId));
+  const perawatSel = (opId: string): React.ReactNode => {
+    const t = (perawatMap && perawatMap[String(opId)]) || [];
+    return t.length ? <div>{t.map((x, k) => <div key={k}>{x}</div>)}</div> : "";
+  };
   const cytoCatatan = (cyto: boolean, teks: string): React.ReactNode => cyto
     ? <div>{teks && <div>{teks}</div>}<div style={{ color: "#DC2626", fontWeight: 800, textTransform: "uppercase" }}>OPERASI CYTO</div></div>
     : teks;
@@ -138,8 +142,8 @@ function Lembar({ l, mask, cytoIds }: { l: LaporanHarian; mask: (s: string) => s
         {baris("Total pasien", l.totalPasien)}
       </tbody></table>
       {judul("JADWAL OPERASI")}
-      {tabel(["No", "Jam", "Nama Pasien", "Jenis Operasi", "Dokter Operator", "Dokter Anestesi", "Status", "Catatan"],
-        l.jadwal.map((r, i) => [String(i + 1), r.jam, mask(r.pasien), r.jenis, r.operator, r.anestesi, r.status, cytoCatatan(!!r.cyto || adaCyto(r.opId), r.catatan)]), 10)}
+      {tabel(["No", "Jam", "Nama Pasien", "Jenis Operasi", "Dokter Operator", "Dokter Anestesi", "Perawat", "Status", "Catatan"],
+        l.jadwal.map((r, i) => [String(i + 1), r.jam, mask(r.pasien), r.jenis, r.operator, r.anestesi, perawatSel(r.opId), r.status, cytoCatatan(!!r.cyto || adaCyto(r.opId), r.catatan)]), 10)}
       {judul(`RENCANA OPERASI — ${rencanaHariPenuh(l.dari, l.ke) ? "Semua operasi besok" : SHIFT_LABEL[l.ke]}, ${tanggalPanjang(l.tanggalRencana)}`)}
       {tabel(["Tanggal", "Jam", "Dokter Operator", "Dokter Anestesi", "Nama", "Umur", "Kamar", "Jenis Operasi", "Alkes", "Keterangan"],
         l.rencana.map((r) => [fmtTgl(r.tanggal), r.jam, r.operator, r.anestesi, mask(r.pasien), r.umur, r.kamar, r.jenis, r.alkes, cytoCatatan(adaCyto(r.opId), r.keterangan)]), 4)}
@@ -253,6 +257,15 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
   const lusa = pakaiKandidatLusa(form.shift, malamAktif);
   const kandidat: KandidatRow[] = useMemo(() => lusa ? susunKandidatLusa(ops, form.tanggal) : susunKandidat(ops, form.tanggal), [ops, form.tanggal, lusa]);
   const cytoIds = useMemo(() => new Set<string>((ops || []).filter((o: any) => o && o.opType === "cyto").map((o: any) => String(o.id))), [ops]);
+  const perawatMap = useMemo(() => {
+    const m: Record<string, string[]> = {};
+    (ops || []).forEach((o: any) => {
+      if (!o) return;
+      const pasang: [string, any][] = [["Asisten", o.assistantNurse], ["Instrumen", o.circulatingNurse], ["Anestesi", o.anesthesiaNurse], ["Onloop", o.onloopNurse], ["RR/Katim", o.rrKatim]];
+      m[String(o.id)] = pasang.filter(([, v]) => String(v || "").trim()).map(([k, v]) => k + ": " + String(v).trim());
+    });
+    return m;
+  }, [ops]);
 
   const jumlahOperasi = form.jumlahManual !== "" ? form.jumlahManual : String(jadwal.length);
   const totalPasien = form.totalManual !== "" ? form.totalManual : String(jadwal.filter((r) => r.status !== "Batal").length);
@@ -441,7 +454,7 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
           </div>
         </Card>
         <div style={{ overflowX: "auto", marginTop: 12, background: "#E5E7EB", padding: 8, borderRadius: 10 }}>
-          <div ref={lembarRef} style={{ width: 794 }}><Lembar cytoIds={cytoIds} l={pratinjau} mask={mask} /></div>
+          <div ref={lembarRef} style={{ width: 794 }}><Lembar cytoIds={cytoIds} perawatMap={perawatMap} l={pratinjau} mask={mask} /></div>
         </div>
       </div>
     );
