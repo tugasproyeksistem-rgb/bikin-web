@@ -7,13 +7,21 @@ import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 const rawPort = process.env.PORT ?? "5173";
 const port = Number(rawPort);
 const basePath = process.env.BASE_PATH ?? "/";
+const versi = String(Date.now());
 
 export default defineConfig({
   base: basePath,
+  define: { __APP_VERSI__: JSON.stringify(versi) },
   plugins: [
     react(),
     tailwindcss(),
     runtimeErrorOverlay(),
+    {
+      name: "kb-version-json",
+      generateBundle() {
+        (this as any).emitFile({ type: "asset", fileName: "version.json", source: JSON.stringify({ versi }) });
+      },
+    },
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [

@@ -228,6 +228,7 @@ import { LaporanOKTab } from "./components/view-laporan-kepala-jaga";
 import { ViewJadwalOK } from "./components/view-jadwal-ok";
 import { ViewBesetJadwal } from "./components/view-beset-jadwal";
 import { BesetBanner } from "./components/beset-banner";
+import { UpdateBanner } from "./components/update-banner";
 import { ViewPengumuman } from "./components/view-pengumuman";
 import { HomeRingkas } from "./components/home-ringkas";
 // Catatan: __ocrSelfTest tidak perlu diimpor eksplisit — mengimpor nama lain
@@ -7023,6 +7024,7 @@ export default function App() {
     <div className="kbShell" style={{color:C.t,fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif"}}>
       <div className="kb-noise-overlay"/>
       <InstallPrompt />
+      <UpdateBanner />
       {/* PENAMBAHAN #9 (loading bar profesional): garis progress tipis di
           paling atas layar selama data awal dimuat dari Supabase — pola
           umum di web app modern (GitHub/YouTube), tidak mengganggu layout
