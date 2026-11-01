@@ -198,7 +198,7 @@ export const HomeParallaxBanner = () => {
     return () => { window.removeEventListener("scroll", onScroll); if (raf) cancelAnimationFrame(raf); };
   }, []);
   return (
-    <div style={{background:"linear-gradient(135deg,#0B1220,#151F35)",borderRadius:16,padding:"28px 24px",marginBottom:20,color:"#fff",boxShadow:"0 4px 20px rgba(11,18,32,.35)",overflow:"hidden",position:"relative",border:"1px solid rgba(232,206,143,.2)"}}>
+    <div style={{background:"linear-gradient(135deg,#1E1B4B,#2E1065)",borderRadius:16,padding:"28px 24px",marginBottom:20,color:"#fff",boxShadow:"0 4px 20px rgba(30,27,75,.35)",overflow:"hidden",position:"relative",border:"1px solid rgba(232,206,143,.2)"}}>
       <TwinklingStars count={25}/>
       {/* Elemen dekoratif yang bergerak parallax */}
       <div ref={ref} style={{position:"absolute",top:-30,right:-30,width:140,height:140,borderRadius:"50%",background:"rgba(255,255,255,.08)",willChange:"transform"}}/>

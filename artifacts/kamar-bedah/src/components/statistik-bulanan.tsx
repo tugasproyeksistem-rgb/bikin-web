@@ -8,7 +8,7 @@ import { C } from "../constants";
 import { Card, SH, MiniBar } from "./primitives";
 
 const NAMA_BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
-const WARNA = ["#1F5A52", "#1565C0", "#E65100", "#7B1FA2", "#2E7D32", "#C62828", "#00838F", "#E91E63"];
+const WARNA = ["#1F5A52", "#4338CA", "#E65100", "#7B1FA2", "#2E7D32", "#C62828", "#00838F", "#E91E63"];
 
 function bulanIni(): string {
   const d = new Date();

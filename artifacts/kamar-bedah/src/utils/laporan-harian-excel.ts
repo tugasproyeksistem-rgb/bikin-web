@@ -89,7 +89,24 @@ function tabel(ws: ExcelJS.Worksheet, head: string[], rows: unknown[][], minimal
   }
 }
 
-function tambahSheet(wb: ExcelJS.Workbook, l: LaporanHarian, nama: string): void {
+export interface InfoExcel { cytoIds?: Set<string>; perawatMap?: Record<string, string[]>; }
+
+/* Tandai baris cyto: teks "OPERASI CYTO" huruf besar, tebal, merah di kolom yang diberikan. */
+function tandaiCyto(ws: ExcelJS.Worksheet, barisAwal: number, flags: boolean[], kolom: number): void {
+  flags.forEach((cyto, i) => {
+    if (!cyto) return;
+    const c = ws.getCell(barisAwal + i, kolom);
+    const teks = String(c.value ?? "");
+    c.value = { richText: [
+      ...(teks ? [{ text: teks + "\n", font: font() }] : []),
+      { text: "OPERASI CYTO", font: { name: NAMA, size: 14, bold: true, color: { argb: "FFDC2626" } } },
+    ] };
+    const r = ws.getRow(barisAwal + i);
+    r.height = Math.max(Number(r.height) || 22, 22) + 19;
+  });
+}
+
+function tambahSheet(wb: ExcelJS.Workbook, l: LaporanHarian, nama: string, info?: InfoExcel): void {
   const ws = wb.addWorksheet(nama, { pageSetup: { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
   ws.columns = W.map((w) => ({ width: w }));
   judul(ws, "LAPORAN HARIAN KAMAR BEDAH", true);
@@ -103,16 +120,22 @@ function tambahSheet(wb: ExcelJS.Workbook, l: LaporanHarian, nama: string): void
   kv(ws, "Total pasien", l.totalPasien);
 
   bagian(ws, "JADWAL OPERASI");
-  tabel(ws, ["No", "Jam", "Nama Pasien", "Jenis Operasi", "Dokter Operator", "Dokter Anestesi", "Status", "Catatan"],
-    l.jadwal.map((r, i) => [String(i + 1), r.jam, r.pasien, r.jenis, r.operator, r.anestesi, r.status, r.catatan]), 10);
+  const awalJ = ws.rowCount;
+  tabel(ws, ["No", "Jam", "Nama Pasien", "Jenis Operasi", "Dokter Operator", "Dokter Anestesi", "Perawat", "Status", "Catatan"],
+    l.jadwal.map((r, i) => [String(i + 1), r.jam, r.pasien, r.jenis, r.operator, r.anestesi, ((info && info.perawatMap && info.perawatMap[String(r.opId)]) || []).join("\n"), r.status, r.catatan]), 10);
+  tandaiCyto(ws, awalJ + 2, l.jadwal.map((r) => !!r.cyto || !!(info && info.cytoIds && info.cytoIds.has(String(r.opId)))), 9);
 
   bagian(ws, `RENCANA OPERASI — ${rencanaHariPenuh(l.dari, l.ke) ? "Semua operasi besok" : SHIFT_LABEL[l.ke]}, ${tanggalPanjang(l.tanggalRencana)}`);
+  const awalR = ws.rowCount;
   tabel(ws, ["Tanggal", "Jam", "Dokter Operator", "Dokter Anestesi", "Nama", "Umur", "Kamar", "Jenis Operasi", "Alkes", "Keterangan"],
     l.rencana.map((r) => [fmtTgl(r.tanggal), r.jam, r.operator, r.anestesi, r.pasien, r.umur, r.kamar, r.jenis, r.alkes, r.keterangan]), 4);
+  tandaiCyto(ws, awalR + 2, l.rencana.map((r) => !!(info && info.cytoIds && info.cytoIds.has(String(r.opId)))), 10);
 
   bagian(ws, judulKandidat(l));
+  const awalK = ws.rowCount;
   tabel(ws, ["Tanggal", "Jam", "Dokter", "Nama", "Umur", "Jenis Operasi", "Keterangan"],
     l.kandidat.map((r) => [fmtTgl(r.tanggal), r.jam, r.dokter, r.pasien, r.umur, r.jenis, r.keterangan]), 3);
+  tandaiCyto(ws, awalK + 2, l.kandidat.map((r) => !!(info && info.cytoIds && info.cytoIds.has(String(r.opId)))), 7);
 
   bagian(ws, "KONDISI PERALATAN & KAMAR");
   ALAT_BUTIR.forEach((b) => kv(ws, b.l, kond(l.alat[b.k])));
@@ -151,7 +174,7 @@ function tambahSheet(wb: ExcelJS.Workbook, l: LaporanHarian, nama: string): void
   });
 }
 
-export function buatWorkbookLaporanLengkap(list: LaporanHarian[]): ExcelJS.Workbook {
+export function buatWorkbookLaporanLengkap(list: LaporanHarian[], info?: InfoExcel): ExcelJS.Workbook {
   const wb = new ExcelJS.Workbook();
   const urut = [...list].sort((a, b) => -urutLaporanTurun(a, b));
   if (!urut.length) {
@@ -166,7 +189,7 @@ export function buatWorkbookLaporanLengkap(list: LaporanHarian[]): ExcelJS.Workb
     let n = 2;
     while (dipakai.has(nama.toLowerCase())) nama = `${dasar} (${n++})`.slice(0, 31);
     dipakai.add(nama.toLowerCase());
-    tambahSheet(wb, l, nama);
+    tambahSheet(wb, l, nama, info);
   });
   return wb;
 }

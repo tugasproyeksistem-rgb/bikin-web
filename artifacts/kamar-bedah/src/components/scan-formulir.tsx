@@ -82,7 +82,7 @@ function LiveCameraScanModal({onCapture, onClose}: {onCapture: (file: File) => v
 
   return (
     <div className="kb-modal-backdrop" style={{position:"fixed",inset:0,background:"rgba(15,23,42,.75)",zIndex:9500,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-      <div className="kb-modal-content" style={{background:"#0B1220",borderRadius:20,padding:16,width:"100%",maxWidth:480,boxShadow:"0 20px 60px rgba(0,0,0,.5)"}}>
+      <div className="kb-modal-content" style={{background:"#1E1B4B",borderRadius:20,padding:16,width:"100%",maxWidth:480,boxShadow:"0 20px 60px rgba(0,0,0,.5)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <div style={{color:"#fff",fontWeight:800,fontSize:15}}>📷 Scan Live — Formulir Pasien</div>
           <button onClick={onClose} style={{background:"rgba(255,255,255,.12)",border:"none",borderRadius:8,color:"#fff",padding:"6px 10px",cursor:"pointer",fontSize:16}}>✕</button>
@@ -108,7 +108,7 @@ function LiveCameraScanModal({onCapture, onClose}: {onCapture: (file: File) => v
             <div style={{fontSize:11,color:"rgba(255,255,255,.65)",textAlign:"center",margin:"10px 0"}}>
               Sejajarkan formulir dalam bingkai, pastikan cahaya cukup & tidak buram, lalu tekan Ambil.
             </div>
-            <Btn full disabled={status!=="ready"} onClick={handleCapture} style={{background:"linear-gradient(135deg,#E8CE8F,#C9A961)",color:"#0B1220",fontWeight:800}}>
+            <Btn full disabled={status!=="ready"} onClick={handleCapture} style={{background:"linear-gradient(135deg,#E8CE8F,#C9A961)",color:"#1E1B4B",fontWeight:800}}>
               📸 Ambil Gambar
             </Btn>
           </>

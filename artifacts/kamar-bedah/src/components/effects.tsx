@@ -325,7 +325,7 @@ export function fireConfettiBurst(originEl?: HTMLElement | null) {
   const rect = originEl?.getBoundingClientRect();
   const originX = rect ? rect.left + rect.width/2 : window.innerWidth/2;
   const originY = rect ? rect.top + rect.height/2 : window.innerHeight/3;
-  const colors = ["#38bdf8","#22c55e","#facc15","#f472b6","#a78bfa"];
+  const colors = ["#A78BFA","#22c55e","#facc15","#f472b6","#a78bfa"];
   const container = document.createElement("div");
   container.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:99998;overflow:hidden;";
   document.body.appendChild(container);
@@ -356,7 +356,7 @@ export function fireClickSpark(e: React.MouseEvent) {
   container.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:99998;overflow:hidden;";
   document.body.appendChild(container);
   const ox = e.clientX, oy = e.clientY;
-  const colors = ["#38bdf8","#2dd4bf","#facc15"];
+  const colors = ["#A78BFA","#2dd4bf","#facc15"];
   for (let i=0;i<8;i++){
     const p = document.createElement("div");
     const angle = (Math.PI*2*i)/8;

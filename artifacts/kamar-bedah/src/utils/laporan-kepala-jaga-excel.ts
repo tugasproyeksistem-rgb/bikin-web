@@ -89,8 +89,26 @@ function tabel(ws: ExcelJS.Worksheet, head: string[], rows: unknown[][], minimal
   }
 }
 
-function tambahSheet(wb: ExcelJS.Workbook, d: any, nama: string): void {
+export interface InfoExcelKJ { cytoIds?: Set<string>; }
+
+/* Tandai baris cyto: teks "OPERASI CYTO" huruf besar, tebal, merah di kolom yang diberikan. */
+function tandaiCyto(ws: ExcelJS.Worksheet, barisAwal: number, flags: boolean[], kolom: number): void {
+  flags.forEach((cyto, i) => {
+    if (!cyto) return;
+    const c = ws.getCell(barisAwal + i, kolom);
+    const teks = String(c.value ?? "");
+    c.value = { richText: [
+      ...(teks ? [{ text: teks + "\n", font: font() }] : []),
+      { text: "OPERASI CYTO", font: { name: NAMA, size: 14, bold: true, color: { argb: "FFDC2626" } } },
+    ] };
+    const r = ws.getRow(barisAwal + i);
+    r.height = Math.max(Number(r.height) || 22, 22) + 19;
+  });
+}
+
+function tambahSheet(wb: ExcelJS.Workbook, d: any, nama: string, info?: InfoExcelKJ): void {
   const L: LaporanHarian | null = d.v1 || null;
+  const ada = (id: unknown) => !!(info && info.cytoIds && info.cytoIds.has(String(id)));
   const x = (v: unknown) => (L ? v : "-");
   const ws = wb.addWorksheet(nama, { pageSetup: { orientation: "portrait", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
   ws.columns = W.map((w) => ({ width: w }));
@@ -111,12 +129,18 @@ function tambahSheet(wb: ExcelJS.Workbook, d: any, nama: string): void {
   const kepala = ["No", "Jam", "Nama Pasien", "Jenis Operasi", "Dokter Operator", "Dokter Anestesi", "Perawat"];
   const barisOp = (rows: any[]) => rows.map((r: any, i: number) => [String(i + 1), r.jam, r.pasien, r.jenis, r.operator, r.anestesi, (r.perawat || []).join("\n")]);
   bagian(ws, "OPERASI PAGI");
+  const awalP = ws.rowCount;
   tabel(ws, kepala, barisOp(d.pagi || []), 3);
+  tandaiCyto(ws, awalP + 2, (d.pagi || []).map((r: any) => ada(r.opId)), 3);
   bagian(ws, "OPERASI SIANG");
+  const awalS = ws.rowCount;
   tabel(ws, kepala, barisOp(d.siang || []), 3);
+  tandaiCyto(ws, awalS + 2, (d.siang || []).map((r: any) => ada(r.opId)), 3);
   bagian(ws, "OPERASI BESOK");
+  const awalB = ws.rowCount;
   tabel(ws, ["Tanggal", "Jam", "Dokter", "Nama", "Umur", "Jenis Operasi", "Keterangan"],
     (d.besok || []).map((r: any) => [fmtTgl(r.tanggal), r.jam, r.dokter, r.pasien, r.umur, r.jenis, r.keterangan]), 3);
+  tandaiCyto(ws, awalB + 2, (d.besok || []).map((r: any) => ada(r.opId)), 7);
 
   bagian(ws, "KONDISI PERALATAN & KAMAR");
   ALAT_BUTIR.forEach((b) => kv(ws, b.l, L ? kond((L.alat || {})[b.k]) : "-"));
@@ -155,8 +179,8 @@ function tambahSheet(wb: ExcelJS.Workbook, d: any, nama: string): void {
   });
 }
 
-export function buatWorkbookKepalaJaga(list: any[]): ExcelJS.Workbook {
+export function buatWorkbookKepalaJaga(list: any[], info?: InfoExcelKJ): ExcelJS.Workbook {
   const wb = new ExcelJS.Workbook();
-  list.forEach((d) => tambahSheet(wb, d, String(d.tanggal)));
+  list.forEach((d) => tambahSheet(wb, d, String(d.tanggal), info));
   return wb;
 }

@@ -8,8 +8,8 @@ export function HomeRingkas({ ops }: any) {
   const n = (f: (o: any) => boolean) => hari.filter(f).length;
   const kartu = [
     { l: "Terjadwal", v: n((o) => o.status === "scheduled"), i: "📋", g: "linear-gradient(135deg,#6366F1,#8B5CF6)" },
-    { l: "Berlangsung", v: n((o) => o.status === "ongoing"), i: "▶", g: "linear-gradient(135deg,#3B82F6,#6366F1)" },
-    { l: "Selesai", v: n((o) => o.status === "done"), i: "✓", g: "linear-gradient(135deg,#4F46E5,#3B82F6)" },
+    { l: "Berlangsung", v: n((o) => o.status === "ongoing"), i: "▶", g: "linear-gradient(135deg,#8B5CF6,#6366F1)" },
+    { l: "Selesai", v: n((o) => o.status === "done"), i: "✓", g: "linear-gradient(135deg,#4F46E5,#8B5CF6)" },
     { l: "Cyto", v: n((o) => o.opType === "cyto"), i: "!", g: "linear-gradient(135deg,#7C3AED,#6366F1)" },
   ];
   return (

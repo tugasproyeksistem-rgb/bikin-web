@@ -14,7 +14,7 @@ import ExcelJS from "exceljs";
 const TABEL = "kb_beset_jadwal";
 const FONT = "'Times New Roman',Times,serif";
 const LIBUR_WARNA = "#FCA5A5";
-const PALET = ["#F87171", "#FACC15", "#4ADE80", "#60A5FA", "#C084FC", "#FB923C", "#2DD4BF", "#F472B6", "#A3E635", "#94A3B8", "#FB7185", "#38BDF8"];
+const PALET = ["#F87171", "#FACC15", "#4ADE80", "#A78BFA", "#C084FC", "#FB923C", "#2DD4BF", "#F472B6", "#A3E635", "#94A3B8", "#FB7185", "#A78BFA"];
 const NAMA_BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 
 interface Beset {

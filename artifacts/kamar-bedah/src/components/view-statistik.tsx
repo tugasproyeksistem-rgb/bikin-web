@@ -14,7 +14,7 @@ import { StatistikBulanan } from "./statistik-bulanan";
 export function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
   const [range, setRange] = useState<"all"|"30"|"90">("all");
   const [exporting, setExporting] = useState(false);
-  const COLORS = ["#1F5A52","#1565C0","#E65100","#7B1FA2","#2E7D32","#C62828","#00838F","#E91E63"];
+  const COLORS = ["#1F5A52","#4338CA","#E65100","#7B1FA2","#2E7D32","#C62828","#00838F","#E91E63"];
 
   const allOps = [...ops, ...(archive.flatMap((a:any)=>a.ops||[]))];
   const now = new Date();
@@ -227,7 +227,7 @@ export function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
       <Card>
         <SH label="Jenis Operasi"/>
         <MiniBar data={[
-          {label:"Elektif",value:elektif,color:"#1565C0"},
+          {label:"Elektif",value:elektif,color:"#4338CA"},
           {label:"Semi-Elektif",value:semi,color:"#E65100"},
           {label:"CYTO/Emergency",value:cyto,color:"#B71C1C"},
         ]}/>
@@ -246,7 +246,7 @@ export function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
       {/* ── Rekapitulasi Tindakan ── */}
       {procedureData.length>0 && (
         <Card>
-          <SH label="🔪 Rekapitulasi Tindakan Medis" color="#0284c7"/>
+          <SH label="🔪 Rekapitulasi Tindakan Medis" color="#7C3AED"/>
           <div style={{fontSize:11,color:C.tL,marginBottom:10}}>Total {procedureData.length} jenis tindakan · {filtered.length} operasi</div>
           {procedureData.map(([label,val],i)=>{
             const pct = filtered.length>0 ? Math.round((val/filtered.length)*100) : 0;

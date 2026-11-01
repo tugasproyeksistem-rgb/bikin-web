@@ -154,7 +154,7 @@ export function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime,lemburPegawa
   };
 
   if(setupMode) return (
-    <div className="kb-login-shell" style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#0B1220,#151F35 55%,#0B1220)",padding:16,position:"relative",overflow:"hidden"}}>
+    <div className="kb-login-shell" style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#1E1B4B,#2E1065 55%,#1E1B4B)",padding:16,position:"relative",overflow:"hidden"}}>
       <AuroraBackground/>
       <MeteorsBackground count={12}/>
       <style>{`

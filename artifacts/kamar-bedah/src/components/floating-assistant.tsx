@@ -92,7 +92,7 @@ export function FloatingAssistant({autoSaveOcrBatch, showToast}: {
       {/* Bubble melayang — tombol buka/tutup */}
       <button onClick={()=>setOpen(o=>!o)} aria-label="Asisten Virtual Pendaftaran"
         style={{position:"fixed",right:18,bottom:18,width:56,height:56,borderRadius:"50%",
-          background:"linear-gradient(135deg,#0284c7,#38bdf8)",border:"none",color:"#fff",
+          background:"linear-gradient(135deg,#7C3AED,#A78BFA)",border:"none",color:"#fff",
           fontSize:24,boxShadow:"0 6px 20px rgba(2,132,199,.4)",cursor:"pointer",zIndex:9500,
           display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"inherit"}}>
         {open ? "✕" : "🤖"}
@@ -104,14 +104,14 @@ export function FloatingAssistant({autoSaveOcrBatch, showToast}: {
           background:C.white,borderRadius:18,boxShadow:"0 12px 40px rgba(0,0,0,.25)",zIndex:9500,
           display:"flex",flexDirection:"column",overflow:"hidden",border:"1px solid #e2e8f0"}}>
 
-          <div style={{background:"linear-gradient(135deg,#0284c7,#1d4ed8)",color:"#fff",padding:"14px 16px",fontWeight:800,fontSize:14,display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+          <div style={{background:"linear-gradient(135deg,#7C3AED,#4F46E5)",color:"#fff",padding:"14px 16px",fontWeight:800,fontSize:14,display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
             🤖 Asisten Pendaftaran
           </div>
 
           <div ref={scrollRef} style={{flex:1,overflowY:"auto",padding:"14px 12px",display:"flex",flexDirection:"column",gap:8,background:"#F8FAFC"}}>
             {msgs.map((m,i)=>(
               <div key={i} style={{alignSelf: m.role==="user"?"flex-end":"flex-start",
-                maxWidth:"85%",background: m.role==="user"?"#0284c7":"#fff",
+                maxWidth:"85%",background: m.role==="user"?"#7C3AED":"#fff",
                 color: m.role==="user"?"#fff":"#0f172a",
                 border: m.role==="user"?"none":"1px solid #e2e8f0",
                 borderRadius:14, padding:"9px 12px", fontSize:13, lineHeight:1.5,
@@ -131,7 +131,7 @@ export function FloatingAssistant({autoSaveOcrBatch, showToast}: {
               style={{flex:1,resize:"none",height:40,padding:"9px 11px",borderRadius:10,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none"}}/>
             <button onClick={send} disabled={busy || !input.trim()}
               style={{width:40,height:40,borderRadius:10,border:"none",
-                background: busy||!input.trim() ? "#cbd5e1":"#0284c7",
+                background: busy||!input.trim() ? "#cbd5e1":"#7C3AED",
                 color:"#fff",fontSize:16,cursor: busy||!input.trim() ? "not-allowed":"pointer",flexShrink:0,fontFamily:"inherit"}}>➤</button>
           </div>
         </div>

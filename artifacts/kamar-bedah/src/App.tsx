@@ -1150,7 +1150,7 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
           draft tersimpan dari sesi sebelumnya yang belum sempat disimpan
           (mis. app sempat ke-refresh/force-close di tengah proses periksa). */}
       {showDraftRecovery && draftPreview && (
-        <div style={{background:"#EFF6FF",border:`1.5px solid ${C.i}`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:13,color:C.i}}>
+        <div style={{background:"#F5F3FF",border:`1.5px solid ${C.i}`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:13,color:C.i}}>
           <div style={{fontWeight:700,marginBottom:6}}>💾 Ada draft hasil scan OCR yang belum tersimpan dari sesi sebelumnya</div>
           <div style={{marginBottom:8}}>Pasien: <b>{draftPreview.opForm?.patient || "(nama belum terisi)"}</b>{draftPreview.savedAt ? ` — disimpan otomatis ${new Date(draftPreview.savedAt).toLocaleString("id-ID")}` : ""}</div>
           <div style={{display:"flex",gap:8}}>
@@ -2602,7 +2602,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                               <td style={{padding:"8px 10px",textAlign:"center",fontWeight:700,color:C.p}}>{i+1}</td>
                               <td style={{padding:"8px 10px",fontWeight:600,color:C.t}}>{fDMY(e.tanggalAwal||e.jadwalDinas)||"—"}</td>
                               <td style={{padding:"8px 10px",fontWeight:600,color:C.t}}>{e.tanggalAkhir?fDMY(e.tanggalAkhir):"—"}</td>
-                              <td style={{padding:"8px 10px",color:"#1565C0",fontWeight:600}}>{isAmbil?"—":(e.jamMasuk||"—")}</td>
+                              <td style={{padding:"8px 10px",color:"#4338CA",fontWeight:600}}>{isAmbil?"—":(e.jamMasuk||"—")}</td>
                               <td style={{padding:"8px 10px",color:"#B71C1C",fontWeight:600}}>{isAmbil?"—":(e.jamKeluar||"—")}</td>
                               <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
                                 {isAmbil ? (
@@ -2682,10 +2682,10 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
               </Card>
 
               {/* Download */}
-              <Card style={{marginTop:14,background:"#E3F2FD",border:"1px solid #90CAF9"}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#1565C0",marginBottom:8}}>📥 Unduh Dokumen Lembur</div>
-                <div style={{fontSize:12,color:"#1565C0",marginBottom:12,lineHeight:1.6}}>Download file Excel berformat resmi dengan header nama/NIK, tabel lembur, total durasi, dan kolom tanda tangan pejabat.</div>
-                <Btn full onClick={downloadExcel} style={{background:"#1565C0",color:"#fff"}}>⬇ Download Excel — {peg.name} ({ymLabel(selYM)})</Btn>
+              <Card style={{marginTop:14,background:"#EDE9FE",border:"1px solid #C4B5FD"}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#4338CA",marginBottom:8}}>📥 Unduh Dokumen Lembur</div>
+                <div style={{fontSize:12,color:"#4338CA",marginBottom:12,lineHeight:1.6}}>Download file Excel berformat resmi dengan header nama/NIK, tabel lembur, total durasi, dan kolom tanda tangan pejabat.</div>
+                <Btn full onClick={downloadExcel} style={{background:"#4338CA",color:"#fff"}}>⬇ Download Excel — {peg.name} ({ymLabel(selYM)})</Btn>
               </Card>
             </>
           )}
@@ -2710,7 +2710,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                   <input style={iS} type="month" value={rekapYM} onChange={e=>setRekapYM(e.target.value)}/>
                 </LF>
               </div>
-              <Btn onClick={downloadRekapExcel} style={{background:"#1565C0",color:"#fff",whiteSpace:"nowrap"}}>⬇ Download Excel Rekap</Btn>
+              <Btn onClick={downloadRekapExcel} style={{background:"#4338CA",color:"#fff",whiteSpace:"nowrap"}}>⬇ Download Excel Rekap</Btn>
             </div>
           </Card>
 
@@ -2730,7 +2730,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
           </Card>
 
           {/* ── Dropbox cloud download ── */}
-          <Card style={{background:"#EFF6FF",border:"1.5px solid #0061FF33",marginBottom:14}}>
+          <Card style={{background:"#F5F3FF",border:"1.5px solid #0061FF33",marginBottom:14}}>
             <SH label="📦 Download Lembur dari Dropbox" color="#0061FF"/>
             <div style={{fontSize:12,color:"#64748B",marginBottom:10}}>Unduh data lembur langsung dari backup Dropbox. Pilih bulan dan karyawan spesifik atau semua sekaligus.</div>
             <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap",marginBottom:10}}>
@@ -2764,7 +2764,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                 {[
                   {label:"Total Pegawai",val:String(lemburPegawai.length)+" orang",icon:"👥",color:C.p},
                   {label:"Total Hari Lembur",val:String(rekapRows.reduce((s:number,r:any)=>s+r.jumlahHari,0))+" hari",icon:"📅",color:C.s},
-                  {label:"Total Jam Lembur",val:(()=>{const m=rekapRows.reduce((s:number,r:any)=>s+r.totalMins,0);return `${Math.floor(m/60)}j ${m%60}m`;})(),icon:"⏱",color:"#1565C0"},
+                  {label:"Total Jam Lembur",val:(()=>{const m=rekapRows.reduce((s:number,r:any)=>s+r.totalMins,0);return `${Math.floor(m/60)}j ${m%60}m`;})(),icon:"⏱",color:"#4338CA"},
                 ].map(c=>(
                   <div key={c.label} style={{background:C.white,borderRadius:12,padding:"12px 14px",boxShadow:"0 1px 6px rgba(0,0,0,.06)",textAlign:"center"}}>
                     <div style={{fontSize:22,marginBottom:4}}>{c.icon}</div>
@@ -2802,7 +2802,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                                 ? <span style={{background:C.sBg,color:C.s,borderRadius:20,padding:"2px 10px",fontWeight:700,fontSize:12}}>{r.jumlahHari} hari</span>
                                 : <span style={{color:C.tL}}>—</span>}
                             </td>
-                            <td style={{padding:"9px 12px",textAlign:"center",fontWeight:700,color:r.totalMins>0?"#1565C0":C.tL}}>{jam}</td>
+                            <td style={{padding:"9px 12px",textAlign:"center",fontWeight:700,color:r.totalMins>0?"#4338CA":C.tL}}>{jam}</td>
                             <td style={{padding:"9px 12px"}}>
                               <button onClick={()=>{setSelPeg(r.id);setSelYM(rekapYM);setSub("catat" as any);}} style={{background:C.pBg,border:`1px solid ${C.p}33`,borderRadius:8,color:C.p,padding:"4px 10px",cursor:"pointer",fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>
                                 {r.jumlahHari>0?"Lihat":"Input"} →
@@ -2818,7 +2818,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                         <td style={{padding:"9px 12px",textAlign:"center",fontWeight:800,color:C.s}}>
                           {rekapRows.reduce((s:number,r:any)=>s+r.jumlahHari,0)} hari
                         </td>
-                        <td style={{padding:"9px 12px",textAlign:"center",fontWeight:800,color:"#1565C0"}}>
+                        <td style={{padding:"9px 12px",textAlign:"center",fontWeight:800,color:"#4338CA"}}>
                           {(()=>{const m=rekapRows.reduce((s:number,r:any)=>s+r.totalMins,0);return `${Math.floor(m/60)}j ${m%60}m`;})()} 
                         </td>
                         <td/>
@@ -2829,12 +2829,12 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
               </Card>
 
               {/* Download card */}
-              <Card style={{marginTop:14,background:"#E3F2FD",border:"1px solid #90CAF9"}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#1565C0",marginBottom:6}}>📥 Unduh Rekap Excel</div>
-                <div style={{fontSize:12,color:"#1565C0",marginBottom:10,lineHeight:1.5}}>
+              <Card style={{marginTop:14,background:"#EDE9FE",border:"1px solid #C4B5FD"}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#4338CA",marginBottom:6}}>📥 Unduh Rekap Excel</div>
+                <div style={{fontSize:12,color:"#4338CA",marginBottom:10,lineHeight:1.5}}>
                   File Excel berisi 1 sheet rekap ringkasan semua pegawai + sheet detail per pegawai (hanya yang ada datanya).
                 </div>
-                <Btn full onClick={downloadRekapExcel} style={{background:"#1565C0",color:"#fff"}}>⬇ Download Rekap Lembur — {ymLabel(rekapYM)}</Btn>
+                <Btn full onClick={downloadRekapExcel} style={{background:"#4338CA",color:"#fff"}}>⬇ Download Rekap Lembur — {ymLabel(rekapYM)}</Btn>
               </Card>
             </>
           )}
@@ -3381,7 +3381,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
       {subTab==="harian"&&(
         <div>
           {/* Form input: 1 tabel per ruangan */}
-          <div style={{background:"linear-gradient(135deg,#EFF6FF,#F0FDF4)",border:"1px solid #BAE6FD",borderRadius:14,padding:18,marginBottom:18}}>
+          <div style={{background:"linear-gradient(135deg,#F5F3FF,#F0FDF4)",border:"1px solid #DDD6FE",borderRadius:14,padding:18,marginBottom:18}}>
             <div style={{fontWeight:700,color:MC.pri,fontSize:14,marginBottom:16}}>📝 Input Pemantauan — {fDMY(formDate)}</div>
             {MON_ROOMS.map((ruang,ri)=>(
               <div key={ruang} style={{marginBottom:ri<MON_ROOMS.length-1?22:0}}>
@@ -3400,7 +3400,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
                     <thead>
                       <tr>
                         {["Jam","Suhu (°C)","Kelembaban (%)","Petugas","Status"].map(h=>(
-                          <th key={h} style={{padding:"7px 10px",background:"#DBEAFE",color:MC.pri,fontWeight:700,textAlign:"left",borderBottom:"2px solid #BAE6FD",whiteSpace:"nowrap",fontSize:12}}>{h}</th>
+                          <th key={h} style={{padding:"7px 10px",background:"#EDE9FE",color:MC.pri,fontWeight:700,textAlign:"left",borderBottom:"2px solid #DDD6FE",whiteSpace:"nowrap",fontSize:12}}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -3547,7 +3547,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
                 {MON_ROOMS.map(r=><option key={r} value={r}>{r}</option>)}
               </select>
             </div>
-            <button onClick={()=>setSelMonth(todayDate().slice(0,7))} style={{padding:"7px 14px",background:selMonth===todayDate().slice(0,7)?"#0EA5E9":"#F0F9FF",color:selMonth===todayDate().slice(0,7)?"#fff":"#0369A1",border:"1px solid #BAE6FD",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
+            <button onClick={()=>setSelMonth(todayDate().slice(0,7))} style={{padding:"7px 14px",background:selMonth===todayDate().slice(0,7)?"#8B5CF6":"#F0F9FF",color:selMonth===todayDate().slice(0,7)?"#fff":"#6D28D9",border:"1px solid #DDD6FE",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
               📅 Bulan Ini
             </button>
             <button
@@ -3573,7 +3573,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
           {/* Stat cards — berdasarkan ruangan yang difilter */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,marginBottom:20}}>
             {([
-              {l:"Rata-rata Suhu",v:avgS+"°C",ico:"🌡",bg:"#DBEAFE",c:"#1D4ED8"},
+              {l:"Rata-rata Suhu",v:avgS+"°C",ico:"🌡",bg:"#EDE9FE",c:"#4F46E5"},
               {l:"Rata-rata RH",   v:avgR+"%", ico:"💧",bg:"#DCFCE7",c:"#16A34A"},
               {l:"Total Ukur",    v:String(me.length),ico:"📊",bg:"#FEF3C7",c:"#B45309"},
               {l:"Tidak Sesuai",  v:String(tidakS),ico:"⚠️",bg:"#FEE2E2",c:"#DC2626"},
@@ -3749,7 +3749,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
         <div>
           <div style={{display:"grid",gap:12,marginBottom:16}}>
             {([
-              {type:"harian"    as const,ico:"📋",title:"Laporan Monitoring Harian",   desc:"Data harian 3 ruangan + rekap statistik bulanan",c:"#0369A1",bg:"#EFF6FF"},
+              {type:"harian"    as const,ico:"📋",title:"Laporan Monitoring Harian",   desc:"Data harian 3 ruangan + rekap statistik bulanan",c:"#6D28D9",bg:"#F5F3FF"},
               {type:"rekap"     as const,ico:"📊",title:"Rekap Bulanan",               desc:"Statistik per ruangan: rata-rata suhu, RH, kepatuhan (tidak dicampur)",c:"#7C3AED",bg:"#F5F3FF"},
               {type:"akreditasi"as const,ico:"🏅",title:"Laporan Akreditasi",          desc:"Laporan lengkap per ruangan + format akreditasi & kolom tanda tangan",c:"#B45309",bg:"#FFFBEB"},
             ]).map(r=>(
@@ -3777,7 +3777,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
               </div>
             </div>
             <div style={{display:"grid",gap:8}}>
-              {([{type:"harian" as const,ico:"📋",title:"Harian",c:"#0369A1"},{type:"rekap" as const,ico:"📊",title:"Rekap Bulanan",c:"#7C3AED"},{type:"akreditasi" as const,ico:"🏅",title:"Akreditasi",c:"#B45309"}]).map(r=>(
+              {([{type:"harian" as const,ico:"📋",title:"Harian",c:"#6D28D9"},{type:"rekap" as const,ico:"📊",title:"Rekap Bulanan",c:"#7C3AED"},{type:"akreditasi" as const,ico:"🏅",title:"Akreditasi",c:"#B45309"}]).map(r=>(
                 <div key={r.type} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(255,255,255,.7)",borderRadius:10,padding:"10px 14px",gap:10}}>
                   <div style={{fontWeight:600,color:r.c,fontSize:13}}>{r.ico} {r.title}</div>
                   <button onClick={()=>downloadMonFromSupa(r.type)} disabled={supaMonBusy} style={{background:supaMonBusy?"#9CA3AF":"#4F46E5",color:"#fff",border:"none",borderRadius:8,padding:"6px 14px",cursor:supaMonBusy?"not-allowed":"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
@@ -3790,7 +3790,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
           </div>
 
           {/* Dropbox download */}
-          <div style={{background:"#EFF6FF",border:"1.5px solid #0061FF33",borderRadius:14,padding:"16px 16px 14px",marginTop:14}}>
+          <div style={{background:"#F5F3FF",border:"1.5px solid #0061FF33",borderRadius:14,padding:"16px 16px 14px",marginTop:14}}>
             <div style={{fontWeight:700,color:"#0061FF",fontSize:14,marginBottom:6}}>📦 Download Monitoring dari Dropbox</div>
             <div style={{fontSize:12,color:"#64748B",marginBottom:12}}>Unduh data monitoring dari backup Dropbox sesuai pilihan bulan dan format laporan.</div>
             <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
@@ -3800,7 +3800,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
               </div>
             </div>
             <div style={{display:"grid",gap:8}}>
-              {([{type:"harian" as const,ico:"📋",title:"Harian",c:"#0369A1"},{type:"rekap" as const,ico:"📊",title:"Rekap Bulanan",c:"#7C3AED"},{type:"akreditasi" as const,ico:"🏅",title:"Akreditasi",c:"#B45309"}]).map(r=>(
+              {([{type:"harian" as const,ico:"📋",title:"Harian",c:"#6D28D9"},{type:"rekap" as const,ico:"📊",title:"Rekap Bulanan",c:"#7C3AED"},{type:"akreditasi" as const,ico:"🏅",title:"Akreditasi",c:"#B45309"}]).map(r=>(
                 <div key={r.type} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(255,255,255,.7)",borderRadius:10,padding:"10px 14px",gap:10}}>
                   <div style={{fontWeight:600,color:r.c,fontSize:13}}>{r.ico} {r.title}</div>
                   <button onClick={()=>downloadMonFromDropbox(r.type)} disabled={dbxMonBusy} style={{background:dbxMonBusy?"#9CA3AF":"#0061FF",color:"#fff",border:"none",borderRadius:8,padding:"6px 14px",cursor:dbxMonBusy?"not-allowed":"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
@@ -4742,7 +4742,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
 
   const cellStyle = (code: string): React.CSSProperties => {
     const base: React.CSSProperties = { textAlign:"center", fontSize:10, fontWeight:700, padding:"2px 0", border:"1px solid #e0e0e0", minWidth:28, cursor:"text" };
-    if(code==="P"||code==="PG") return {...base, background:"#E3F2FD", color:"#1565C0"};
+    if(code==="P"||code==="PG") return {...base, background:"#EDE9FE", color:"#4338CA"};
     if(code==="S"||code==="SG") return {...base, background:"#FFF3E0", color:"#E65100"};
     if(code==="L"||code==="LG") return {...base, background:"#F3F3F3", color:"#5C677D"};
     if(code==="T") return {...base, background:"#FFEBEE", color:"#C62828"};
@@ -4752,7 +4752,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
   /* ── Label & warna indikator status cloud ── */
   const cloudStatusUI: Record<string, {label:string; color:string; bg:string}> = {
     idle:    { label:"● Belum ada perubahan",  color:"#94A3B8", bg:"#F1F5F9" },
-    saving:  { label:"⟳ Menyimpan...",          color:"#0284C7", bg:"#E0F2FE" },
+    saving:  { label:"⟳ Menyimpan...",          color:"#7C3AED", bg:"#EDE9FE" },
     ok:      { label:"✓ Tersimpan di cloud",    color:"#16A34A", bg:"#DCFCE7" },
     error:   { label:"✕ Gagal sync cloud",      color:"#DC2626", bg:"#FEE2E2" },
     offline: { label:"⚡ Offline — draft lokal", color:"#D97706", bg:"#FEF3C7" },
@@ -4764,16 +4764,16 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
       {/* Header */}
       <Row title="🗓 Generator Roster Perawat" right={
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          <Btn sm onClick={generateRoster} color="linear-gradient(135deg,#1e3a8a,#0284c7)">⚡ Generate</Btn>
-          <Btn sm onClick={downloadExcel}  color="linear-gradient(135deg,#0369a1,#38bdf8)">⬇ Excel</Btn>
-          <Btn sm onClick={syncToCloud}    color="linear-gradient(135deg,#1d4ed8,#6366f1)" disabled={syncing}>{syncing?"⏳ Supabase...":"☁ Supabase"}</Btn>
-          <Btn sm onClick={backupToDropbox} color="linear-gradient(135deg,#0061FF,#38bdf8)" disabled={syncingDbx}>{syncingDbx?"⏳ Dropbox...":"📦 Dropbox"}</Btn>
+          <Btn sm onClick={generateRoster} color="linear-gradient(135deg,#4C1D95,#7C3AED)">⚡ Generate</Btn>
+          <Btn sm onClick={downloadExcel}  color="linear-gradient(135deg,#6D28D9,#A78BFA)">⬇ Excel</Btn>
+          <Btn sm onClick={syncToCloud}    color="linear-gradient(135deg,#4F46E5,#6366f1)" disabled={syncing}>{syncing?"⏳ Supabase...":"☁ Supabase"}</Btn>
+          <Btn sm onClick={backupToDropbox} color="linear-gradient(135deg,#0061FF,#A78BFA)" disabled={syncingDbx}>{syncingDbx?"⏳ Dropbox...":"📦 Dropbox"}</Btn>
         </div>
       }/>
 
       {/* ── Tombol Simpan Jadwal + Indikator Status Cloud ── */}
       <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
-        <button onClick={saveJadwal} disabled={savingJadwal} style={{flex:1,minWidth:200,padding:"13px 20px",background:savingJadwal?"#94A3B8":"linear-gradient(135deg,#0284c7,#0369a1)",color:"#fff",border:"none",borderRadius:12,fontSize:14,fontWeight:800,cursor:savingJadwal?"not-allowed":"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(2,132,199,.35)",display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"all .2s"}}>
+        <button onClick={saveJadwal} disabled={savingJadwal} style={{flex:1,minWidth:200,padding:"13px 20px",background:savingJadwal?"#94A3B8":"linear-gradient(135deg,#7C3AED,#6D28D9)",color:"#fff",border:"none",borderRadius:12,fontSize:14,fontWeight:800,cursor:savingJadwal?"not-allowed":"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(2,132,199,.35)",display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"all .2s"}}>
           {savingJadwal?<><span style={{animation:"spin 1s linear infinite",display:"inline-block"}}>⟳</span> Menyimpan...</>:<>💾 Simpan Jadwal</>}
         </button>
         <div style={{background:csUI.bg,color:csUI.color,fontSize:11,fontWeight:700,padding:"8px 12px",borderRadius:10,border:`1px solid ${csUI.color}33`,whiteSpace:"nowrap",flexShrink:0}}>
@@ -4860,8 +4860,8 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
       </Card>
 
       {/* Konfigurasi Dokumen */}
-      <Card style={{marginBottom:12,background:"#F0F9FF",border:"1px solid #BAE6FD"}}>
-        <SH label="📋 Konfigurasi Dokumen" color="#0369A1"/>
+      <Card style={{marginBottom:12,background:"#F0F9FF",border:"1px solid #DDD6FE"}}>
+        <SH label="📋 Konfigurasi Dokumen" color="#6D28D9"/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           <LF label="PJ SIRS"><input style={iS} value={pjSirs} onChange={e=>setPjSirs(e.target.value)} placeholder="Nama PJ SIRS"/></LF>
           <LF label="Pembawa HP"><input style={iS} value={pembawHP} onChange={e=>setPembawHP(e.target.value)} placeholder="Nama pembawa HP"/></LF>
@@ -4877,7 +4877,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
       <Card style={{marginBottom:12}}>
         <div style={{fontSize:11,fontWeight:700,color:C.g,marginBottom:8}}>KETERANGAN KODE SHIFT</div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          {[["P","Pagi","#E3F2FD","#1565C0"],["PG","Pagi Siaga","#E3F2FD","#1565C0"],["S","Siang","#FFF3E0","#E65100"],["SG","Siang Siaga","#FFF3E0","#E65100"],["L","Libur","#F3F3F3","#5C677D"],["LG","Libur Siaga","#F3F3F3","#5C677D"],["T","Cuti","#FFEBEE","#C62828"]].map(([k,l,bg,cl])=>(
+          {[["P","Pagi","#EDE9FE","#4338CA"],["PG","Pagi Siaga","#EDE9FE","#4338CA"],["S","Siang","#FFF3E0","#E65100"],["SG","Siang Siaga","#FFF3E0","#E65100"],["L","Libur","#F3F3F3","#5C677D"],["LG","Libur Siaga","#F3F3F3","#5C677D"],["T","Cuti","#FFEBEE","#C62828"]].map(([k,l,bg,cl])=>(
             <span key={k} style={{background:bg,color:cl,border:`1px solid ${cl}33`,fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:6}}>{k} = {l}</span>
           ))}
         </div>
@@ -4924,7 +4924,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
                   );
                 })}
                 {/* FITUR 3 — Header Ringkasan Individu (Sumbu Kanan) */}
-                {[["∑P","#1565C0"],["∑PG","#1565C0"],["∑S","#E65100"],["∑SG","#E65100"],["∑L/LG","#5C677D"],["∑T","#C62828"],["∑Total","#374151"]].map(([lbl,cl])=>(
+                {[["∑P","#4338CA"],["∑PG","#4338CA"],["∑S","#E65100"],["∑SG","#E65100"],["∑L/LG","#5C677D"],["∑T","#C62828"],["∑Total","#374151"]].map(([lbl,cl])=>(
                   <th key={lbl} style={{padding:"4px 3px",color:"#fff",fontWeight:700,fontSize:9,textAlign:"center",background:"#3730A3",minWidth:30,borderLeft:"2px solid rgba(255,255,255,.3)",whiteSpace:"nowrap"}}>{lbl}</th>
                 ))}
               </tr>
@@ -4976,8 +4976,8 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
 
                     {/* FITUR 3 — Ringkasan individu real-time (Sumbu Kanan) */}
                     {[
-                      {v:rs.P,    bg:"#DBEAFE",cl:"#1565C0"},
-                      {v:rs.PG,   bg:"#BFDBFE",cl:"#1E40AF"},
+                      {v:rs.P,    bg:"#EDE9FE",cl:"#4338CA"},
+                      {v:rs.PG,   bg:"#DDD6FE",cl:"#5B21B6"},
                       {v:rs.S,    bg:"#FEF3C7",cl:"#D97706"},
                       {v:rs.SG,   bg:"#FDE68A",cl:"#B45309"},
                       {v:rs.LG_L, bg:"#F1F5F9",cl:"#475569"},
@@ -4996,8 +4996,8 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
             {/* FITUR 4/5 — Summary footer (Sumbu Bawah) — dipertahankan utuh */}
             <tfoot>
               {[
-                {label:"∑ Pagi (P)",         key:"P"   as keyof typeof colSummaries, bg:"#E3F2FD", cl:"#1565C0"},
-                {label:"∑ Pagi Siaga (PG)",  key:"PG"  as keyof typeof colSummaries, bg:"#BBDEFB", cl:"#1565C0"},
+                {label:"∑ Pagi (P)",         key:"P"   as keyof typeof colSummaries, bg:"#EDE9FE", cl:"#4338CA"},
+                {label:"∑ Pagi Siaga (PG)",  key:"PG"  as keyof typeof colSummaries, bg:"#DDD6FE", cl:"#4338CA"},
                 {label:"∑ Siang (S)",        key:"S"   as keyof typeof colSummaries, bg:"#FFF3E0", cl:"#E65100"},
                 {label:"∑ Siang Siaga (SG)", key:"SG"  as keyof typeof colSummaries, bg:"#FFE0B2", cl:"#E65100"},
                 {label:"∑ Libur/LG",         key:"LLG" as keyof typeof colSummaries, bg:"#F3F3F3", cl:"#5C677D"},
@@ -5022,7 +5022,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
         <Btn sm onClick={addNurse} color={C.g} outline>+ Tambah Baris Perawat</Btn>
         <span style={{fontSize:11,color:C.tL}}>Total: {nurses.length} perawat</span>
         <div style={{flex:1}}/>
-        <button onClick={saveJadwal} disabled={savingJadwal} style={{padding:"10px 18px",background:savingJadwal?"#94A3B8":"linear-gradient(135deg,#0284c7,#1e3a8a)",color:"#fff",border:"none",borderRadius:10,fontSize:12,fontWeight:700,cursor:savingJadwal?"not-allowed":"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(2,132,199,.3)"}}>
+        <button onClick={saveJadwal} disabled={savingJadwal} style={{padding:"10px 18px",background:savingJadwal?"#94A3B8":"linear-gradient(135deg,#7C3AED,#4C1D95)",color:"#fff",border:"none",borderRadius:10,fontSize:12,fontWeight:700,cursor:savingJadwal?"not-allowed":"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(2,132,199,.3)"}}>
           {savingJadwal?"⟳ Menyimpan...":"💾 Simpan Jadwal"}
         </button>
       </div>
@@ -5422,7 +5422,7 @@ export default function App() {
          fokus, berlaku global ke semua input/select/textarea. */
       input,select,textarea{transition:border-color .18s ease,box-shadow .18s ease;}
       input:focus,select:focus,textarea:focus{
-        border-color:#3B82F6!important;
+        border-color:#8B5CF6!important;
         box-shadow:0 0 0 3px rgba(59,130,246,.18)!important;
         outline:none;
       }
@@ -5431,7 +5431,7 @@ export default function App() {
          dipicu oleh state global topLoading — lihat App() untuk trigger. */
       @keyframes kbTopBarSlide{0%{left:-30%;width:30%;}50%{left:40%;width:45%;}100%{left:100%;width:30%;}}
       .kb-topbar{position:fixed;top:0;left:0;right:0;height:3px;z-index:99999;overflow:hidden;pointer-events:none;background:transparent;}
-      .kb-topbar span{position:absolute;top:0;height:100%;background:linear-gradient(90deg,#38bdf8,#1d4ed8);
+      .kb-topbar span{position:absolute;top:0;height:100%;background:linear-gradient(90deg,#A78BFA,#4F46E5);
         border-radius:2px;animation:kbTopBarSlide 1.1s ease-in-out infinite;box-shadow:0 0 8px rgba(59,130,246,.6);}
 
       /* #7 Toast: masuk dengan sedikit "bounce" (spring-like), keluar
@@ -5500,9 +5500,9 @@ export default function App() {
          browser default terasa "murahan"/generik). */
       ::-webkit-scrollbar{width:8px;height:8px;}
       ::-webkit-scrollbar-track{background:transparent;}
-      ::-webkit-scrollbar-thumb{background:rgba(11,18,32,.22);border-radius:8px;}
-      ::-webkit-scrollbar-thumb:hover{background:rgba(11,18,32,.38);}
-      *{scrollbar-width:thin;scrollbar-color:rgba(11,18,32,.22) transparent;}
+      ::-webkit-scrollbar-thumb{background:rgba(30,27,75,.22);border-radius:8px;}
+      ::-webkit-scrollbar-thumb:hover{background:rgba(30,27,75,.38);}
+      *{scrollbar-width:thin;scrollbar-color:rgba(30,27,75,.22) transparent;}
       .kb-content-inner{line-height:1.5;}
       .kb-content-inner b, .kb-content-inner strong{letter-spacing:-.01em;}
 
@@ -5523,19 +5523,22 @@ export default function App() {
 
       /* ── Tablet (640px–1023px) ── */
       @media(min-width:640px){
-        body{background:#dbeafe;}
+        body{background:#EDE9FE;}
         .kbShell{max-width:720px;margin:0 auto;box-shadow:0 4px 24px rgba(59,130,246,.12);}
         input,select,textarea{font-size:15px!important;}
         .kb-tab-btn{padding:11px 18px;font-size:16px;font-weight:800;}
         .kb-content{padding:18px 22px 36px;background:#f8fafc;}
-        .kb-title{font-size:22px;}
+        .kb-title{font-size:28px;}
+        .kb-br{display:none;}
+        .kb-header-inner>div:first-child{flex:1;min-width:0;}
+        .kb-header-inner>div:first-child>div:last-child{flex:1;text-align:center;}
         .kb-hospital{font-size:12px;}
       }
 
       /* ── Desktop (≥1024px) ── */
       @media(min-width:1024px){
         body{
-          background:linear-gradient(135deg,#0c1445 0%,#1e3a8a 45%,#0284c7 100%)!important;
+          background:linear-gradient(135deg,#2E1065 0%,#4C1D95 45%,#7C3AED 100%)!important;
           min-height:100vh;
           display:flex;align-items:flex-start;justify-content:center;
           padding:28px 20px;
@@ -5556,7 +5559,7 @@ export default function App() {
         .kb-sidebar{
           display:flex;flex-direction:column;
           width:200px;min-width:200px;
-          background:linear-gradient(180deg,#0B1220,#151F35 60%,#0B1220);
+          background:linear-gradient(180deg,#1E1B4B,#2E1065 60%,#1E1B4B);
           padding:16px 10px;gap:4px;position:relative;
           border-right:1px solid rgba(232,206,143,.14);
           min-height:calc(100vh - 56px - 60px);
@@ -5574,7 +5577,7 @@ export default function App() {
         .kb-sidebar-btn.active{background:rgba(232,206,143,.14);color:#fff;font-weight:900;box-shadow:inset 3px 0 0 #E8CE8F;}
         .kb-main{display:flex;flex:1;background:#f8fafc;}
         .kb-content{flex:1;padding:24px 32px 40px;overflow-y:auto;background:#f8fafc;}
-        .kb-title{font-size:24px;}
+        .kb-title{font-size:clamp(26px,2.9vw,38px);}
         .kb-hospital{font-size:12px;}
         input,select,textarea{font-size:15px!important;}
       }
@@ -6201,7 +6204,7 @@ export default function App() {
     const path = `${folder}Monitoring_${todayDate()}.xlsx`;
     const res = await dropboxUploadExcel(path, wb);
     setDbxStatus(res);
-    if(res.ok){ setDbxCfg((p:DropboxConfig)=>({...p,lastBackup:fNow()})); showToast("✓ Excel Monitoring berhasil diupload ke Dropbox","#0369A1"); }
+    if(res.ok){ setDbxCfg((p:DropboxConfig)=>({...p,lastBackup:fNow()})); showToast("✓ Excel Monitoring berhasil diupload ke Dropbox","#6D28D9"); }
     else showToast(res.msg, C.d);
     setDbxBacking(false);
   }, [dbxCfg]);
@@ -6801,7 +6804,7 @@ export default function App() {
   );
 
   if(!pinLoaded) return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#0B1220,#151F35 55%,#0B1220)"}}>
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"linear-gradient(135deg,#1E1B4B,#2E1065 55%,#1E1B4B)"}}>
       <div style={{textAlign:"center",color:"#fff"}}>
         <img src="/logo.jpeg" style={{width:80,height:80,borderRadius:"50%",objectFit:"cover",marginBottom:16,display:"block",margin:"0 auto 16px"}}/>
         <div style={{fontSize:16,fontWeight:700,marginBottom:8}}>SISTEM KOORDINASI KAMAR BEDAH</div>
@@ -6910,7 +6913,7 @@ export default function App() {
             {/* Sel besar: Operasi Hari Ini — #2 SpotlightCard (cahaya
                 mengikuti kursor saat hover) */}
             <GlareHover>
-            <SpotlightCard style={{background:"linear-gradient(135deg,rgba(99,102,241,.24),rgba(59,130,246,.18))",borderRadius:18,padding:"20px 18px",boxShadow:"6px 6px 16px rgba(148,163,184,.16), -4px -4px 12px rgba(255,255,255,.7)",border:"1px solid #BFDBFE",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+            <SpotlightCard style={{background:"linear-gradient(135deg,rgba(99,102,241,.24),rgba(59,130,246,.18))",borderRadius:18,padding:"20px 18px",boxShadow:"6px 6px 16px rgba(148,163,184,.16), -4px -4px 12px rgba(255,255,255,.7)",border:"1px solid #DDD6FE",display:"flex",flexDirection:"column",justifyContent:"center"}}>
               <div style={{fontSize:11,fontWeight:700,color:"#4338CA",letterSpacing:.5,textTransform:"uppercase",opacity:.8,marginBottom:6}}>
                 {/* #8 DecryptedText: label "teracak lalu terbentuk" saat
                     pertama muncul — #7 ShinyText: highlight berkilau */}
@@ -6953,7 +6956,7 @@ export default function App() {
           <ScrollReveal delay={140}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
             <TiltCard maxTilt={4}>
-              <MagneticButton onClick={()=>setTab("daftar")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#3B82F6,#6366F1)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(2,132,199,.35)",textAlign:"center",fontFamily:"inherit"}}>
+              <MagneticButton onClick={()=>setTab("daftar")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#8B5CF6,#6366F1)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(2,132,199,.35)",textAlign:"center",fontFamily:"inherit"}}>
                 📝 Daftar Operasi
               </MagneticButton>
             </TiltCard>
@@ -6963,7 +6966,7 @@ export default function App() {
               </MagneticButton>
             </TiltCard>
             <TiltCard maxTilt={4}>
-              <MagneticButton onClick={()=>setTab("jadwal")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#4338CA,#3B82F6)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(30,58,138,.30)",textAlign:"center",fontFamily:"inherit"}}>
+              <MagneticButton onClick={()=>setTab("jadwal")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#4338CA,#8B5CF6)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(30,58,138,.30)",textAlign:"center",fontFamily:"inherit"}}>
                 📋 Lihat Jadwal
               </MagneticButton>
             </TiltCard>
@@ -7029,13 +7032,13 @@ export default function App() {
       )}
 
       {/* ── Sticky header (mobile + tablet: full header; desktop: top bar only) ── */}
-      <div className="kb-header" style={{background:"linear-gradient(135deg,rgba(11,18,32,.92),rgba(21,31,53,.90) 55%,rgba(11,18,32,.92))",backdropFilter:"blur(14px) saturate(160%)",WebkitBackdropFilter:"blur(14px) saturate(160%)",position:"sticky",top:0,zIndex:100,boxShadow:"0 4px 24px rgba(11,18,32,.35)",borderBottom:"1px solid rgba(232,206,143,.18)"}}>
+      <div className="kb-header" style={{background:"linear-gradient(135deg,rgba(30,27,75,.92),rgba(46,16,101,.90) 55%,rgba(30,27,75,.92))",backdropFilter:"blur(14px) saturate(160%)",WebkitBackdropFilter:"blur(14px) saturate(160%)",position:"sticky",top:0,zIndex:100,boxShadow:"0 4px 24px rgba(30,27,75,.35)",borderBottom:"1px solid rgba(232,206,143,.18)"}}>
         <div className="kb-header-inner" style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
             <img src="/logo.jpeg" alt="Logo KB" style={{width:50,height:50,borderRadius:"50%",objectFit:"cover",border:"2px solid rgba(255,255,255,.5)",animation:"lgFloat 3s ease-in-out infinite",flexShrink:0}}/>
             <div>
               <div style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,.6)",letterSpacing:2,textTransform:"uppercase",marginBottom:1}}>Rumah Sakit Panti Rini</div>
-              <div className="kb-title kb-font-display" style={{fontWeight:700,color:"#fff",letterSpacing:.3,lineHeight:1.15}}>SISTEM KOORDINASI<br/>KAMAR BEDAH</div>
+              <div className="kb-title kb-font-display" style={{fontWeight:700,color:"#fff",letterSpacing:.3,lineHeight:1.15}}>SISTEM KOORDINASI <br className="kb-br"/>KAMAR BEDAH</div>
               <HeaderClock/>
             </div>
           </div>
@@ -7060,7 +7063,7 @@ export default function App() {
         <div className="kb-tabs">
           {TABS.map(t=>(
             <button key={t.k} data-tab={t.k} onClick={handleTabClickEvt} className="kb-tab-btn"
-              style={{border:"none",background:tab===t.k?"rgba(255,255,255,.20)":"none",color:tab===t.k?"#fff":"rgba(255,255,255,.60)",fontWeight:tab===t.k?900:600,cursor:"pointer",borderBottom:tab===t.k?"3px solid #38bdf8":"3px solid transparent",borderRadius:"8px 8px 0 0",transition:"all .15s",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
+              style={{border:"none",background:tab===t.k?"rgba(255,255,255,.20)":"none",color:tab===t.k?"#fff":"rgba(255,255,255,.60)",fontWeight:tab===t.k?900:600,cursor:"pointer",borderBottom:tab===t.k?"3px solid #A78BFA":"3px solid transparent",borderRadius:"8px 8px 0 0",transition:"all .15s",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
               <TabIcon k={t.k}/>{t.l}
             </button>
           ))}

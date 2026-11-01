@@ -269,7 +269,7 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
       setDaftar((x) => [snap, ...x.filter((r) => r.id !== snap.id)]);
       try {
         const folder = (dbxCfg?.path || "/kamarbedah/").replace(/[^/]+$/, "");
-        const buf = await buatWorkbookKepalaJaga([snap]).xlsx.writeBuffer();
+        const buf = await buatWorkbookKepalaJaga([snap], { cytoIds }).xlsx.writeBuffer();
         const d = await dropboxUploadBytes(`${folder}LaporanKepalaJaga_${snap.tanggal}.xlsx`, buf as unknown as ArrayBuffer);
         if (!d?.ok) showToast("⚠ Excel ke Dropbox gagal: " + (d?.msg || "error"), C.w);
       } catch { showToast("⚠ Excel ke Dropbox gagal", C.w); }
@@ -372,7 +372,7 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
       return { blob: elementToWordBlob(el), nama: namaFile("doc") };
     }
     if (fmt === "excel") {
-      const buf = await buatWorkbookKepalaJaga([tampil]).xlsx.writeBuffer();
+      const buf = await buatWorkbookKepalaJaga([tampil], { cytoIds }).xlsx.writeBuffer();
       return { blob: new Blob([buf as unknown as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), nama: namaFile("xlsx") };
     }
     const cv = await ambilCanvas(fmt === "jpg" ? 3 : 2);
@@ -452,7 +452,7 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
     showToast("✓ Word diunduh", C.s);
   };
   const unduhExcel = () => {
-    buatWorkbookKepalaJaga([tampil]).xlsx.writeBuffer().then((buf) => {
+    buatWorkbookKepalaJaga([tampil], { cytoIds }).xlsx.writeBuffer().then((buf) => {
       const url = URL.createObjectURL(new Blob([buf as unknown as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
       const a = document.createElement("a");
       a.href = url; a.download = namaFile("xlsx"); a.click();

@@ -365,14 +365,14 @@ export function ViewArsip(props: ViewArsipProps) {
           {ops.map((op:any)=>{
             const sc=STS[op.status as keyof typeof STS]||STS.scheduled, ot=OT[op.opType as keyof typeof OT||"elektif"];
             return (
-              <Card key={op.id} style={{padding:"12px 16px",marginBottom:6, ...(op.needsReview?{border:"2px solid #3B82F6",background:"#EFF6FF"}:{})}}>
+              <Card key={op.id} style={{padding:"12px 16px",marginBottom:6, ...(op.needsReview?{border:"2px solid #8B5CF6",background:"#F5F3FF"}:{})}}>
                 <div style={{fontSize:13,fontWeight:700,color:C.t}}>{op.patient||"—"}</div>
                 <div style={{fontSize:12,color:C.tL}}>{op.procedure} · {fD(op.date)} {op.time} WIB</div>
                 <div style={{marginTop:6,display:"flex",gap:5,flexWrap:"wrap"}}>
                   <Bdg label={sc.l} color={sc.c} bg={sc.bg} icon={sc.icon}/>
                   <Bdg label={ot&&ot.label||"Elektif"} color={ot&&ot.c||C.i} bg={ot&&ot.bg||C.iBg}/>
                   {op.allergy&&op.allergy!=="Tidak Ada"&&<Bdg label="Alergi" color={C.d} bg={C.dBg}/>}
-                  {op.needsReview&&<Bdg label="🔍 Perlu Review (dari OCR)" color="#3B82F6" bg="#DBEAFE"/>}
+                  {op.needsReview&&<Bdg label="🔍 Perlu Review (dari OCR)" color="#8B5CF6" bg="#EDE9FE"/>}
                 </div>
               </Card>
             );
@@ -485,23 +485,23 @@ export function ViewArsip(props: ViewArsipProps) {
               <Btn full onClick={downloadArsipExcel} style={{flex:1,background:"#217346",color:"#fff",border:"none"}}>
                 📊 Download Excel
               </Btn>
-              <Btn full onClick={downloadArsipWord} style={{flex:1,background:"#2B5797",color:"#fff",border:"none"}}>
+              <Btn full onClick={downloadArsipWord} style={{flex:1,background:"#5B21B6",color:"#fff",border:"none"}}>
                 📄 Download Word
               </Btn>
             </div>
           </Card>
 
-          <Card style={{background:"#E3F2FD",border:"1px solid #90CAF9",marginBottom:14}}>
-            <SH label="📋 Download File Tracking Operasi" color="#1565C0"/>
-            <div style={{fontSize:12,color:"#1565C0",marginBottom:12,lineHeight:1.6}}>
+          <Card style={{background:"#EDE9FE",border:"1px solid #C4B5FD",marginBottom:14}}>
+            <SH label="📋 Download File Tracking Operasi" color="#4338CA"/>
+            <div style={{fontSize:12,color:"#4338CA",marginBottom:12,lineHeight:1.6}}>
               Unduh semua data jadwal operasi sebagai file tracking (Excel atau Word).
               Total: <b>{ops.length} jadwal</b> operasi.
             </div>
             <div style={{display:"flex",gap:8}}>
-              <Btn full onClick={()=>downloadTrackingOps("excel")} style={{flex:1,background:"#1565C0",color:"#fff",border:"none"}}>
+              <Btn full onClick={()=>downloadTrackingOps("excel")} style={{flex:1,background:"#4338CA",color:"#fff",border:"none"}}>
                 📊 Excel Tracking Operasi
               </Btn>
-              <Btn full onClick={()=>downloadTrackingOps("word")} style={{flex:1,background:"#0D47A1",color:"#fff",border:"none"}}>
+              <Btn full onClick={()=>downloadTrackingOps("word")} style={{flex:1,background:"#4C1D95",color:"#fff",border:"none"}}>
                 📄 Word Tracking Operasi
               </Btn>
             </div>
@@ -585,7 +585,7 @@ export function ViewArsip(props: ViewArsipProps) {
             <Toggle
               value={supaCfg.autoExcelBackup}
               onChange={(v:boolean)=>setSupaCfg((p:SupabaseConfig)=>({...p,autoExcelBackup:v}))}
-              color="#0369A1"
+              color="#6D28D9"
               label="📊 Auto-Backup Excel 24 Jam ke Supabase"
               sub="Upload Excel Operasi, Lembur & Monitoring otomatis setiap 24 jam via Supabase Storage"
             />
@@ -632,7 +632,7 @@ export function ViewArsip(props: ViewArsipProps) {
                 <Btn full outline color="#065F46" onClick={onSupaRestoreLembur} disabled={supaBackingUp} style={{flex:1,minWidth:130}}>
                   ⏰ Pulihkan Lembur
                 </Btn>
-                <Btn full outline color="#0369A1" onClick={onSupaRestoreMonitoring} disabled={supaBackingUp} style={{flex:1,minWidth:130}}>
+                <Btn full outline color="#6D28D9" onClick={onSupaRestoreMonitoring} disabled={supaBackingUp} style={{flex:1,minWidth:130}}>
                   🌡 Pulihkan Monitoring
                 </Btn>
               </div>
@@ -647,10 +647,10 @@ export function ViewArsip(props: ViewArsipProps) {
 
           <Card>
             <SH label="📦 Backup ke Dropbox" color="#0061FF"/>
-            <div style={{background:"#EFF6FF",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#1D4ED8",lineHeight:1.8,border:"1px solid #BFDBFE"}}>
+            <div style={{background:"#F5F3FF",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#4F46E5",lineHeight:1.8,border:"1px solid #DDD6FE"}}>
               <b>✅ Koneksi Dropbox aktif otomatis.</b><br/>
               Token terkonfigurasi secara terpusat — tidak perlu input manual.<br/>
-              Path backup: <code style={{background:"#DBEAFE",padding:"1px 4px",borderRadius:3}}>/KamarBedahPantiRini/backup.json</code>
+              Path backup: <code style={{background:"#EDE9FE",padding:"1px 4px",borderRadius:3}}>/KamarBedahPantiRini/backup.json</code>
             </div>
             <Toggle
               value={dbxCfg.autoBackup}
@@ -674,7 +674,7 @@ export function ViewArsip(props: ViewArsipProps) {
               sub="Setiap ada perubahan data, backup dikirim ke Dropbox dalam 3 detik"
             />
             {dbxCfg.realtimeBackup && (
-              <div style={{background:"#EFF6FF",borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:"#1D4ED8",border:"1px solid #BFDBFE",display:"flex",alignItems:"center",gap:6}}>
+              <div style={{background:"#F5F3FF",borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:"#4F46E5",border:"1px solid #DDD6FE",display:"flex",alignItems:"center",gap:6}}>
                 <span style={{fontSize:16}}>⚡</span>
                 <span>Realtime aktif — setiap perubahan jadwal &amp; lembur otomatis tersimpan ke Dropbox</span>
               </div>
@@ -704,7 +704,7 @@ export function ViewArsip(props: ViewArsipProps) {
               </div>
             )}
             {dbxCfg.lastBackup && (
-              <div style={{background:"#EFF6FF",borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:"#1D4ED8",border:"1px solid #BFDBFE"}}>
+              <div style={{background:"#F5F3FF",borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:"#4F46E5",border:"1px solid #DDD6FE"}}>
                 🕐 Backup JSON terakhir: <b>{dbxCfg.lastBackup}</b>
               </div>
             )}
@@ -729,13 +729,13 @@ export function ViewArsip(props: ViewArsipProps) {
                 <Btn full outline color="#3730A3" onClick={onDbxBackupLemburXls} disabled={dbxBacking} style={{flex:1,minWidth:140}}>
                   ⏰ Backup Lembur (Excel)
                 </Btn>
-                <Btn full outline color="#0369A1" onClick={onDbxBackupMonitoringXls} disabled={dbxBacking} style={{flex:1,minWidth:140}}>
+                <Btn full outline color="#6D28D9" onClick={onDbxBackupMonitoringXls} disabled={dbxBacking} style={{flex:1,minWidth:140}}>
                   🌡 Backup Monitoring (Excel)
                 </Btn>
               </div>
             </div>
             <div style={{marginTop:10}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#1D4ED8",marginBottom:6}}>⬇ Pulihkan dari Dropbox (pilih data yang ingin dipulihkan):</div>
+              <div style={{fontSize:11,fontWeight:700,color:"#4F46E5",marginBottom:6}}>⬇ Pulihkan dari Dropbox (pilih data yang ingin dipulihkan):</div>
               <div style={{display:"flex",gap:8}}>
                 <Btn full outline color="#0061FF" onClick={onDbxRestoreOps} disabled={dbxBacking} style={{flex:1}}>
                   🗓 Jadwal Operasi
@@ -758,11 +758,11 @@ export function ViewArsip(props: ViewArsipProps) {
           </Card>
 
           <Card>
-            <SH label="📡 Sinkronisasi Real-time" color="#1565C0"/>
-            <div style={{background:"#E3F2FD",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#1565C0",lineHeight:1.7,border:"1px solid #90CAF9"}}>
+            <SH label="📡 Sinkronisasi Real-time" color="#4338CA"/>
+            <div style={{background:"#EDE9FE",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#4338CA",lineHeight:1.7,border:"1px solid #C4B5FD"}}>
               Sinkronisasi data antar HP/komputer secara langsung menggunakan Supabase Realtime. Aktifkan setelah mengisi URL & Anon Key Supabase di atas.
             </div>
-            <Toggle value={rtEnabled} onChange={(v:boolean)=>setRtEnabled(v)} color="#1565C0" label="📡 Aktifkan Sinkronisasi Real-time" sub="Semua perubahan jadwal akan disinkron ke perangkat lain"/>
+            <Toggle value={rtEnabled} onChange={(v:boolean)=>setRtEnabled(v)} color="#4338CA" label="📡 Aktifkan Sinkronisasi Real-time" sub="Semua perubahan jadwal akan disinkron ke perangkat lain"/>
             {rtStatus && (
               <div style={{marginTop:10,background:rtStatus==="online"?"#E8F5E9":"#FFF3E0",borderRadius:8,padding:"8px 12px",fontSize:12,color:rtStatus==="online"?"#2E7D32":"#E65100",fontWeight:700,border:`1px solid ${rtStatus==="online"?"#A5D6A7":"#FFCC80"}`}}>
                 {rtStatus==="online"?"🟢 Terhubung — data disinkron secara real-time":rtStatus==="connecting"?"🟡 Menghubungkan...":"🔴 Tidak terhubung — periksa URL & Anon Key"}

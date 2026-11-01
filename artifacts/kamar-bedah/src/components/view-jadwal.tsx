@@ -139,7 +139,7 @@ export function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId
         );
 
         const isCytoGlowActive = op.opType==="cyto" && !isBatal;
-        const accentColor = isCytoGlowActive?"#B71C1C":isBatal?"#94A3B8":op.status==="ongoing"?"#00897B":op.status==="done"?"#2E7D32":"#1565C0";
+        const accentColor = isCytoGlowActive?"#B71C1C":isBatal?"#94A3B8":op.status==="ongoing"?"#00897B":op.status==="done"?"#2E7D32":"#4338CA";
         return (
           <Card key={op.id}
             hi={isCytoGlowActive?"#F44336":hasAlg&&!isBatal?C.dL:undefined}

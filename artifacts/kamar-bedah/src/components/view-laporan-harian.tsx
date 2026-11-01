@@ -317,7 +317,7 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
     try {
       const folder = (dbxCfg?.path || "/kamarbedah/").replace(/[^/]+$/, "");
       const tgl = l.tanggal;
-      const buf = await buatWorkbookLaporanLengkap(filterLaporan(semua, "tanggal", tgl)).xlsx.writeBuffer();
+      const buf = await buatWorkbookLaporanLengkap(filterLaporan(semua, "tanggal", tgl), { cytoIds, perawatMap }).xlsx.writeBuffer();
       const d = await dropboxUploadBytes(`${folder}LaporanHarian_${tgl}.xlsx`, buf as unknown as ArrayBuffer);
       if (!d?.ok) showToast("⚠ Excel ke Dropbox gagal: " + (d?.msg || "error"), C.w);
     } catch { showToast("⚠ Excel ke Dropbox gagal", C.w); }
@@ -400,7 +400,7 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
     const nilai = dlMode === "tanggal" ? dlTgl : dlMode === "bulan" ? dlBln : dlThn;
     const list = filterLaporan(laporanList, dlMode, nilai);
     if (!list.length) { showToast("Tidak ada laporan harian untuk " + nilai, C.w); return; }
-    buatWorkbookLaporanLengkap(list).xlsx.writeBuffer().then((buf) => {
+    buatWorkbookLaporanLengkap(list, { cytoIds, perawatMap }).xlsx.writeBuffer().then((buf) => {
       const url = URL.createObjectURL(new Blob([buf as unknown as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
       const a = document.createElement("a");
       a.href = url; a.download = `LaporanHarianOK_${nilai}.xlsx`; a.click();

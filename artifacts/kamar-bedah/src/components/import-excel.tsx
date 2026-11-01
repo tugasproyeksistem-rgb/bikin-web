@@ -126,7 +126,7 @@ export function ImportExcel({ops, setOps, showToast, upsertBulkToSupa}: any) {
     <div>
       <Card>
         <SH label="📥 Import Jadwal dari Excel"/>
-        <div style={{background:"#E3F2FD",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#1565C0",lineHeight:1.7,border:"1px solid #90CAF9"}}>
+        <div style={{background:"#EDE9FE",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#4338CA",lineHeight:1.7,border:"1px solid #C4B5FD"}}>
           <b>Cara import:</b><br/>
           1. Unduh template Excel di bawah ini<br/>
           2. Isi data jadwal sesuai format kolom<br/>
