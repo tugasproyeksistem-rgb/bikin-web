@@ -21,6 +21,8 @@ import {
 } from "../utils/laporan-harian";
 
 import { buatWorkbookLaporanLengkap } from "../utils/laporan-harian-excel";
+import { RiwayatBulanan } from "./riwayat-bulanan";
+import { downloadElementAsWord } from "../utils/word-export";
 import { dropboxUploadBytes } from "../services/dropbox";
 
 const DRAFT_KEY = "kb_laporan_harian_draft_v1";
@@ -150,12 +152,16 @@ function Lembar({ l, mask, cytoIds, perawatMap }: { l: LaporanHarian; mask: (s: 
       {judul(judulKandidat(l))}
       {tabel(["Tanggal", "Jam", "Dokter", "Nama", "Umur", "Jenis Operasi", "Keterangan"],
         l.kandidat.map((r) => [fmtTgl(r.tanggal), r.jam, r.dokter, mask(r.pasien), r.umur, r.jenis, cytoCatatan(adaCyto(r.opId), r.keterangan)]), 3)}
+      <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0 }}><tbody><tr>
+      <td style={{ width: "50%", verticalAlign: "top", paddingRight: 8, border: "none" }}>
       {judul("KONDISI PERALATAN & KAMAR")}
       <table style={{ width: "100%", borderCollapse: "collapse" }}><tbody>
         {ALAT_BUTIR.map((b) => <tr key={b.k}>{[<td key="a" style={{ ...td, width: "34%", fontWeight: 700 }}>{b.l}</td>, <td key="b" style={td}>{kond(l.alat[b.k])}</td>]}</tr>)}
         {baris("Lain-lain", l.alatLain)}
         {baris("Catatan", l.alatCatatan)}
       </tbody></table>
+      </td>
+      <td style={{ width: "50%", verticalAlign: "top", paddingLeft: 8, border: "none" }}>
       {judul("STOK & BAHAN")}
       <table style={{ width: "100%", borderCollapse: "collapse" }}><tbody>
         {baris("Instrumen", l.instrumen)}
@@ -166,6 +172,7 @@ function Lembar({ l, mask, cytoIds, perawatMap }: { l: LaporanHarian; mask: (s: 
         {baris("Lain-lain", l.stokLain)}
         {baris("Catatan", l.stokCatatan)}
       </tbody></table>
+      </td></tr></tbody></table>
       {judul("KEJADIAN / INSIDEN / KENDALA")}
       <table style={{ width: "100%", borderCollapse: "collapse" }}><tbody>
         {baris("Ada kejadian?", l.kejadian === "ya" ? "Ya" : "Tidak")}
@@ -422,6 +429,32 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
     setPratinjau(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+  const aksiRef = useRef<any>({});
+  const unduhWord = () => {
+    const el = lembarRef.current;
+    if (!el) { showToast("Lembar belum siap", C.w); return; }
+    downloadElementAsWord(el, namaFile("doc"));
+    showToast("✓ Word diunduh", C.s);
+  };
+  aksiRef.current = { unduhPdf, unduhWord };
+  const itemRiwayat = laporanList.map((l) => ({ id: String(l.id), tanggal: String(l.tanggal), label: SHIFT_LABEL[l.shift], ket: l.jumlahOperasi + " operasi", urut: ["pagi", "siang", "malam"].indexOf(l.shift), data: l }));
+  const unduhXlsxLH = (list: LaporanHarian[], nama: string) => {
+    buatWorkbookLaporanLengkap(list, { cytoIds, perawatMap }).xlsx.writeBuffer().then((buf) => {
+      const url = URL.createObjectURL(new Blob([buf as unknown as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = nama; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      showToast("✓ Excel diunduh", C.s);
+    }).catch((e) => showToast("Gagal membuat Excel: " + ((e as any)?.message || "error"), C.d));
+  };
+  const unduhRiwayat = (it: any, fmt: "excel" | "word" | "pdf") => {
+    const l = it.data as LaporanHarian;
+    if (fmt === "excel") { unduhXlsxLH([l], "LaporanHarianOK_" + l.tanggal + "_" + l.shift + ".xlsx"); return; }
+    setLihatSaja(true); setPratinjau(l);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    setTimeout(() => { if (fmt === "pdf") aksiRef.current.unduhPdf(); else aksiRef.current.unduhWord(); }, 900);
+  };
+  const excelBulan = (list: any[], bulan: string) => unduhXlsxLH(list.map((x: any) => x.data), "LaporanHarianOK_" + bulan + ".xlsx");
   const hapus = async (l: LaporanHarian) => {
     if (!window.confirm(`Hapus laporan ${fmtTgl(l.tanggal)} ${SHIFT_LABEL[l.shift]}?`)) return;
     const res = await deleteFromSupa?.("kb_laporan_harian", l.id);
@@ -584,19 +617,14 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
         <Btn full onClick={keAtasPreview}>👁 Lihat preview laporan</Btn>
       </Card>
 
+      <RiwayatBulanan judul="Riwayat per bulan" items={itemRiwayat} role={role} sibuk={busy}
+        kosongTeks="Belum ada laporan harian tersimpan di bulan ini."
+        onBuka={(it: any) => { setLihatSaja(true); setPratinjau(it.data); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+        onUnduh={unduhRiwayat}
+        onHapus={(it: any) => hapus(it.data)}
+        onExcelBulan={excelBulan} />
       <Card style={{ marginTop: 12 }}>
-        <SH label="Riwayat & unduh Excel" />
-        {!riwayat.length && <div style={{ fontSize: 13, color: C.tL }}>Belum ada laporan tersimpan.</div>}
-        {riwayat.map((l) => (
-          <div key={l.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: `1px solid ${C.b}` }}>
-            <div style={{ fontSize: 13 }}><b>{fmtTgl(l.tanggal)}</b> • {SHIFT_LABEL[l.shift]} • {l.jumlahOperasi} operasi</div>
-            <div style={{ display: "flex", gap: 6 }}>
-              <Btn sm outline onClick={() => { setLihatSaja(true); setPratinjau(l); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Buka</Btn>
-              <Btn sm outline onClick={() => { setLihatSaja(true); setPratinjau(l); window.scrollTo({ top: 0 }); setTimeout(cetak, 700); }}>🖨 Print</Btn>
-              {role === "admin" && <Btn sm outline color={C.d} onClick={() => hapus(l)}>Hapus</Btn>}
-            </div>
-          </div>
-        ))}
+        <SH label="Unduh Excel per tanggal / bulan / tahun" />
         <div style={{ marginTop: 12 }}>
           <Pilih value={dlMode} onChange={(v) => setDlMode(v as "tanggal" | "bulan" | "tahun")} opsi={[{ v: "tanggal", l: "Per tanggal" }, { v: "bulan", l: "Per bulan" }, { v: "tahun", l: "Per tahun" }]} />
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>

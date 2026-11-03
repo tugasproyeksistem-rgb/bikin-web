@@ -7,6 +7,7 @@ import type { CSSProperties, ReactNode } from "react";
 import html2canvas from "html2canvas";
 import { downloadElementAsWord, elementToWordBlob } from "../utils/word-export";
 import { normalizePhone62 } from "../utils";
+import { RiwayatBulanan } from "./riwayat-bulanan";
 import { C, iS } from "../constants";
 import { maskName } from "../utils";
 import { SUPA_CLIENT, AmbilLogMedis } from "../services/supabase";
@@ -134,12 +135,16 @@ function Lembar2({ d, mask, cytoIds }: { d: any; mask: (s: string) => string; cy
       {tabel(["Tanggal", "Jam", "Dokter", "Nama", "Umur", "Jenis Operasi", "Keterangan"],
         ["12%", "8%", "18%", "20%", "10%", "22%", "10%"],
         (d.besok || []).map((r: any) => [fmtTgl(r.tanggal), r.jam, r.dokter, mask(r.pasien), r.umur, r.jenis, ketCyto(r.opId, r.keterangan)]), 3)}
+      <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0 }}><tbody><tr>
+      <td style={{ width: "50%", verticalAlign: "top", paddingRight: 8, border: "none" }}>
       {judul("KONDISI PERALATAN & KAMAR")}
       <table style={{ width: "100%", borderCollapse: "collapse" }}><tbody>
         {ALAT_BUTIR.map((b) => <tr key={b.k}><td style={{ ...td, width: "34%", fontWeight: 700 }}>{b.l}</td><td style={td}>{L ? kondTeks((L.alat || {})[b.k]) : "-"}</td></tr>)}
         {baris("Lain-lain", L ? L.alatLain : "-")}
         {baris("Catatan", L ? L.alatCatatan : "-")}
       </tbody></table>
+      </td>
+      <td style={{ width: "50%", verticalAlign: "top", paddingLeft: 8, border: "none" }}>
       {judul("STOK & BAHAN")}
       <table style={{ width: "100%", borderCollapse: "collapse" }}><tbody>
         {baris("Instrumen", L ? L.instrumen : "-")}
@@ -150,6 +155,7 @@ function Lembar2({ d, mask, cytoIds }: { d: any; mask: (s: string) => string; cy
         {baris("Lain-lain", L ? L.stokLain : "-")}
         {baris("Catatan", L ? L.stokCatatan : "-")}
       </tbody></table>
+      </td></tr></tbody></table>
       {judul("KEJADIAN / INSIDEN / KENDALA")}
       <table style={{ width: "100%", borderCollapse: "collapse" }}><tbody>
         {baris("Ada kejadian?", L ? (L.kejadian === "ya" ? "Ya" : "Tidak") : "-")}
@@ -461,7 +467,24 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
     }).catch((e) => showToast("Gagal membuat Excel: " + ((e as any)?.message || "error"), C.d));
   };
 
-  const riwayat = [...daftar].sort((a, b) => String(b.tanggal).localeCompare(String(a.tanggal))).slice(0, 8);
+  const aksiRef = useRef<any>({});
+  aksiRef.current = { unduhPdf, unduhWord };
+  const itemRiwayat = daftar.map((l: any) => ({ id: String(l.id), tanggal: String(l.tanggal), ket: l.jumlah + " operasi", data: l }));
+  const unduhXlsxKJ = (list: any[], nama: string) => {
+    buatWorkbookKepalaJaga(list, { cytoIds }).xlsx.writeBuffer()
+      .then((buf) => { unduhBlob(new Blob([buf as unknown as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), nama); showToast("✓ Excel diunduh", C.s); })
+      .catch((e) => showToast("Gagal membuat Excel: " + ((e as any)?.message || "error"), C.d));
+  };
+  const unduhRiwayat = (it: any, fmt: "excel" | "word" | "pdf") => {
+    const l = it.data;
+    if (fmt === "excel") { unduhXlsxKJ([l], "LaporanKepalaJaga_" + l.tanggal + ".xlsx"); return; }
+    setLihat(l);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    setTimeout(() => { if (fmt === "pdf") aksiRef.current.unduhPdf(); else aksiRef.current.unduhWord(); }, 900);
+  };
+  const excelBulan = (list: any[], bulan: string) => {
+    unduhXlsxKJ(list.map((x: any) => x.data), "LaporanKepalaJaga_" + bulan + ".xlsx");
+  };
 
   return (
     <div style={{ paddingBottom: 24 }}>
@@ -564,20 +587,12 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
         <div ref={lembarRef} style={{ width: 794 }}><Lembar2 d={tampil} mask={mask} cytoIds={cytoIds} /></div>
       </div>
 
-      <Card style={{ marginTop: 12 }}>
-        <SH label="Riwayat tersimpan" />
-        {!riwayat.length && <div style={{ fontSize: 13, color: C.tL }}>Belum ada laporan kepala jaga tersimpan.</div>}
-        {riwayat.map((l) => (
-          <div key={l.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: `1px solid ${C.b}` }}>
-            <div style={{ fontSize: 13 }}><b>{fmtTgl(l.tanggal)}</b> • {l.jumlah} operasi</div>
-            <div style={{ display: "flex", gap: 6 }}>
-              <Btn sm outline onClick={() => { setLihat(l); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Buka</Btn>
-              <Btn sm outline onClick={() => { setLihat(l); window.scrollTo({ top: 0 }); setTimeout(cetak, 700); }}>🖨 Print</Btn>
-              {role === "admin" && <Btn sm outline color={C.d} onClick={() => hapus(l)}>Hapus</Btn>}
-            </div>
-          </div>
-        ))}
-      </Card>
+      <RiwayatBulanan judul="Riwayat tersimpan per bulan" items={itemRiwayat} role={role} sibuk={busy}
+        kosongTeks="Belum ada laporan kepala jaga tersimpan di bulan ini."
+        onBuka={(it: any) => { setLihat(it.data); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+        onUnduh={unduhRiwayat}
+        onHapus={(it: any) => hapus(it.data)}
+        onExcelBulan={excelBulan} />
     </div>
   );
 }

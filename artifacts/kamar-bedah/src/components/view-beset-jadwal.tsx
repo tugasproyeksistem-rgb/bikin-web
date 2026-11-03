@@ -35,6 +35,7 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
   const [pin, setPin] = useState("");
   const dirty = useRef<Set<string>>(new Set());
   const struktur = useRef(false);
+  const gulirRef = useRef<HTMLDivElement>(null);
   const [warnaGlobal, setWarnaGlobal] = useState<Record<string, string>>({});
   const [warnaBuka, setWarnaBuka] = useState(false);
 
@@ -431,12 +432,16 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
           </div>
         )}
         {(d.libur || []).length > 0 && <div style={{ fontSize: 13, marginBottom: 6 }}><span style={{ display: "inline-block", width: 12, height: 12, background: "#FCA5A5", border: "1px solid #111", marginRight: 6 }} />Kolom merah = tanggal libur (tetap bisa diisi untuk beset libur)</div>}
-        <div style={{ overflowX: "auto" }}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+          <Btn sm outline onClick={() => gulirRef.current?.scrollBy({ left: -260, behavior: "smooth" })}>◀ Geser kiri</Btn>
+          <Btn sm outline onClick={() => gulirRef.current?.scrollBy({ left: 260, behavior: "smooth" })}>Geser kanan ▶</Btn>
+        </div>
+        <div ref={gulirRef} style={{ overflowX: "auto", overflowY: "hidden", maxWidth: "100%", WebkitOverflowScrolling: "touch", touchAction: "pan-x pan-y", overscrollBehaviorX: "contain" }}>
           <table style={{ borderCollapse: "collapse" }}>
             <thead>
               <tr>
                 <th style={{ ...thS, minWidth: 36 }}>No</th>
-                <th style={{ ...thS, minWidth: 170 }}>Nama Perawat</th>
+                <th style={{ ...thS, minWidth: 170, position: "sticky", left: 0, zIndex: 2, boxShadow: "1px 0 0 #111" }}>Nama Perawat</th>
                 {hari.map((h) => <th key={h} style={{ ...thS, minWidth: 36, ...(isLibur(h) ? { background: "#DC2626", color: "#fff" } : {}) }}>{h}</th>)}
               </tr>
             </thead>
@@ -448,7 +453,7 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
                       ? <select value={i + 1} onChange={(e) => pindahUrut(b.id, Number(e.target.value))} style={{ fontFamily: FONT, fontSize: 15, fontWeight: 700, border: "none", background: "transparent" }}>{baris.map((_, n) => <option key={n} value={n + 1}>{n + 1}</option>)}</select>
                       : i + 1}
                   </td>
-                  <td style={{ ...tdS, whiteSpace: "nowrap" }}>
+                  <td style={{ ...tdS, whiteSpace: "nowrap", position: "sticky", left: 0, zIndex: 1, background: "#fff", boxShadow: "1px 0 0 #111" }}>
                     <span style={{ display: "inline-block", width: 12, height: 12, background: warnaMap[b.id], border: "1px solid #111", marginRight: 6 }} />{b.name}{role === "admin" && <button type="button" aria-label="Hapus perawat" onClick={() => hapusPerawat(b)} style={{ border: "none", background: "transparent", color: C.d, fontSize: 16, cursor: "pointer", marginLeft: 6 }}>✕</button>}
                   </td>
                   {hari.map((h) => {
