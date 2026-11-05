@@ -91,7 +91,7 @@ export function ViewJadwal({ops,setOps,startEditOp,deleteOp,sendReminder,reqOpId
         <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
           {[{v:"all",l:"Semua",icon:null},{v:"scheduled",l:"Terjadwal",icon:STS.scheduled.icon},{v:"ongoing",l:"Berlangsung",icon:STS.ongoing.icon},{v:"done",l:"Selesai",icon:STS.done.icon},{v:"batal",l:"Batal",icon:STS.batal.icon}].map(f=>(
             <button key={f.v} onClick={()=>hF(f.v)} style={{padding:"7px 14px",borderRadius:20,border:`1.5px solid ${fSt===f.v?C.p:C.b}`,
-              background:fSt===f.v?`linear-gradient(135deg,${C.p},${C.p}dd)`:"#FAFBFD",color:fSt===f.v?"#fff":C.g,fontSize:12,
+              background:fSt===f.v?`linear-gradient(135deg,#0369A1,${C.p})`:"#FAFBFD",color:fSt===f.v?"#fff":C.g,fontSize:12,
               fontWeight:fSt===f.v?700:500,cursor:"pointer",fontFamily:"inherit",display:"inline-flex",alignItems:"center",gap:5,
               boxShadow:fSt===f.v?`0 2px 8px ${C.p}44`:"none",transition:"all .15s"}}>
               {f.icon && <span style={{fontSize:9}}>{f.icon}</span>}{f.l}

@@ -3416,7 +3416,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
                         const hasV= !!(s.suhu&&s.kelembaban&&!isNaN(sv)&&!isNaN(rv));
                         const ok: boolean|null = hasV ? monIsOK(sv,rv,monitoringCfg) : null;
                         return (
-                          <tr key={jam} style={{background:"#fff",borderBottom:"1px solid #E2E8F0"}}>
+                          <tr key={jam} style={{background:"#fff",borderBottom:"1px solid #64748B"}}>
                             <td style={{padding:"7px 10px",fontWeight:700,color:MON_ROOM_COLORS[ri],whiteSpace:"nowrap"}}>{jam}</td>
                             <td style={{padding:"5px 7px"}}>
                               <input type="number" step="0.1" min="10" max="40" placeholder="mis. 21.5"
@@ -3460,7 +3460,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
           </div>
 
           {/* Tabel data tersimpan — tambah kolom "Ruangan" */}
-          <div style={{background:"#fff",border:"1px solid #E2E8F0",borderRadius:12,overflow:"hidden"}}>
+          <div style={{background:"#fff",border:"1px solid #64748B",borderRadius:12,overflow:"hidden"}}>
             <div style={{background:"linear-gradient(90deg,"+MC.pri+","+MC.priL+")",padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <span style={{color:"#fff",fontWeight:700,fontSize:14}}><IkClip size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Data {mLabel}</span>
               <span style={{color:"rgba(255,255,255,.75)",fontSize:12}}>{meHarian.length} entri</span>
@@ -3477,7 +3477,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
                   <thead style={{background:"#F8FAFC"}}>
                     <tr>
                       {["Ruangan","Tanggal","Jam","Suhu","RH","Std Suhu","Std RH","Status","Petugas",""].map(h=>(
-                        <th key={h} style={{padding:"8px 10px",textAlign:"left",fontWeight:700,color:"#475569",fontSize:11,borderBottom:"1px solid #E2E8F0",whiteSpace:"nowrap"}}>{h}</th>
+                        <th key={h} style={{padding:"8px 10px",textAlign:"left",fontWeight:700,color:"#475569",fontSize:11,borderBottom:"1px solid #64748B",whiteSpace:"nowrap"}}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -3606,7 +3606,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
           ):(
             <>
               {/* ── Grafik Suhu ── */}
-              <div style={{background:"#fff",border:"1px solid #E2E8F0",borderRadius:12,padding:"16px 16px 8px",marginBottom:14}}>
+              <div style={{background:"#fff",border:"1px solid #64748B",borderRadius:12,padding:"16px 16px 8px",marginBottom:14}}>
                 <div style={{fontWeight:700,color:MC.pri,marginBottom:10,fontSize:13}}><IkSuhu size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Grafik Suhu — {mLabel}{grafikRuang!=="all"?` (${grafikRuang})`:""}</div>
                 <ResponsiveContainer width="100%" height={220}>
                   {grafikRuang==="all"?(
@@ -3649,7 +3649,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
               </div>
 
               {/* ── Grafik Kelembaban ── */}
-              <div style={{background:"#fff",border:"1px solid #E2E8F0",borderRadius:12,padding:"16px 16px 8px"}}>
+              <div style={{background:"#fff",border:"1px solid #64748B",borderRadius:12,padding:"16px 16px 8px"}}>
                 <div style={{fontWeight:700,color:MC.ok,marginBottom:10,fontSize:13}}><IkTetes size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Grafik Kelembaban — {mLabel}{grafikRuang!=="all"?` (${grafikRuang})`:""}</div>
                 <ResponsiveContainer width="100%" height={220}>
                   {grafikRuang==="all"?(
@@ -3766,7 +3766,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
               </div>
             ))}
           </div>
-          <div style={{background:"#F8FAFC",borderRadius:10,padding:"12px 14px",fontSize:12,color:"#64748B",border:"1px solid #E2E8F0",lineHeight:1.7,marginBottom:14}}>
+          <div style={{background:"#F8FAFC",borderRadius:10,padding:"12px 14px",fontSize:12,color:"#64748B",border:"1px solid #64748B",lineHeight:1.7,marginBottom:14}}>
             <b><IkPaku size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Penyimpanan:</b> Data monitoring disertakan dalam backup otomatis JSON bersama data operasi dan lembur. Aktifkan di tab Arsip → Setelan → Dropbox.
           </div>
 
@@ -3822,7 +3822,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
          ══════════════════════════════════════════════════════ */}
       {subTab==="standar"&&(
         <div style={{maxWidth:480}}>
-          <div style={{background:"#fff",border:"1px solid #E2E8F0",borderRadius:12,padding:18}}>
+          <div style={{background:"#fff",border:"1px solid #64748B",borderRadius:12,padding:18}}>
             <div style={{fontWeight:700,color:MC.pri,fontSize:14,marginBottom:16}}><IkSetelan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Konfigurasi Standar Monitoring</div>
             <div style={{fontSize:12,color:"#64748B",marginBottom:14,background:MC.priBg,padding:"8px 12px",borderRadius:8}}>
               Standar yang diatur di sini berlaku untuk ketiga ruangan: <b>{MON_ROOMS.join(", ")}</b>
@@ -5026,7 +5026,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
         <Btn sm onClick={addNurse} color={C.g} outline>+ Tambah Baris Perawat</Btn>
         <span style={{fontSize:11,color:C.tL}}>Total: {nurses.length} perawat</span>
         <div style={{flex:1}}/>
-        <button onClick={saveJadwal} disabled={savingJadwal} style={{padding:"10px 18px",background:savingJadwal?"#94A3B8":"linear-gradient(135deg,#0284C7,#4C1D95)",color:"#fff",border:"none",borderRadius:10,fontSize:12,fontWeight:700,cursor:savingJadwal?"not-allowed":"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(2,132,199,.3)"}}>
+        <button onClick={saveJadwal} disabled={savingJadwal} style={{padding:"10px 18px",background:savingJadwal?"#94A3B8":"linear-gradient(135deg,#0369A1,#1E3A8A)",color:"#fff",border:"none",borderRadius:10,fontSize:12,fontWeight:700,cursor:savingJadwal?"not-allowed":"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(2,132,199,.3)"}}>
           {savingJadwal?"Menyimpan...":"Simpan Jadwal"}
         </button>
       </div>
@@ -5524,7 +5524,7 @@ export default function App() {
       .kb-tab-btn:active{transform:scale(1.18) translateY(-2px);}
       .kb-content{padding:14px 16px 32px;background:#f8fafc;}
       .kb-sidebar{display:none;}
-      .kb-content .kb-home-bg{background:linear-gradient(160deg,#E0F2FE 0%,#F0F9FF 50%,#DBEAFE 100%);border-radius:20px;}
+      .kb-content .kb-home-bg{background:linear-gradient(160deg,#BAE6FD 0%,#7DD3FC 50%,#93C5FD 100%);border-radius:20px;}
       .kb-home-bg .kb-kaca{background:rgba(255,255,255,.88)!important;border:1px solid rgba(255,255,255,.95)!important;border-radius:20px!important;box-shadow:0 8px 28px rgba(14,116,180,.12)!important;}
       @supports (backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px)){.kb-home-bg .kb-kaca{background:rgba(255,255,255,.66)!important;-webkit-backdrop-filter:blur(14px) saturate(160%);backdrop-filter:blur(14px) saturate(160%);}}
       .kb-main{display:block;}
@@ -5550,7 +5550,7 @@ export default function App() {
       /* ── Desktop (≥1024px) ── */
       @media(min-width:1024px){
         body{
-          background:linear-gradient(135deg,#E0F2FE 0%,#BAE6FD 45%,#7DD3FC 100%)!important;
+          background:linear-gradient(135deg,#7DD3FC 0%,#38BDF8 45%,#0EA5E9 100%)!important;
           min-height:100vh;
           display:flex;align-items:flex-start;justify-content:center;
           padding:28px 20px;

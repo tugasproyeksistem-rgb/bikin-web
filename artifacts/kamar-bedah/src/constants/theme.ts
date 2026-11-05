@@ -18,7 +18,7 @@ export const C = {
   /* ── Neutrals ── */
   g:"#475569",   gBg:"#f1f5f9",
   t:"#0f172a",   tL:"#334155",
-  b:"#e2e8f0",   white:"#ffffff",
+  b:"#64748B",   white:"#ffffff",
   bg:"#f8fafc",  gold:"#C9A961",
   /* ── PENAMBAHAN: aksen "mewah" (navy gelap + emas) untuk permukaan
      hero/signature (header, login, banner) — dipakai TERBATAS supaya
@@ -27,3 +27,4 @@ export const C = {
 };
 
 export const iS: React.CSSProperties = { width:"100%", padding:"11px 14px", borderRadius:10, border:`1.5px solid ${C.b}`, fontSize:14, lineHeight:1.6, background:"#FAFBFD", boxSizing:"border-box", fontFamily:"inherit", color:C.t, outline:"none" };
+/* patch105 */

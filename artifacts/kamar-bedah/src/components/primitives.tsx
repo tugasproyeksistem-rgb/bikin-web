@@ -71,7 +71,7 @@ export const Card = ({children,style={},hi,className}: any) => {
   const isCytoGlow = typeof className === "string" && className.includes("kb-cyto-glow");
   return (
     <div className={`kbCardHoverable${className?` ${className}`:""}`} style={{
-      ...(isCytoGlow ? {} : {background:"#ffffff",border:`1px solid ${hi||"rgba(14,116,180,.16)"}`}),
+      ...(isCytoGlow ? {} : {background:"#ffffff",border:`1.5px solid ${hi||"rgba(15,23,42,.45)"}`}),
       borderRadius:20,padding:"18px 20px",marginBottom:12,
       boxShadow:"0 6px 22px rgba(14,116,180,.10), 0 1px 2px rgba(0,0,0,.04)",
       ...style
@@ -249,7 +249,7 @@ export const Row  = ({title,right}: any) => (
 export const Bdg  = ({label,color,bg,icon}: any) => <span style={{background:`linear-gradient(135deg, ${bg}, ${bg}CC)`,color,fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:20,border:`1px solid ${color}33`,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:4,boxShadow:`0 1px 3px ${color}22`}}>{icon && <span style={{fontSize:9}}>{icon}</span>}{label}</span>;
 export const SH   = ({label,color="#0B0F14"}: any) => <div style={{fontSize:12,fontWeight:800,color,letterSpacing:.6,marginBottom:14,paddingBottom:8,borderBottom:`2px solid ${color}22`,textTransform:"uppercase"}}>{label}</div>;
 export const Toggle = ({value,onChange,label,sub,color=C.p}: any) => (
-  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${C.b}`}}>
+  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:`1px solid #CBD5E1`}}>
     <div><div style={{fontSize:14,fontWeight:700,color:C.t}}>{label}</div>{sub&&<div style={{fontSize:11,color:C.tL,marginTop:2}}>{sub}</div>}</div>
     <button onClick={()=>onChange(!value)} style={{width:50,height:28,borderRadius:14,background:value?color:"#DDE3EA",border:"none",cursor:"pointer",position:"relative",transition:"background .2s",flexShrink:0}}>
       <div style={{position:"absolute",top:4,left:value?24:4,width:20,height:20,borderRadius:10,background:"#fff",boxShadow:"0 1px 4px rgba(0,0,0,.25)",transition:"left .2s"}}/>

@@ -103,7 +103,7 @@ export function FloatingAssistant({autoSaveOcrBatch, showToast}: {
         <div style={{position:"fixed",right:18,bottom:84,
           width:"min(360px, calc(100vw - 32px))",height:"min(480px, calc(100vh - 140px))",
           background:C.white,borderRadius:18,boxShadow:"0 12px 40px rgba(0,0,0,.25)",zIndex:9500,
-          display:"flex",flexDirection:"column",overflow:"hidden",border:"1px solid #e2e8f0"}}>
+          display:"flex",flexDirection:"column",overflow:"hidden",border:"1px solid #64748B"}}>
 
           <div style={{background:"linear-gradient(135deg,#0284C7,#0369A1)",color:"#fff",padding:"14px 16px",fontWeight:800,fontSize:14,display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
             <span style={{display:"inline-flex",alignItems:"center",gap:6}}><IkBot size={16} strokeWidth={2.2}/>Asisten Pendaftaran</span>
@@ -114,7 +114,7 @@ export function FloatingAssistant({autoSaveOcrBatch, showToast}: {
               <div key={i} style={{alignSelf: m.role==="user"?"flex-end":"flex-start",
                 maxWidth:"85%",background: m.role==="user"?"#0284C7":"#fff",
                 color: m.role==="user"?"#fff":"#0f172a",
-                border: m.role==="user"?"none":"1px solid #e2e8f0",
+                border: m.role==="user"?"none":"1px solid #64748B",
                 borderRadius:14, padding:"9px 12px", fontSize:13, lineHeight:1.5,
                 whiteSpace:"pre-wrap",
                 boxShadow: m.role==="user"?"none":"0 1px 3px rgba(0,0,0,.06)"}}>
@@ -124,12 +124,12 @@ export function FloatingAssistant({autoSaveOcrBatch, showToast}: {
             {busy && <div style={{alignSelf:"flex-start",fontSize:12,color:"#64748b",padding:"4px 8px"}}>Sedang memproses…</div>}
           </div>
 
-          <div style={{padding:10,borderTop:"1px solid #e2e8f0",display:"flex",gap:8,background:"#fff",flexShrink:0}}>
+          <div style={{padding:10,borderTop:"1px solid #64748B",display:"flex",gap:8,background:"#fff",flexShrink:0}}>
             <textarea value={input} onChange={e=>setInput(e.target.value)}
               onKeyDown={e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); send(); } }}
               placeholder="Contoh: Ny. Siti, 45th, appendektomi besok jam 9, dr. Andika"
               disabled={busy}
-              style={{flex:1,resize:"none",height:40,padding:"9px 11px",borderRadius:10,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none"}}/>
+              style={{flex:1,resize:"none",height:40,padding:"9px 11px",borderRadius:10,border:"1.5px solid #64748B",fontSize:13,fontFamily:"inherit",outline:"none"}}/>
             <button onClick={send} disabled={busy || !input.trim()}
               style={{width:40,height:40,borderRadius:10,border:"none",
                 background: busy||!input.trim() ? "#cbd5e1":"#0284C7",
