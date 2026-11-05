@@ -1,3 +1,4 @@
+import { AlertTriangle as IkPeringatan, Check as IkCek } from "lucide-react"; /* patch94 */
 /* src/components/primitives.tsx
    Primitif UI dasar yang dipakai di hampir seluruh tab aplikasi: elemen
    form (LF/TF/TA/SF), tombol (Btn/WaBt), Card, skeleton loading, animasi
@@ -16,10 +17,10 @@ export function LF({label,req,err,children}: {label?: string; req?: boolean; err
   return (
     <div style={{marginBottom:14}}>
       {label && <div style={{fontSize:12,fontWeight:700,color:C.g,marginBottom:5,textTransform:"uppercase",letterSpacing:.4}}>
-        {label}{req&&<span style={{color:C.d}}> ✱</span>}
+        {label}{req&&<span style={{color:C.d}}> *</span>}
       </div>}
       {children}
-      {err && <div style={{fontSize:11,color:C.d,marginTop:4}}>⚠ {err}</div>}
+      {err && <div style={{fontSize:11,color:C.d,marginTop:4,display:"flex",alignItems:"center",gap:4}}><IkPeringatan size={12} strokeWidth={2.4}/>{err}</div>}
     </div>
   );
 }
@@ -64,15 +65,15 @@ export const Btn = ({children,onClick,color=C.p,outline,sm,full,disabled,style={
   );
 };
 export const WaBt = ({children,onClick,sm,full,disabled,style={}}: any) => (
-  <button onClick={onClick} disabled={disabled} style={{padding:sm?"7px 12px":"10px 18px",borderRadius:10,border:`1.5px solid ${disabled?"#ccc":C.wa}`,background:disabled?"#eee":C.wa,color:C.white,fontSize:sm?12:14,fontWeight:700,cursor:disabled?"not-allowed":"pointer",width:full?"100%":"auto",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:5,...style}}>✓ {children}</button>
+  <button onClick={onClick} disabled={disabled} style={{padding:sm?"7px 12px":"10px 18px",borderRadius:10,border:`1.5px solid ${disabled?"#ccc":C.wa}`,background:disabled?"#eee":C.wa,color:C.white,fontSize:sm?12:14,fontWeight:700,cursor:disabled?"not-allowed":"pointer",width:full?"100%":"auto",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:5,...style}}><IkCek size={sm?13:15} strokeWidth={2.6}/>{children}</button>
 );
 export const Card = ({children,style={},hi,className}: any) => {
   const isCytoGlow = typeof className === "string" && className.includes("kb-cyto-glow");
   return (
     <div className={`kbCardHoverable${className?` ${className}`:""}`} style={{
-      ...(isCytoGlow ? {} : {background:"#ffffff",border:`1px solid ${hi||C.b}`}),
-      borderRadius:16,padding:"18px 20px",marginBottom:12,
-      boxShadow:`6px 6px 16px rgba(148,163,184,.16), -4px -4px 12px rgba(255,255,255,.7), 0 1px 2px rgba(0,0,0,.03)`,
+      ...(isCytoGlow ? {} : {background:"#ffffff",border:`1px solid ${hi||"rgba(14,116,180,.16)"}`}),
+      borderRadius:20,padding:"18px 20px",marginBottom:12,
+      boxShadow:"0 6px 22px rgba(14,116,180,.10), 0 1px 2px rgba(0,0,0,.04)",
       ...style
     }}>{children}</div>
   );
@@ -246,7 +247,7 @@ export const Row  = ({title,right}: any) => (
   </div>
 );
 export const Bdg  = ({label,color,bg,icon}: any) => <span style={{background:`linear-gradient(135deg, ${bg}, ${bg}CC)`,color,fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:20,border:`1px solid ${color}33`,whiteSpace:"nowrap",display:"inline-flex",alignItems:"center",gap:4,boxShadow:`0 1px 3px ${color}22`}}>{icon && <span style={{fontSize:9}}>{icon}</span>}{label}</span>;
-export const SH   = ({label,color=C.p}: any) => <div style={{fontSize:12,fontWeight:800,color,letterSpacing:.6,marginBottom:14,paddingBottom:8,borderBottom:`2px solid ${color}22`,textTransform:"uppercase"}}>{label}</div>;
+export const SH   = ({label,color="#0B0F14"}: any) => <div style={{fontSize:12,fontWeight:800,color,letterSpacing:.6,marginBottom:14,paddingBottom:8,borderBottom:`2px solid ${color}22`,textTransform:"uppercase"}}>{label}</div>;
 export const Toggle = ({value,onChange,label,sub,color=C.p}: any) => (
   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:`1px solid ${C.b}`}}>
     <div><div style={{fontSize:14,fontWeight:700,color:C.t}}>{label}</div>{sub&&<div style={{fontSize:11,color:C.tL,marginTop:2}}>{sub}</div>}</div>
@@ -293,7 +294,7 @@ export class ErrorBoundary extends Component<{children: React.ReactNode},{err:bo
   render(){
     if(this.state.err) return (
       <div style={{padding:24,textAlign:"center",background:C.dBg,borderRadius:14,margin:"8px 0",border:`1px solid ${C.dL}`}}>
-        <div style={{fontSize:32,marginBottom:8}}>⚠️</div>
+        <div style={{marginBottom:8,color:"#D97706"}}><IkPeringatan size={36} strokeWidth={2}/></div>
         <div style={{fontSize:14,color:C.d,fontWeight:600,marginBottom:8}}>{this.state.msg}</div>
         <Btn onClick={this.handleReset}>Coba Lagi</Btn>
       </div>

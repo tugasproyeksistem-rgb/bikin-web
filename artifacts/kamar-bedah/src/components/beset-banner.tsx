@@ -5,6 +5,7 @@
 import { useState, useEffect } from "react";
 import { SUPA_CLIENT } from "../services/supabase";
 import { isoLokal } from "../utils/laporan-harian";
+import { Megaphone, Lock } from "lucide-react";
 
 const NAMA_BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 const lb = (b: string) => { const [y, m] = String(b).split("-").map(Number); return `${NAMA_BULAN[(m || 1) - 1]} ${y}`; };
@@ -37,14 +38,14 @@ export function BesetBanner({ setTab }: any) {
 
   const buka = dibuka.length > 0;
   const bulanTeks = (buka ? dibuka : [ditutup[0]]).map((x) => lb(x.bulan).toUpperCase()).join(" DAN ");
-  const warna = buka ? "#DC2626" : "#6D28D9";
+  const warna = buka ? "#DC2626" : "#0369A1";
 
   return (
     <div>
       <style>{`
         @keyframes kbBlinkText{0%,100%{opacity:1}50%{opacity:.12}}
         @keyframes kbBlinkBoxMerah{0%,100%{border-color:#DC2626;box-shadow:0 0 0 0 rgba(220,38,38,.85)}50%{border-color:#FCA5A5;box-shadow:0 0 22px 8px rgba(220,38,38,.25)}}
-        @keyframes kbBlinkBoxBiru{0%,100%{border-color:#6D28D9;box-shadow:0 0 0 0 rgba(37,99,235,.85)}50%{border-color:#C4B5FD;box-shadow:0 0 22px 8px rgba(37,99,235,.25)}}
+        @keyframes kbBlinkBoxBiru{0%,100%{border-color:#0284C7;box-shadow:0 0 0 0 rgba(2,132,199,.85)}50%{border-color:#7DD3FC;box-shadow:0 0 22px 8px rgba(2,132,199,.25)}}
         .kb-beset-teks{animation:kbBlinkText 1s ease-in-out infinite}
         .kb-beset-merah{animation:kbBlinkBoxMerah 1.1s ease-in-out infinite}
         .kb-beset-biru{animation:kbBlinkBoxBiru 1.1s ease-in-out infinite}
@@ -54,14 +55,14 @@ export function BesetBanner({ setTab }: any) {
         className={buka ? "kb-beset-merah" : "kb-beset-biru"}
         onClick={() => setTab && setTab("beset_jadwal")}
         onKeyDown={(e) => { if (e.key === "Enter" && setTab) setTab("beset_jadwal"); }}
-        style={{ border: "4px solid " + warna, borderRadius: 14, padding: "14px 12px", marginBottom: 12, textAlign: "center", cursor: "pointer", background: buka ? "#FEF2F2" : "#F5F3FF" }}>
+        style={{ border: "4px solid " + warna, borderRadius: 14, padding: "14px 12px", marginBottom: 12, textAlign: "center", cursor: "pointer", background: buka ? "#FEF2F2" : "#F0F9FF" }}>
         <div className="kb-beset-teks" style={{ fontSize: 22, fontWeight: 900, lineHeight: 1.3, color: warna }}>
-          {buka ? `📢 BESETAN BULAN ${bulanTeks} SUDAH DIBUKA!` : `🔒 BESETAN BULAN ${bulanTeks} SUDAH DITUTUP!`}
+          <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>{buka ? <Megaphone size={24} strokeWidth={2.4} /> : <Lock size={24} strokeWidth={2.4} />}{buka ? `BESETAN BULAN ${bulanTeks} SUDAH DIBUKA!` : `BESETAN BULAN ${bulanTeks} SUDAH DITUTUP!`}</span>
         </div>
         <div style={{ fontSize: 15, fontWeight: 700, marginTop: 6, color: "#111827", lineHeight: 1.4 }}>
           {buka
-            ? "Yuk, segera isi besetan jadwal kamu sebelum ditutup. Klik di sini untuk mengisi 👉"
-            : "Terima kasih sudah mengisi besetan tepat waktu 🙏 Jadwal sedang disusun, pantau terus ya!"}
+            ? "Yuk, segera isi besetan jadwal kamu sebelum ditutup. Klik di sini untuk mengisi →"
+            : "Terima kasih sudah mengisi besetan tepat waktu. Jadwal sedang disusun, pantau terus ya!"}
         </div>
       </div>
     </div>

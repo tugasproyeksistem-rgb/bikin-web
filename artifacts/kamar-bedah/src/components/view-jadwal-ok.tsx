@@ -1,3 +1,4 @@
+import { Pencil as IkEdit, Printer as IkPrinter, Save as IkSimpan, X as IkX } from "lucide-react"; /* patch97 */
 /* src/components/view-jadwal-ok.tsx
    Tab "Jadwal Operasi dan Peserta Kamar Bedah". Perawat jaga diambil dari
    Generator (kb_roster_gen), baris tabel dari daftar operasi hari itu, semua
@@ -137,7 +138,7 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
     const data = bangun();
     const res = await upsertOneToSupa("kb_jadwal_ok", data);
     if (!res?.ok) {
-      showToast(`⚠ Gagal menyimpan ke server: ${res?.error || "error"}. Perubahan masih di layar ini.`, C.d);
+      showToast(`Gagal menyimpan ke server: ${res?.error || "error"}. Perubahan masih di layar ini.`, C.d);
       setBusy(false);
       return;
     }
@@ -145,13 +146,13 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
     setList((x) => [data, ...x.filter((r) => r.id !== data.id && r.tanggal !== data.tanggal)]);
     ganda.forEach((r) => { deleteFromSupa?.("kb_jadwal_ok", r.id); });
     setDirty(false);
-    showToast("✓ Jadwal operasi tersimpan", C.s);
+    showToast("Jadwal operasi tersimpan", C.s);
     try {
       const folder = (dbxCfg?.path || "/kamarbedah/").replace(/[^/]+$/, "");
       const buf = await buatWorkbookJadwalOK([data]).xlsx.writeBuffer();
       const d = await dropboxUploadBytes(`${folder}JadwalOK_${data.tanggal}.xlsx`, buf as unknown as ArrayBuffer);
-      if (!d.ok) showToast("⚠ Excel ke Dropbox gagal: " + d.msg, C.w);
-    } catch { showToast("⚠ Excel ke Dropbox gagal", C.w); }
+      if (!d.ok) showToast("Excel ke Dropbox gagal: " + d.msg, C.w);
+    } catch { showToast("Excel ke Dropbox gagal", C.w); }
     AmbilLogMedis("JADWAL_OK", data.operator, "SIMPAN_JADWAL_OK", `Jadwal operasi ${data.tanggal} disimpan`, { id: data.id, jumlahBaris: data.baris.length });
     setBusy(false);
   };
@@ -159,9 +160,9 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
   const hapus = async (l: JadwalOK) => {
     if (!window.confirm(`Hapus jadwal ${fmtTgl(l.tanggal)}?`)) return;
     const res = await deleteFromSupa?.("kb_jadwal_ok", l.id);
-    if (res && res.ok === false) { showToast("⚠ Gagal menghapus: " + (res.error || "error"), C.d); return; }
+    if (res && res.ok === false) { showToast("Gagal menghapus: " + (res.error || "error"), C.d); return; }
     setList((x) => x.filter((r) => r.id !== l.id));
-    showToast("✓ Jadwal dihapus", C.s);
+    showToast("Jadwal dihapus", C.s);
   };
 
   const unduh = async () => {
@@ -175,7 +176,7 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
       const a = document.createElement("a");
       a.href = url; a.download = `JadwalOK_${nilai}.xlsx`; a.click();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
-      showToast(`✓ Excel diunduh (${hasil.length} hari)`, C.s);
+      showToast(`Excel diunduh (${hasil.length} hari)`, C.s);
     } catch (e: any) { showToast("Gagal membuat Excel: " + (e?.message || "error"), C.d); }
     setBusy(false);
   };
@@ -188,7 +189,7 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
       const a = document.createElement("a");
       a.href = url; a.download = `JadwalOK_${data.tanggal}.xlsx`; a.click();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
-      showToast("✓ Excel diunduh", C.s);
+      showToast("Excel diunduh", C.s);
     } catch (e: any) { showToast("Gagal membuat Excel: " + (e?.message || "error"), C.d); }
     setBusy(false);
   };
@@ -225,7 +226,7 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
         const cv = await html2canvas(el, { backgroundColor: "#ffffff", scale: 3 });
         const a = document.createElement("a");
         a.href = cv.toDataURL("image/jpeg", 0.95); a.download = `JadwalOK_${L.tanggal}.jpg`; a.click();
-        showToast("✓ JPG diunduh", C.s);
+        showToast("JPG diunduh", C.s);
       } catch (e: any) { showToast("Gagal membuat JPG: " + (e?.message || "error"), C.d); }
       setBusy(false);
     };
@@ -233,7 +234,7 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
       const el = lembarRef.current;
       if (!el) { showToast("Lembar belum siap", C.w); return; }
       downloadElementAsWord(el, `JadwalOK_${L.tanggal}.doc`, true);
-      showToast("✓ Word diunduh", C.s);
+      showToast("Word diunduh", C.s);
     };
     const hth: React.CSSProperties = { border: "1px solid #111", padding: "6px 8px", fontSize: 15, fontWeight: 700, textAlign: "center", background: "#EEEEEE", fontFamily: FONT };
     const htd: React.CSSProperties = { border: "1px solid #111", padding: "6px 8px", fontSize: 15, verticalAlign: "top", fontFamily: FONT, minHeight: 28, height: 30 };
@@ -246,12 +247,12 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
           <SH label="Hasil Jadwal Operasi" />
           <div style={{ fontWeight: 700, marginBottom: 10 }}>{tanggalPanjang(L.tanggal)}</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Btn onClick={cetak}>🖨 Print</Btn>
-            <Btn outline onClick={() => { setLihat(null); gantiTanggal(L.tanggal); window.scrollTo({ top: 0, behavior: "smooth" }); }}>✎ Edit</Btn>
+            <Btn onClick={cetak}><IkPrinter size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Print</Btn>
+            <Btn outline onClick={() => { setLihat(null); gantiTanggal(L.tanggal); window.scrollTo({ top: 0, behavior: "smooth" }); }}><IkEdit size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Edit</Btn>
             <Btn outline onClick={() => unduhExcelIni(L)} disabled={busy}>⬇ Excel</Btn>
             <Btn outline onClick={unduhJpg} disabled={busy}>⬇ JPG</Btn>
             <Btn outline onClick={unduhWord} disabled={busy}>⬇ Word</Btn>
-            <Btn outline onClick={() => setLihat(null)}>✕ Tutup</Btn>
+            <Btn outline onClick={() => setLihat(null)}><IkX size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Tutup</Btn>
           </div>
         </Card>
         <div style={{ overflowX: "auto", marginTop: 12, background: "#E5E7EB", padding: 8, borderRadius: 10 }}>
@@ -329,7 +330,7 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
                     </td>
                   ))}
                   <td style={{ ...td, textAlign: "center" }}>
-                    <button type="button" aria-label="Hapus baris" onClick={() => hapusBaris(b.id)} style={{ border: "none", background: "transparent", color: C.d, fontSize: 16, cursor: "pointer" }}>✕</button>
+                    <button type="button" aria-label="Hapus baris" onClick={() => hapusBaris(b.id)} style={{ border: "none", background: "transparent", color: C.d, fontSize: 16, cursor: "pointer" }}><IkX size={16} strokeWidth={2.4} style={{verticalAlign:"-2px"}}/></button>
                   </td>
                 </tr>
               ))}
@@ -342,7 +343,7 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
           <Btn outline onClick={tambahBaris} disabled={busy}>+ Tambah baris</Btn>
           <Btn outline onClick={muatUlang} disabled={busy}>↺ Muat ulang dari jadwal</Btn>
-          <Btn onClick={simpan} disabled={busy}>💾 Simpan</Btn>
+          <Btn onClick={simpan} disabled={busy}><IkSimpan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Simpan</Btn>
           <Btn outline onClick={() => unduhExcelIni(bangun())} disabled={busy}>⬇ Excel</Btn>
         </div>
       </Card>
@@ -355,7 +356,7 @@ export function ViewJadwalOK({ ops, showToast, role, privacyMode, upsertOneToSup
             <div><b>{fmtTgl(l.tanggal)}</b> • {l.hari} • {l.baris.length} baris</div>
             <div style={{ display: "flex", gap: 6 }}>
               <Btn sm outline onClick={() => { setLihat(l); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Buka</Btn>
-              <Btn sm outline onClick={() => { setLihat(l); window.scrollTo({ top: 0 }); setTimeout(cetak, 700); }}>🖨 Print</Btn>
+              <Btn sm outline onClick={() => { setLihat(l); window.scrollTo({ top: 0 }); setTimeout(cetak, 700); }}><IkPrinter size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Print</Btn>
               {role === "admin" && <Btn sm outline color={C.d} onClick={() => hapus(l)}>Hapus</Btn>}
             </div>
           </div>

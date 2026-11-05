@@ -1,3 +1,4 @@
+import { Package as IkBox, Check as IkCek, ClipboardList as IkClip, Cloud as IkCloud, Pencil as IkEdit, FileText as IkFile, BarChart3 as IkGrafik, CalendarDays as IkKal, Camera as IkKamera, Lock as IkKunci, Pin as IkPaku, AlertTriangle as IkPeringatan, MapPin as IkPin, Trash2 as IkSampah, Settings as IkSetelan, Save as IkSimpan, Users as IkStaf, Thermometer as IkSuhu, Plus as IkTambah, Droplets as IkTetes, Download as IkUnduh, User as IkUser, X as IkX, Zap as IkZap } from "lucide-react"; /* patch99 */
 import { KolomSaran } from "./components/kolom-saran";
 import { DAFTAR_DIAGNOSA, DAFTAR_TINDAKAN } from "./data/daftar-diagnosa-tindakan";
 import { KOLOM_TAMBAHAN_OPS, nilaiTambahanOps } from "./utils/operasi-excel";
@@ -210,6 +211,8 @@ import {
   Row, Bdg, SH, Toggle, MiniBar, ErrorBoundary,
 } from "./components/primitives";
 import { TabIcon, ActionIcon } from "./components/icons";
+import { Play as KbIkoPlay, Check as KbIkoCek, CheckCircle2 as KbIkoSelesai, PencilLine as KbIkoDaftar, FileText as KbIkoLaporan, CalendarDays as KbIkoJadwal, CalendarRange as KbIkoRoster } from "lucide-react";
+import { Settings as KbIkoPin, ShieldCheck as KbIkoAdmin, User as KbIkoUser, Lock as KbIkoKunci } from "lucide-react";
 import { HeaderClock } from "./components/header-clock";
 import { InstallPrompt } from "./components/install-prompt";
 import { FloatingAssistant } from "./components/floating-assistant";
@@ -224,7 +227,7 @@ import { ImportExcel } from "./components/import-excel";
 import { ViewArsip } from "./components/view-arsip";
 import { ViewJadwal } from "./components/view-jadwal";
 import { ViewLaporan } from "./components/view-laporan";
-import { LaporanOKTab } from "./components/view-laporan-kepala-jaga";
+import { LaporanOKTab, LaporanPilihTab } from "./components/view-laporan-kepala-jaga";
 import { ViewJadwalOK } from "./components/view-jadwal-ok";
 import { ViewBesetJadwal } from "./components/view-beset-jadwal";
 import { BesetBanner } from "./components/beset-banner";
@@ -650,7 +653,7 @@ async function supabaseBackup(_cfg: SupabaseConfig, data: any, client: any): Pro
         .gte("created_at", awalHariWIB.toISOString())
         .lt("created_at", payload.created_at);
     } catch { /* pemadatan non-kritis */ }
-    return {ok:true, msg:"✓ Backup ke Supabase berhasil — "+fNow()};
+    return {ok:true, msg:"Backup ke Supabase berhasil — "+fNow()};
   } catch(e: any) {
     return {ok:false, msg:"Koneksi gagal: " + (e?.message||"unknown error")};
   }
@@ -667,7 +670,7 @@ async function supabaseRestore(_cfg: SupabaseConfig, client: any): Promise<{ok: 
        Helper ini sudah ada di codebase dan digunakan di tempat lain. */
     const parsed = safeJSONParse(rows[0].data || "{}", null);
     if(parsed === null) return {ok:false, msg:"Data backup korup — tidak dapat di-parse. Coba restore dari backup lain."};
-    return {ok:true, msg:"✓ Data backup ditemukan — "+(rows[0].created_at?.slice(0,19)?.replace("T"," ")||""), data:parsed};
+    return {ok:true, msg:"Data backup ditemukan — "+(rows[0].created_at?.slice(0,19)?.replace("T"," ")||""), data:parsed};
   } catch(e: any) {
     return {ok:false, msg:"Koneksi gagal: " + (e?.message||"unknown error")};
   }
@@ -889,7 +892,7 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
     setOcrConfidence(draftPreview.ocrConfidence||null);
     setOcrOriginalValues(draftPreview.ocrOriginalValues||{});
     setShowDraftRecovery(false);
-    showToast("✓ Draft OCR sebelumnya dipulihkan — periksa lagi sebelum simpan.", C.s);
+    showToast("Draft OCR sebelumnya dipulihkan — periksa lagi sebelum simpan.", C.s);
   };
   const discardDraft = () => {
     try{ localStorage.removeItem(OCR_DRAFT_KEY); }catch{}
@@ -1059,7 +1062,7 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
     /* FIX AUDIT #39 (BUG UTAMA yang dilaporkan user): SEBELUMNYA fungsi ini
        hanya menampilkan toast kalau tanggal invalid — untuk kasus normal
        (semua field valid) TIDAK ADA toast dari applyOcrResult sama sekali,
-       sehingga toast hijau generik "✓ ... data terbaca" dari ScanFormulir
+       sehingga toast hijau generik "... data terbaca" dari ScanFormulir
        (yang terlihat seperti "berhasil disimpan") jadi satu-satunya pesan
        yang perawat lihat — padahal data BARU mengisi form di tab "Daftar",
        BELUM tersimpan ke Supabase dan BELUM masuk tab "Jadwal". Ini akar
@@ -1067,9 +1070,9 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
        Sekarang applyOcrResult SELALU menampilkan toast oranye (bukan hijau)
        yang eksplisit bilang data BELUM tersimpan, apa pun hasil validasinya. */
     if(suspectedCyto){
-      showToast("🔴 OCR mendeteksi kemungkinan CYTO/EMERGENCY — TIDAK dipilih otomatis. Periksa formulir asli & pilih manual di \"Jenis Operasi\" jika benar, lalu \"Simpan\".", C.d);
+      showToast("OCR mendeteksi kemungkinan CYTO/EMERGENCY — TIDAK dipilih otomatis. Periksa formulir asli & pilih manual di \"Jenis Operasi\" jika benar, lalu \"Simpan\".", C.d);
     } else if(dateWasInvalid){
-      showToast("⚠ Tanggal hasil scan tidak valid — mohon isi tanggal secara manual, lalu tekan \"Simpan\"", C.d);
+      showToast("Tanggal hasil scan tidak valid — mohon isi tanggal secara manual, lalu tekan \"Simpan\"", C.d);
     } else if(r.confidence==="low"){
       /* FIX BUG (audit menyeluruh): SEBELUMNYA lowConfidenceFields sudah
          dihitung & dikirim server, tapi TIDAK PERNAH sampai dipakai di
@@ -1088,9 +1091,9 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
       const fieldHint = fieldNames.length>0
         ? ` Terutama: ${fieldNames.join(", ")}.`
         : "";
-      showToast(`📝 Data terbaca (keyakinan AI rendah — tulisan/teks kurang jelas).${fieldHint} PERIKSA TELITI sebelum "Simpan".`, C.w);
+      showToast(`Data terbaca (keyakinan AI rendah — tulisan/teks kurang jelas).${fieldHint} PERIKSA TELITI sebelum "Simpan".`, C.w);
     } else {
-      showToast("📝 Data terbaca & form terisi otomatis — GULIR KE BAWAH, periksa, lalu tekan \"Simpan\" agar masuk ke Jadwal.", C.w);
+      showToast("Data terbaca & form terisi otomatis — GULIR KE BAWAH, periksa, lalu tekan \"Simpan\" agar masuk ke Jadwal.", C.w);
     }
   };
 
@@ -1113,14 +1116,14 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
   const applyTemplate = (t: any) => {
     setOpForm((p: any)=>({...p, opType:t.opType||"elektif", procedure:t.procedure||"", diagnosis:t.diagnosis||"", surgeon:t.surgeon||"", anesthesiologist:t.anesthesiologist||"", room:t.room||"", time:t.time||p.time, circulatingNurse:t.circulatingNurse||"", anesthesiaNurse:t.anesthesiaNurse||"", onloopNurse:t.onloopNurse||"", rrKatim:t.rrKatim||""}));
     setShowTpl(false);
-    showToast("✓ Template diterapkan",C.s);
+    showToast("Template diterapkan",C.s);
   };
   const saveAsTemplate = () => {
     const name = prompt("Nama template:");
     if(!name) return;
     const t = {id:gId(), name, opType:opForm.opType, procedure:opForm.procedure, diagnosis:opForm.diagnosis, surgeon:opForm.surgeon, anesthesiologist:opForm.anesthesiologist, room:opForm.room, time:opForm.time, circulatingNurse:opForm.circulatingNurse, anesthesiaNurse:opForm.anesthesiaNurse, onloopNurse:opForm.onloopNurse, rrKatim:opForm.rrKatim};
     setTemplates((p: any[])=>[...p,t]);
-    showToast("✓ Template disimpan: "+name,C.s);
+    showToast("Template disimpan: "+name,C.s);
   };
   const deleteTemplate = (id: string) => setTemplates((p: any[])=>p.filter((t: any)=>t.id!==id));
 
@@ -1128,12 +1131,12 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
     <div>
       <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:18}}>
         {editingOp && <button onClick={()=>{resetOp();setTab("jadwal");}} style={{background:C.pBg,border:`1px solid ${C.p}`,borderRadius:10,color:C.p,cursor:"pointer",fontSize:22,width:40,height:40,display:"flex",alignItems:"center",justifyContent:"center"}}>←</button>}
-        <div><div key={editingOp?"edit":"new"} style={{fontSize:17,fontWeight:800,color:C.t}}><SplitText text={editingOp?"✏️ Edit Jadwal":"📝 Pendaftaran Jadwal Operasi"}/></div><div style={{fontSize:12,color:C.tL,marginTop:2}}>Field bertanda <span style={{color:C.d,fontWeight:700}}>✱</span> wajib diisi</div></div>
-        <button onClick={()=>setShowTpl(s=>!s)} style={{marginLeft:"auto",background:C.pBg,border:`1px solid ${C.p}33`,borderRadius:10,color:C.p,fontSize:11,fontWeight:700,padding:"7px 12px",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>📌 Template{templates.length>0?` (${templates.length})`:""}</button>
+        <div><div key={editingOp?"edit":"new"} style={{fontSize:17,fontWeight:800,color:C.t}}><SplitText text={editingOp?"Edit Jadwal":"Pendaftaran Jadwal Operasi"}/></div><div style={{fontSize:12,color:C.tL,marginTop:2}}>Field bertanda <span style={{color:C.d,fontWeight:700}}>✱</span> wajib diisi</div></div>
+        <button onClick={()=>setShowTpl(s=>!s)} style={{marginLeft:"auto",background:C.pBg,border:`1px solid ${C.p}33`,borderRadius:10,color:C.p,fontSize:11,fontWeight:700,padding:"7px 12px",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}><IkPaku size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Template{templates.length>0?` (${templates.length})`:""}</button>
       </div>
       {showTpl && (
         <Card style={{marginBottom:14,background:"#F0FFF8",border:`1px solid ${C.p}33`}}>
-          <div style={{fontSize:13,fontWeight:700,color:C.p,marginBottom:10}}>📌 Pilih Template Cepat</div>
+          <div style={{fontSize:13,fontWeight:700,color:C.p,marginBottom:10}}><IkPaku size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Pilih Template Cepat</div>
           {templates.length===0 && <div style={{fontSize:12,color:C.tL,marginBottom:8}}>Belum ada template. Isi form lalu klik "Simpan sebagai Template".</div>}
           {templates.map((t: any)=>(
             <div key={t.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
@@ -1141,10 +1144,10 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
                 <div style={{fontSize:12,fontWeight:700,color:C.p}}>{t.name}</div>
                 <div style={{fontSize:11,color:C.tL}}>{t.procedure} · Dr. {t.surgeon}</div>
               </button>
-              <button onClick={()=>deleteTemplate(t.id)} style={{background:"none",border:`1px solid ${C.dL}`,borderRadius:8,color:C.d,padding:"6px 10px",cursor:"pointer",fontSize:13}}>🗑</button>
+              <button onClick={()=>deleteTemplate(t.id)} style={{background:"none",border:`1px solid ${C.dL}`,borderRadius:8,color:C.d,padding:"6px 10px",cursor:"pointer",fontSize:13}}><IkSampah size={16} strokeWidth={2.4} style={{verticalAlign:"-2px"}}/></button>
             </div>
           ))}
-          <Btn full outline color={C.p} onClick={saveAsTemplate} style={{marginTop:8}}>💾 Simpan Form Ini sebagai Template</Btn>
+          <Btn full outline color={C.p} onClick={saveAsTemplate} style={{marginTop:8}}><IkSimpan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Simpan Form Ini sebagai Template</Btn>
         </Card>
       )}
       {/* SARAN PENINGKATAN #5: banner pemulihan draft OCR — tampil kalau ada
@@ -1152,11 +1155,11 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
           (mis. app sempat ke-refresh/force-close di tengah proses periksa). */}
       {showDraftRecovery && draftPreview && (
         <div style={{background:"#F5F3FF",border:`1.5px solid ${C.i}`,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:13,color:C.i}}>
-          <div style={{fontWeight:700,marginBottom:6}}>💾 Ada draft hasil scan OCR yang belum tersimpan dari sesi sebelumnya</div>
+          <div style={{fontWeight:700,marginBottom:6}}><IkSimpan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Ada draft hasil scan OCR yang belum tersimpan dari sesi sebelumnya</div>
           <div style={{marginBottom:8}}>Pasien: <b>{draftPreview.opForm?.patient || "(nama belum terisi)"}</b>{draftPreview.savedAt ? ` — disimpan otomatis ${new Date(draftPreview.savedAt).toLocaleString("id-ID")}` : ""}</div>
           <div style={{display:"flex",gap:8}}>
             <Btn sm onClick={restoreDraft} style={{flex:1}}>↩ Pulihkan Draft</Btn>
-            <Btn sm outline color={C.g} onClick={discardDraft} style={{flex:1}}>🗑 Abaikan</Btn>
+            <Btn sm outline color={C.g} onClick={discardDraft} style={{flex:1}}><IkSampah size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Abaikan</Btn>
           </div>
         </div>
       )}
@@ -1181,10 +1184,10 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
           direset) atau dikosongkan ulang. */}
       {ocrFilledFields.size>0 && (
         <div style={{background:"#FFFBEB",border:"1.5px solid #F59E0B",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:13,color:"#92400E",fontWeight:700}}>
-          📝 Form ini terisi otomatis dari hasil scan OCR — <u>BELUM TERSIMPAN</u>. Periksa data di bawah, lalu tekan tombol "Simpan" agar masuk ke Jadwal Operasi.
+          <IkFile size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Form ini terisi otomatis dari hasil scan OCR — <u>BELUM TERSIMPAN</u>. Periksa data di bawah, lalu tekan tombol "Simpan" agar masuk ke Jadwal Operasi.
         </div>
       )}
-      {dupWarning && <div style={{background:C.wBg,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:13,color:C.w,fontWeight:600,border:`1.5px solid ${C.w}`}}>⚠ Duplikasi: pasien, tanggal & jam yang sama sudah terdaftar.</div>}
+      {dupWarning && <div style={{background:C.wBg,borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:13,color:C.w,fontWeight:600,border:`1.5px solid ${C.w}`}}><IkPeringatan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Duplikasi: pasien, tanggal & jam yang sama sudah terdaftar.</div>}
       <Card>
         <SH label="① Jenis Operasi & Tindakan"/>
         <LF label="Jenis Operasi">
@@ -1200,8 +1203,8 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
         <LF label="Diagnosa Medis" req err={e.diagnosis}><KolomSaran daftar={DAFTAR_DIAGNOSA} style={iStyle("diagnosis")} placeholder="Cth: Hernia Inguinalis Dextra, Appendicitis Akut" value={opForm.diagnosis} onChange={(v:string)=>set("diagnosis",v)} onFocus={onFoc("diagnosis")} onBlur={onBlr}/></LF>
         <LF label="Nama Tindakan / Prosedur" req err={e.procedure}><KolomSaran daftar={DAFTAR_TINDAKAN} style={iStyle("procedure")} placeholder="Cth: Hernioraphy Open, Laparoscopic Cholecystectomy" value={opForm.procedure} onChange={(v:string)=>set("procedure",v)} onFocus={onFoc("procedure")} onBlur={onBlr}/></LF>
         <div style={{display:"flex",gap:12}}>
-          <div style={{flex:1}}><LF label="Tanggal" req><DateTxt style={iStyle("date")} value={opForm.date||""} onChange={(v:string)=>setR("date",v)}/></LF>{e.date&&<div style={{fontSize:11,color:C.d,marginTop:-8,marginBottom:8}}>⚠ {e.date}</div>}</div>
-          <div style={{flex:1}}><LF label="Jam Mulai" req><input style={iStyle("time")} type="time" value={opForm.time} onChange={(ev:any)=>setR("time",ev.target.value)}/></LF>{e.time&&<div style={{fontSize:11,color:C.d,marginTop:-8,marginBottom:8}}>⚠ {e.time}</div>}</div>
+          <div style={{flex:1}}><LF label="Tanggal" req><DateTxt style={iStyle("date")} value={opForm.date||""} onChange={(v:string)=>setR("date",v)}/></LF>{e.date&&<div style={{fontSize:11,color:C.d,marginTop:-8,marginBottom:8}}><IkPeringatan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>{e.date}</div>}</div>
+          <div style={{flex:1}}><LF label="Jam Mulai" req><input style={iStyle("time")} type="time" value={opForm.time} onChange={(ev:any)=>setR("time",ev.target.value)}/></LF>{e.time&&<div style={{fontSize:11,color:C.d,marginTop:-8,marginBottom:8}}><IkPeringatan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>{e.time}</div>}</div>
         </div>
         <SF label="Kamar Operasi" options={ROOMS} value={opForm.room} onChange={(ev:any)=>setR("room",ev.target.value)}/>
       </Card>
@@ -1219,13 +1222,13 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
       </Card>
       <Card>
         <SH label="③ Tim Dokter"/>
-        <div style={{background:C.iBg,borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:12,color:C.i}}>Belum ada dokter? Tambahkan di menu <b>👥 Staf</b></div>
+        <div style={{background:C.iBg,borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:12,color:C.i}}>Belum ada dokter? Tambahkan di menu <b><IkStaf size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Staf</b></div>
         <SF label="Dokter Operator / Bedah" req options={byT("surgeon")} empty="-- Pilih Dokter Bedah --" value={opForm.surgeon} onChange={(ev:any)=>setR("surgeon",ev.target.value)} err={e.surgeon}/>
         <SF label="Dokter Anestesi" options={["Lokal Anestesi", ...byT("anesthesiologist")]} empty="-- Pilih Dokter Anestesi --" value={opForm.anesthesiologist} onChange={(ev:any)=>setR("anesthesiologist",ev.target.value)}/>
       </Card>
       <Card>
         <SH label="④ Tim Perawat (5 Peran Wajib)"/>
-        <div style={{background:C.sBg,borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:12,color:C.s}}>✓ Setiap jadwal memerlukan 5 peran perawat sesuai standar Kamar Bedah</div>
+        <div style={{background:C.sBg,borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:12,color:C.s}}><IkCek size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Setiap jadwal memerlukan 5 peran perawat sesuai standar Kamar Bedah</div>
         {/* Asisten */}
         <LF label="1. Perawat Asisten Operator">
           <div style={{display:"flex",gap:8}}>
@@ -1277,7 +1280,7 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
               );
             })}
           </div>
-          {(opForm.onloopNurse||"")&&<div style={{fontSize:11,color:C.p,marginTop:5,background:C.pBg,borderRadius:8,padding:"5px 10px"}}>✓ Dipilih: <b>{opForm.onloopNurse}</b></div>}
+          {(opForm.onloopNurse||"")&&<div style={{fontSize:11,color:C.p,marginTop:5,background:C.pBg,borderRadius:8,padding:"5px 10px"}}><IkCek size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Dipilih: <b>{opForm.onloopNurse}</b></div>}
           <div style={{fontSize:11,color:C.tL,marginTop:4}}>Pilih 1–3 perawat onloop sekaligus. Nomor 2 & 3 opsional.</div>
         </LF>
         {/* RR/Katim */}
@@ -1296,7 +1299,7 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
         </LF>
       </Card>
       <div style={{display:"flex",gap:10}}>
-        <Btn full onClick={saveOp} style={{flex:3,padding:"14px",fontSize:15}}>{editingOp?"✓ Simpan Perubahan":"✓ Simpan Jadwal"}</Btn>
+        <Btn full onClick={saveOp} style={{flex:3,padding:"14px",fontSize:15}}>{editingOp?"Simpan Perubahan":"Simpan Jadwal"}</Btn>
         <Btn full outline color={C.g} onClick={()=>{resetOp();setTab("jadwal");}} style={{flex:1,padding:"14px",fontSize:14}}>Batal</Btn>
       </div>
       <div style={{height:24}}/>
@@ -1358,7 +1361,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
   const rowFormRef = useRef(rowForm);
   useEffect(()=>{ rowFormRef.current = rowForm; },[rowForm]);
   /* REVISI: tandai sesi ini berasal dari login cepat "⏰ Input Lembur" (bukan
-     dari klik manual "✚ Tambah Baris Lembur" di tab Lembur biasa). Dipakai
+     dari klik manual "Tambah Baris Lembur" di tab Lembur biasa). Dipakai
      untuk menyederhanakan tampilan form: HANYA tombol selfie+GPS yang
      tampil, tanpa field tanggal/jam/keperluan/keterangan/TTD/Simpan/Batal —
      karena semua sudah otomatis terekam & tersimpan begitu proses selesai. */
@@ -1390,7 +1393,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
   /* FIX BUG #3 + FIX AUDIT #20 (double-submit race — digeneralisasi):
      ref sinkron ini SEKARANG dijadikan guard umum di dalam writeLemburKey()
      itu sendiri (bukan hanya di handler Masuk/Pulang), sehingga SEMUA jalur
-     penulisan (tombol "✓ Simpan" manual, Hapus, simpan TTD, import Excel,
+     penulisan (tombol "Simpan" manual, Hapus, simpan TTD, import Excel,
      maupun Masuk/Pulang) sama-sama terlindungi dari klik ganda cepat tanpa
      perlu menduplikasi guard di setiap handler satu-satu. Dicek SEBELUM
      await apa pun — beda dengan state `isLoadingSelfie` yang baru efektif
@@ -1468,11 +1471,11 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
         15000, "Simpan data lembur"
       );
     } catch (e: any) {
-      showToast(`⚠ ${e?.message || "Gagal menyimpan — koneksi bermasalah"}`, C.d);
+      showToast(`${e?.message || "Gagal menyimpan — koneksi bermasalah"}`, C.d);
       return false;
     }
     if(!res?.ok){
-      showToast(`⚠ Gagal menyimpan ke Supabase: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
+      showToast(`Gagal menyimpan ke Supabase: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
       return false;
     }
     setLemburData((p:Record<string,any>)=>({...p,[key]:newRecForKey}));
@@ -1543,10 +1546,10 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
   /* REVISI: saveEntry sekarang menerima parameter opsional `formOverride`.
      Dipakai oleh auto-save (login lembur) agar menyimpan data rowForm yang
      PALING BARU (hasil GPS+selfie) tanpa risiko stale-state, sementara
-     pemakaian normal (tombol "✓ Simpan" manual) tetap jalan seperti biasa
+     pemakaian normal (tombol "Simpan" manual) tetap jalan seperti biasa
      dengan memakai rowForm dari state seperti sebelumnya. */
   const saveEntry = async (formOverride?: any) => {
-    /* FIX AUDIT #20 (MEDIUM — double-submit "✓ Simpan" manual): guard sinkron
+    /* FIX AUDIT #20 (MEDIUM — double-submit "Simpan" manual): guard sinkron
        yang sama dipakai handler Masuk/Pulang, diterapkan juga di sini supaya
        klik ganda cepat pada tombol Simpan tidak membuat baris terduplikasi. */
     if (isSubmittingAbsenRef.current) return;
@@ -1576,7 +1579,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
        sebelum tombol Simpan diklik. */
     const recNow: any = (key && lemburData[key]) || rec;
     const entriesNow: any[] = recNow.entries || [];
-    showToast("⟳ Menyimpan...",C.p);
+    showToast("Menyimpan...",C.p);
     /* FIX AUDIT #30: baris BARU pakai append atomic (RPC) agar tidak
        menimpa entry dari device/tab lain yang menulis di window waktu yang
        sama; baris EDIT tetap pakai write penuh karena mengubah field pada
@@ -1586,7 +1589,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
       ? await writeLemburKey({...recNow, entries: entriesNow.map((e:any)=>e.id===editRow?{...e,...cleanForm}:e)})
       : await writeLemburKeyAppend(recNow, {id:gId(),...cleanForm,no:entriesNow.length+1});
     isSubmittingAbsenRef.current = false;
-    if(ok){ setEditRow(null); setRowForm({}); showToast("✓ Baris disimpan & tersinkron",C.s); }
+    if(ok){ setEditRow(null); setRowForm({}); showToast("Baris disimpan & tersinkron",C.s); }
   };
 
   /* ── UPDATE LEMBUR GPS+SELFIE (BARU DITAMBAHKAN) ──────────────────────
@@ -1662,7 +1665,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
       navigator.geolocation.getCurrentPosition(
         resolve,
         () => {
-          if (showToast) showToast("⏳ GPS presisi tinggi gagal, mencoba mode hemat (lebih cepat)...", C.p);
+          if (showToast) showToast("GPS presisi tinggi gagal, mencoba mode hemat (lebih cepat)...", C.p);
           navigator.geolocation.getCurrentPosition(
             resolve,
             reject,
@@ -1781,7 +1784,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
         jam tetap tersimpan, hanya lokasi/foto yang kosong. */
   const handleSelfieKeluarOtomatis = async () => {
     setIsLoadingSelfie(true);
-    if (showToast) showToast("⏳ Memproses data keluar...", C.p);
+    if (showToast) showToast("Memproses data keluar...", C.p);
 
     // STEP 1 — instan, selalu berhasil: kunci tanggal & jam sekarang juga,
     // tanpa menunggu izin GPS/kamera sama sekali.
@@ -1836,14 +1839,14 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
 
     if (showToast) {
       if (gpsOk && fotoOk) {
-        showToast("✓ Parameter Keluar Berhasil Dikunci (Tanggal, Jam, GPS & Foto)!", C.s);
+        showToast("Parameter Keluar Berhasil Dikunci (Tanggal, Jam, GPS & Foto)!", C.s);
         setShowManualKeluar(false);
       } else if (!gpsOk && !fotoOk) {
-        showToast("✓ Tanggal & Jam keluar tercatat. GPS/Kamera tidak aktif — lengkapi manual jika perlu.", C.w);
+        showToast("Tanggal & Jam keluar tercatat. GPS/Kamera tidak aktif — lengkapi manual jika perlu.", C.w);
         /* FALLBACK: tampilkan input manual agar user bisa lengkapi */
         setShowManualKeluar(true);
       } else {
-        showToast(`✓ Tanggal & Jam tercatat${gpsOk ? " + GPS" : ""}${fotoOk ? " + Foto" : ""}. ${!gpsOk ? "GPS" : "Kamera"} tidak tersedia.`, C.w);
+        showToast(`Tanggal & Jam tercatat${gpsOk ? " + GPS" : ""}${fotoOk ? " + Foto" : ""}. ${!gpsOk ? "GPS" : "Kamera"} tidak tersedia.`, C.w);
         setShowManualKeluar(false);
       }
     }
@@ -1851,7 +1854,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
 
     /* REVISI: LOGIN LEMBUR & TOMBOL MANUAL — auto-save SELALU berjalan.
        Sebelumnya hanya alur login otomatis yang auto-save; sekarang tombol
-       manual "📷 Klik untuk Selfie & Ambil Jam Keluar" juga langsung
+       manual "Klik untuk Selfie & Ambil Jam Keluar" juga langsung
        menyimpan baris begitu tanggal, jam, GPS & foto selesai diproses —
        perawat tidak perlu menyentuh apa pun lagi, cukup login dan boleh
        langsung keluar. */
@@ -1885,10 +1888,10 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     /* FIX BUG #1 (race selPeg/key null) + FIX BUG #3 (double-submit race):
        cek DUA guard sinkron sebelum apa pun lain dijalankan. */
     if (isSubmittingAbsenRef.current) return;
-    if (!key) { showToast("⚠ Data pegawai belum siap, coba lagi sesaat.", C.w); return; }
+    if (!key) { showToast("Data pegawai belum siap, coba lagi sesaat.", C.w); return; }
     isSubmittingAbsenRef.current = true;
     setIsLoadingSelfie(true);
-    if (showToast) showToast("⏳ Memproses absen masuk...", C.p);
+    if (showToast) showToast("Memproses absen masuk...", C.p);
     const sekarang = new Date();
     /* FIX AUDIT #21 (CRITICAL — Pergeseran Tanggal Timezone): pakai
        toLocalISODate() bukan toISOString(), lihat penjelasan lengkap di
@@ -1909,7 +1912,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
       lokasiKeluar: "", fotoKeluarUrl: "",
       jumlahJamAmbil: "", keperluanLembur: "", keterangan: "", ttd: ""
     };
-    showToast("⟳ Menyimpan absen masuk...", C.p);
+    showToast("Menyimpan absen masuk...", C.p);
     /* FIX AUDIT #30: append atomic, bukan read-modify-write penuh */
     const ok = await writeLemburKeyAppend(lemburData[key!]||rec, entryBaru);
     isSubmittingAbsenRef.current = false;
@@ -1925,21 +1928,21 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
       /* FIX BUG #5: kalau GPS & foto GAGAL total, tampilkan warning kuning,
          bukan toast sukses hijau yang menutupi fakta tidak ada bukti lokasi/foto. */
       if (!lokasi && !foto) {
-        showToast(`✓ Absen Masuk tercatat pukul ${jam}. ⚠ GPS & Kamera tidak aktif — tanpa bukti lokasi/foto.`, C.w);
+        showToast(`Absen Masuk tercatat pukul ${jam}. GPS & Kamera tidak aktif — tanpa bukti lokasi/foto.`, C.w);
       } else if (!lokasi || !foto) {
-        showToast(`✓ Absen Masuk tercatat pukul ${jam}${lokasi?" + GPS":""}${foto?" + Foto":""}. ⚠ ${!lokasi?"GPS":"Kamera"} tidak aktif.`, C.w);
+        showToast(`Absen Masuk tercatat pukul ${jam}${lokasi?" + GPS":""}${foto?" + Foto":""}. ${!lokasi?"GPS":"Kamera"} tidak aktif.`, C.w);
       } else {
-        showToast(`✓ Absen Masuk tercatat pukul ${jam} + GPS + Foto`, C.s);
+        showToast(`Absen Masuk tercatat pukul ${jam} + GPS + Foto`, C.s);
       }
     }
   };
 
   const handleAbsenPulang = async () => {
     if (isSubmittingAbsenRef.current) return;
-    if (!key) { showToast("⚠ Data pegawai belum siap, coba lagi sesaat.", C.w); return; }
+    if (!key) { showToast("Data pegawai belum siap, coba lagi sesaat.", C.w); return; }
     isSubmittingAbsenRef.current = true;
     setIsLoadingSelfie(true);
-    if (showToast) showToast("⏳ Memproses absen pulang...", C.p);
+    if (showToast) showToast("Memproses absen pulang...", C.p);
     const sekarang = new Date();
     /* FIX AUDIT #21 (CRITICAL — Pergeseran Tanggal Timezone): sama seperti
        handleAbsenMasuk — pakai toLocalISODate() bukan toISOString(). */
@@ -1972,7 +1975,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
         jumlahJamAmbil: "", keperluanLembur: "", keterangan: "", ttd: ""
       }];
     }
-    showToast("⟳ Menyimpan absen pulang...", C.p);
+    showToast("Menyimpan absen pulang...", C.p);
     const ok = await writeLemburKey({ ...(lemburData[key!]||rec), entries: upd });
     isSubmittingAbsenRef.current = false;
     /* FIX AUDIT #19: sama seperti handleAbsenMasuk — cek mounted lagi
@@ -1981,11 +1984,11 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     setIsLoadingSelfie(false);
     if (ok) {
       if (!lokasi && !foto) {
-        showToast(`✓ Absen Pulang tercatat pukul ${jam}. ⚠ GPS & Kamera tidak aktif — tanpa bukti lokasi/foto.`, C.w);
+        showToast(`Absen Pulang tercatat pukul ${jam}. GPS & Kamera tidak aktif — tanpa bukti lokasi/foto.`, C.w);
       } else if (!lokasi || !foto) {
-        showToast(`✓ Absen Pulang tercatat pukul ${jam}${lokasi?" + GPS":""}${foto?" + Foto":""}. ⚠ ${!lokasi?"GPS":"Kamera"} tidak aktif.`, C.w);
+        showToast(`Absen Pulang tercatat pukul ${jam}${lokasi?" + GPS":""}${foto?" + Foto":""}. ${!lokasi?"GPS":"Kamera"} tidak aktif.`, C.w);
       } else {
-        showToast(`✓ Absen Pulang tercatat pukul ${jam} + GPS + Foto`, C.s);
+        showToast(`Absen Pulang tercatat pukul ${jam} + GPS + Foto`, C.s);
       }
     }
   };
@@ -2007,7 +2010,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
        (closure) walau field yang diubah cuma kepRuang/kepBidang. */
     const recNow: any = lemburData[key] || rec;
     const ok = await writeLemburKey({...recNow, kepRuang, kepBidang, savedAt:fNow()});
-    if(ok) showToast("✓ Tanda tangan tersimpan & tersinkron",C.s);
+    if(ok) showToast("Tanda tangan tersimpan & tersinkron",C.s);
   };
 
   const handleImportJadwal = (file:File) => {
@@ -2050,9 +2053,9 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
           });
         }
         const added = newEntries.length-(recNow.entries||[]).length;
-        showToast(`⟳ Menyimpan ${added} baris lembur...`,C.p);
+        showToast(`Menyimpan ${added} baris lembur...`,C.p);
         const ok = await writeLemburKey({...recNow, entries:newEntries});
-        if(ok) showToast(`✓ ${added} baris diimport & tersinkron`,C.s);
+        if(ok) showToast(`${added} baris diimport & tersinkron`,C.s);
       } catch(err){showToast("Gagal membaca file",C.d);}
     };
     reader.readAsArrayBuffer(file);
@@ -2141,7 +2144,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     ws["!ref"]=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:sigRow+7,c:9}});
     const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Lembur");
     XLSX.writeFile(wb,`Lembur_${peg.name.replace(/\s+/g,"_")}_${selYM}.xlsx`);
-    showToast("✓ File Excel berhasil diunduh",C.s);
+    showToast("File Excel berhasil diunduh",C.s);
   };
 
   /* All months that have data for selected staff */
@@ -2250,7 +2253,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
       XLSX.utils.book_append_sheet(wb,ws2,safeName);
     });
     XLSX.writeFile(wb,`RekapLembur_${rekapYM}.xlsx`);
-    showToast("✓ File rekap berhasil diunduh",C.s);
+    showToast("File rekap berhasil diunduh",C.s);
   };
 
   const downloadLemburFromSupa = async () => {
@@ -2277,7 +2280,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
       });
       if(!found){showToast("Tidak ada data lembur "+ymLabel(supaLemburYM)+" di Supabase",C.w);setSupaLemburBusy(false);return;}
       XLSX.writeFile(wb,`Lembur_Cloud_${supaLemburYM}.xlsx`);
-      showToast("✓ Data lembur "+ymLabel(supaLemburYM)+" dari Supabase diunduh",C.s);
+      showToast("Data lembur "+ymLabel(supaLemburYM)+" dari Supabase diunduh",C.s);
     } catch(err:any){showToast("Gagal: "+(err?.message||"Error Supabase"),C.d);}
     setSupaLemburBusy(false);
   };
@@ -2333,7 +2336,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
       if(!found){showToast("Tidak ada data lembur "+ymLabel(dbxLemburYM)+" di Dropbox",C.w);setDbxLemburBusy(false);return;}
       const label = dbxLemburPegId==="__all__"?"Semua":pegList[0]?.name||"";
       XLSX.writeFile(wb,`Lembur_Dropbox_${label}_${dbxLemburYM}.xlsx`);
-      showToast("✓ Data lembur "+ymLabel(dbxLemburYM)+" dari Dropbox diunduh",C.s);
+      showToast("Data lembur "+ymLabel(dbxLemburYM)+" dari Dropbox diunduh",C.s);
     } catch(err:any){showToast("Gagal: "+(err?.message||"Error Dropbox"),C.d);}
     setDbxLemburBusy(false);
   };
@@ -2386,7 +2389,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     <div>
       {/* Sub-tabs */}
       <div style={{display:"flex",gap:0,marginBottom:14,background:C.gBg,borderRadius:12,padding:4}}>
-        {([{k:"catat",l:"📝 Catat Lembur"},{k:"rekap",l:"📊 Rekap Bulanan"},{k:"pegawai",l:"👤 Data Pegawai"}] as {k:"catat"|"rekap"|"pegawai";l:string}[]).map(t=>(
+        {([{k:"catat",l:"Catat Lembur"},{k:"rekap",l:"Rekap Bulanan"},{k:"pegawai",l:"Data Pegawai"}] as {k:"catat"|"rekap"|"pegawai";l:string}[]).map(t=>(
           <button key={t.k} onClick={()=>setSub(t.k as any)} style={{flex:1,padding:"9px 4px",borderRadius:10,border:"none",background:sub===t.k?C.white:"none",color:sub===t.k?C.p:C.g,fontSize:12,fontWeight:sub===t.k?700:500,cursor:"pointer",boxShadow:sub===t.k?"0 1px 6px rgba(0,0,0,.1)":"none"}}>{t.l}</button>
         ))}
       </div>
@@ -2396,14 +2399,14 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
         <div>
           {/* Pilih Pegawai + Bulan */}
           <Card>
-            <SH label="🗓 Pilih Pegawai & Bulan"/>
+            <SH label="Pilih Pegawai & Bulan"/>
             <LF label="Pegawai">
               <select style={{...iS,appearance:"none"} as React.CSSProperties} value={selPeg} onChange={e=>setSelPeg(e.target.value)}>
                 <option value="">-- Pilih pegawai --</option>
                 {lemburPegawai.map((p:any)=><option key={p.id} value={p.id}>{p.name} — {p.nik||"(NIK belum diisi)"}</option>)}
               </select>
             </LF>
-            {lemburPegawai.length===0 && <div style={{fontSize:12,color:C.w,background:C.wBg,borderRadius:8,padding:"8px 12px",marginBottom:8}}>⚠ Belum ada data pegawai. Tambahkan di tab "👤 Data Pegawai" dulu.</div>}
+            {lemburPegawai.length===0 && <div style={{fontSize:12,color:C.w,background:C.wBg,borderRadius:8,padding:"8px 12px",marginBottom:8}}><IkPeringatan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Belum ada data pegawai. Tambahkan di tab "Data Pegawai" dulu.</div>}
             <div style={{display:"flex",gap:10,alignItems:"flex-end"}}>
               <div style={{flex:1}}>
                 <LF label="Bulan">
@@ -2426,7 +2429,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
             <>
               {/* Header info */}
               <div style={{background:"linear-gradient(135deg,#234B45,#1F5A52)",borderRadius:14,padding:"16px 20px",marginBottom:14,color:"#fff"}}>
-                <div style={{fontSize:14,fontWeight:800,letterSpacing:.3}}>📋 PENCATATAN LEMBUR</div>
+                <div style={{fontSize:14,fontWeight:800,letterSpacing:.3}}><IkClip size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>PENCATATAN LEMBUR</div>
                 <div style={{fontSize:11,color:"rgba(255,255,255,.65)",marginTop:2}}>{HOSPITAL}</div>
                 <div style={{marginTop:10,display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 16px",fontSize:12}}>
                   <div><span style={{color:"rgba(255,255,255,.6)"}}>Nama: </span><b>{peg.name}</b></div>
@@ -2441,9 +2444,9 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                   Import Excel & Download Excel tetap tersedia tapi tidak
                   mengambil visual weight yang sama dengan aksi utama. */}
               <div style={{marginBottom:14}}>
-                <Btn full onClick={()=>{stopActiveSelfieStream();setIsLoadingSelfie(false);setShowManualKeluar(false);setEditRow(null);setQuickLemburMode(false);setRowForm({jenisEntri:"kerja",tanggalAwal:"",tanggalAkhir:"",jamMasuk:"",jamKeluar:"",jumlahJamAmbil:"",keperluanLembur:"",keterangan:"",ttd:""});}} style={{marginBottom:8,padding:"14px",fontSize:15,fontWeight:800}}>✚ Tambah Baris Lembur</Btn>
+                <Btn full onClick={()=>{stopActiveSelfieStream();setIsLoadingSelfie(false);setShowManualKeluar(false);setEditRow(null);setQuickLemburMode(false);setRowForm({jenisEntri:"kerja",tanggalAwal:"",tanggalAkhir:"",jamMasuk:"",jamKeluar:"",jumlahJamAmbil:"",keperluanLembur:"",keterangan:"",ttd:""});}} style={{marginBottom:8,padding:"14px",fontSize:15,fontWeight:800}}><IkTambah size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Tambah Baris Lembur</Btn>
                 <div style={{display:"flex",gap:8}}>
-                  <button onClick={()=>fileRef.current?.click()} style={{flex:1,background:"#F4F6F8",border:`1px solid ${C.b}`,borderRadius:10,color:C.tL,fontSize:11,fontWeight:700,padding:"8px 10px",cursor:"pointer",fontFamily:"inherit"}}>📥 Import Excel</button>
+                  <button onClick={()=>fileRef.current?.click()} style={{flex:1,background:"#F4F6F8",border:`1px solid ${C.b}`,borderRadius:10,color:C.tL,fontSize:11,fontWeight:700,padding:"8px 10px",cursor:"pointer",fontFamily:"inherit"}}><IkUnduh size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Import Excel</button>
                   <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{display:"none"}} onChange={e=>{const f=e.target.files?.[0];if(f)handleImportJadwal(f);e.target.value="";}}/>
                   <button onClick={downloadExcel} style={{flex:1,background:"#F4F6F8",border:`1px solid ${C.b}`,borderRadius:10,color:C.tL,fontSize:11,fontWeight:700,padding:"8px 10px",cursor:"pointer",fontFamily:"inherit"}}>⬇ Download Excel</button>
                 </div>
@@ -2452,7 +2455,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
               {/* Add/Edit row form — muncul kalau rowForm sudah diisi (Tambah/Edit diklik) */}
               {Object.keys(rowForm).length > 0 && (
                 <Card style={{marginBottom:14,background:"#F0FFF8",border:`1.5px solid ${C.p}33`}}>
-                  <SH label={editRow?"✏️ Edit Baris":"✚ Tambah Baris Lembur"} color={C.p}/>
+                  <SH label={editRow?"Edit Baris":"Tambah Baris Lembur"} color={C.p}/>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                     <div style={{gridColumn:"1 / -1"}}>
                       <LF label="Jenis Entri" req>
@@ -2461,8 +2464,8 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                           value={rowForm.jenisEntri||"kerja"}
                           onChange={e=>setRowForm((p:any)=>({...p,jenisEntri:e.target.value}))}
                         >
-                          <option value="kerja">🟢 Kerja Lembur</option>
-                          <option value="ambil">🟠 Pengambilan Lembur</option>
+                          <option value="kerja">Kerja Lembur</option>
+                          <option value="ambil">Pengambilan Lembur</option>
                         </select>
                       </LF>
                     </div>
@@ -2484,11 +2487,11 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                             Field rowForm.jamKeluar tetap sama, hanya cara pengisiannya yang berubah. */}
                         <div style={{gridColumn:"1 / -1",border:`1px dashed ${rowForm.jamKeluar?C.s:"#cbd5e1"}`,padding:14,borderRadius:10,background:rowForm.jamKeluar?C.sBg:"#f8fafc",marginTop:6}}>
                           <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:C.s}}>
-                            📸 VERIFIKASI SELESAI LEMBUR (GPS &amp; ANTI-MANIPULASI WAKTU)
+                            <IkKamera size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>VERIFIKASI SELESAI LEMBUR (GPS &amp; ANTI-MANIPULASI WAKTU)
                           </div>
                           <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:8,flexWrap:"wrap"}}>
                             <Btn outline onClick={handleSelfieKeluarOtomatis} style={{background:C.pBg,color:C.p,fontSize:12}} disabled={isLoadingSelfie}>
-                              {isLoadingSelfie ? "🔄 Mengunci Parameter Absen..." : "📷 Klik untuk Selfie & Ambil Jam Keluar"}
+                              {isLoadingSelfie ? "Mengunci Parameter Absen..." : "Klik untuk Selfie & Ambil Jam Keluar"}
                             </Btn>
                             {rowForm.fotoKeluarUrl && (
                               <img
@@ -2500,8 +2503,8 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                           </div>
                           {rowForm.jamKeluar && (
                             <div style={{fontSize:12,color:C.s,fontWeight:600,lineHeight:"1.4"}}>
-                              ✓ Waktu Terkunci Pada Tanggal: {rowForm.tanggalAkhir?fDMY(rowForm.tanggalAkhir):"—"} | Jam: {rowForm.jamKeluar}<br/>
-                              📍 Koordinat Lokasi: {rowForm.lokasiKeluar||"—"}
+                              <IkCek size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Waktu Terkunci Pada Tanggal: {rowForm.tanggalAkhir?fDMY(rowForm.tanggalAkhir):"—"} | Jam: {rowForm.jamKeluar}<br/>
+                              <IkPin size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Koordinat Lokasi: {rowForm.lokasiKeluar||"—"}
                             </div>
                           )}
                           {/* FALLBACK MANUAL: hanya tampil kalau GPS+kamera keduanya gagal/tidak aktif.
@@ -2510,7 +2513,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                           {showManualKeluar && (
                             <div style={{marginTop:10,paddingTop:10,borderTop:`1px dashed ${C.w}`}}>
                               <div style={{fontSize:11,color:"#92400e",background:"#FEF3C7",borderRadius:8,padding:"6px 10px",marginBottom:8,fontWeight:600}}>
-                                ⚠ GPS/Kamera tidak aktif — isi jam keluar secara manual:
+                                <IkPeringatan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>GPS/Kamera tidak aktif — isi jam keluar secara manual:
                               </div>
                               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
                                 <LF label="Tanggal Akhir Lembur">
@@ -2550,7 +2553,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                     </LF>
                   </div>
                   <div style={{display:"flex",gap:10,marginTop:8}}>
-                    <Btn full onClick={()=>saveEntry()} disabled={isLoadingSelfie} style={{flex:2}}>✓ Simpan</Btn>
+                    <Btn full onClick={()=>saveEntry()} disabled={isLoadingSelfie} style={{flex:2}}><IkCek size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Simpan</Btn>
                     <Btn full outline color={C.g} onClick={()=>{stopActiveSelfieStream();setIsLoadingSelfie(false);setShowManualKeluar(false);setEditRow(null);setRowForm({});}} style={{flex:1}}>Batal</Btn>
                   </div>
                 </Card>
@@ -2564,9 +2567,9 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                 </div>
                 {entries.length===0 ? (
                   <div style={{textAlign:"center",padding:"32px 16px",color:C.tL}}>
-                    <div style={{fontSize:32,marginBottom:8}}>📋</div>
+                    <div style={{fontSize:32,marginBottom:8}}><div style={{marginBottom:4,color:"#0369A1"}}><IkClip size={44} strokeWidth={1.7} /></div></div>
                     <div style={{fontSize:13,fontWeight:600}}>Belum ada data lembur bulan ini</div>
-                    <div style={{fontSize:12,marginTop:4}}>Klik "✚ Tambah Baris Lembur" untuk mulai mencatat</div>
+                    <div style={{fontSize:12,marginTop:4}}>Klik "Tambah Baris Lembur" untuk mulai mencatat</div>
                   </div>
                 ) : (
                   <div style={{overflowX:"auto"}}>
@@ -2603,7 +2606,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                               <td style={{padding:"8px 10px",textAlign:"center",fontWeight:700,color:C.p}}>{i+1}</td>
                               <td style={{padding:"8px 10px",fontWeight:600,color:C.t}}>{fDMY(e.tanggalAwal||e.jadwalDinas)||"—"}</td>
                               <td style={{padding:"8px 10px",fontWeight:600,color:C.t}}>{e.tanggalAkhir?fDMY(e.tanggalAkhir):"—"}</td>
-                              <td style={{padding:"8px 10px",color:"#4338CA",fontWeight:600}}>{isAmbil?"—":(e.jamMasuk||"—")}</td>
+                              <td style={{padding:"8px 10px",color:"#075985",fontWeight:600}}>{isAmbil?"—":(e.jamMasuk||"—")}</td>
                               <td style={{padding:"8px 10px",color:"#B71C1C",fontWeight:600}}>{isAmbil?"—":(e.jamKeluar||"—")}</td>
                               <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
                                 {isAmbil ? (
@@ -2621,8 +2624,8 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                               <td style={{padding:"8px 10px",color:C.tL}}>{e.keterangan||"—"}</td>
                               <td style={{padding:"8px 10px",color:C.g,fontStyle:e.ttd?"normal":"italic"}}>{e.ttd||"·"}</td>
                               <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
-                                <button onClick={()=>{stopActiveSelfieStream();setIsLoadingSelfie(false);setQuickLemburMode(false);setEditRow(e.id);setRowForm({...e});}} style={{background:C.iBg,border:`1px solid ${C.i}`,borderRadius:6,color:C.i,padding:"3px 8px",cursor:"pointer",fontSize:11,marginRight:4}}>✏</button>
-                                <button onClick={()=>delEntry(e.id)} style={{background:C.dBg,border:`1px solid ${C.dL}`,borderRadius:6,color:C.d,padding:"3px 8px",cursor:"pointer",fontSize:11}}>🗑</button>
+                                <button onClick={()=>{stopActiveSelfieStream();setIsLoadingSelfie(false);setQuickLemburMode(false);setEditRow(e.id);setRowForm({...e});}} style={{background:C.iBg,border:`1px solid ${C.i}`,borderRadius:6,color:C.i,padding:"3px 8px",cursor:"pointer",fontSize:11,marginRight:4}}><IkEdit size={16} strokeWidth={2.4} style={{verticalAlign:"-2px"}}/></button>
+                                <button onClick={()=>delEntry(e.id)} style={{background:C.dBg,border:`1px solid ${C.dL}`,borderRadius:6,color:C.d,padding:"3px 8px",cursor:"pointer",fontSize:11}}><IkSampah size={16} strokeWidth={2.4} style={{verticalAlign:"-2px"}}/></button>
                               </td>
                             </tr>
                           );
@@ -2670,7 +2673,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
 
               {/* Tanda Tangan */}
               <Card style={{marginTop:14}}>
-                <SH label="✍ Tanda Tangan Pejabat"/>
+                <SH label="Tanda Tangan Pejabat"/>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
                   <LF label="Nama Kepala Ruang">
                     <input style={iS} placeholder="Nama Kepala Ruang..." value={kepRuang} onChange={e=>setKepRuang(e.target.value)}/>
@@ -2679,21 +2682,21 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                     <input style={iS} placeholder="Nama Kepala Bidang..." value={kepBidang} onChange={e=>setKepBidang(e.target.value)}/>
                   </LF>
                 </div>
-                <Btn full onClick={saveSigs} style={{marginTop:4}}>💾 Simpan Tanda Tangan</Btn>
+                <Btn full onClick={saveSigs} style={{marginTop:4}}><IkSimpan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Simpan Tanda Tangan</Btn>
               </Card>
 
               {/* Download */}
               <Card style={{marginTop:14,background:"#EDE9FE",border:"1px solid #C4B5FD"}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#4338CA",marginBottom:8}}>📥 Unduh Dokumen Lembur</div>
-                <div style={{fontSize:12,color:"#4338CA",marginBottom:12,lineHeight:1.6}}>Download file Excel berformat resmi dengan header nama/NIK, tabel lembur, total durasi, dan kolom tanda tangan pejabat.</div>
-                <Btn full onClick={downloadExcel} style={{background:"#4338CA",color:"#fff"}}>⬇ Download Excel — {peg.name} ({ymLabel(selYM)})</Btn>
+                <div style={{fontSize:13,fontWeight:700,color:"#075985",marginBottom:8}}><IkUnduh size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Unduh Dokumen Lembur</div>
+                <div style={{fontSize:12,color:"#075985",marginBottom:12,lineHeight:1.6}}>Download file Excel berformat resmi dengan header nama/NIK, tabel lembur, total durasi, dan kolom tanda tangan pejabat.</div>
+                <Btn full onClick={downloadExcel} style={{background:"#075985",color:"#fff"}}>⬇ Download Excel — {peg.name} ({ymLabel(selYM)})</Btn>
               </Card>
             </>
           )}
 
           {!selPeg && lemburPegawai.length>0 && (
             <Card><div style={{textAlign:"center",padding:24,color:C.tL}}>
-              <div style={{fontSize:32,marginBottom:8}}>👤</div>
+              <div style={{fontSize:32,marginBottom:8}}><div style={{marginBottom:4,color:"#0369A1"}}><IkUser size={44} strokeWidth={1.7} /></div></div>
               <div style={{fontSize:13,fontWeight:600}}>Pilih pegawai untuk melihat atau mencatat lembur</div>
             </div></Card>
           )}
@@ -2704,35 +2707,35 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
       {sub==="rekap" && (
         <div>
           <Card>
-            <SH label="📊 Rekap Lembur Bulanan — Semua Pegawai"/>
+            <SH label="Rekap Lembur Bulanan — Semua Pegawai"/>
             <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
               <div style={{flex:1,minWidth:160}}>
                 <LF label="Pilih Bulan">
                   <input style={iS} type="month" value={rekapYM} onChange={e=>setRekapYM(e.target.value)}/>
                 </LF>
               </div>
-              <Btn onClick={downloadRekapExcel} style={{background:"#4338CA",color:"#fff",whiteSpace:"nowrap"}}>⬇ Download Excel Rekap</Btn>
+              <Btn onClick={downloadRekapExcel} style={{background:"#075985",color:"#fff",whiteSpace:"nowrap"}}>⬇ Download Excel Rekap</Btn>
             </div>
           </Card>
 
           {/* ── Supabase cloud download ── */}
           <Card style={{background:"#EEF2FF",border:"1.5px solid #6366F133",marginBottom:14}}>
-            <SH label="☁️ Download Lembur dari Supabase" color="#4F46E5"/>
+            <SH label="Download Lembur dari Supabase" color="#0369A1"/>
             <div style={{fontSize:12,color:"#64748B",marginBottom:10}}>Unduh data lembur langsung dari backup cloud Supabase (tidak bergantung pada data perangkat ini). Data akan tersinkron dari semua device.</div>
             <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
               <div style={{flex:1,minWidth:160}}>
                 <LF label="Pilih Bulan"><input style={iS} type="month" value={supaLemburYM} onChange={e=>setSupaLemburYM(e.target.value)}/></LF>
               </div>
-              <Btn onClick={downloadLemburFromSupa} style={{background:supaLemburBusy?"#6366F188":"#4F46E5",color:"#fff",whiteSpace:"nowrap"}} disabled={supaLemburBusy}>
-                {supaLemburBusy?"⏳ Mengunduh...":"☁️ Download dari Supabase"}
+              <Btn onClick={downloadLemburFromSupa} style={{background:supaLemburBusy?"#6366F188":"#0369A1",color:"#fff",whiteSpace:"nowrap"}} disabled={supaLemburBusy}>
+                {supaLemburBusy?"Mengunduh...":"Download dari Supabase"}
               </Btn>
             </div>
-            {!supaCfg?.url && <div style={{fontSize:11,color:"#EF4444",marginTop:8}}>⚠ Supabase belum dikonfigurasi — atur di tab Arsip → Setelan.</div>}
+            {!supaCfg?.url && <div style={{fontSize:11,color:"#EF4444",marginTop:8}}><IkPeringatan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Supabase belum dikonfigurasi — atur di tab Arsip → Setelan.</div>}
           </Card>
 
           {/* ── Dropbox cloud download ── */}
           <Card style={{background:"#F5F3FF",border:"1.5px solid #0061FF33",marginBottom:14}}>
-            <SH label="📦 Download Lembur dari Dropbox" color="#0061FF"/>
+            <SH label="Download Lembur dari Dropbox" color="#0061FF"/>
             <div style={{fontSize:12,color:"#64748B",marginBottom:10}}>Unduh data lembur langsung dari backup Dropbox. Pilih bulan dan karyawan spesifik atau semua sekaligus.</div>
             <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap",marginBottom:10}}>
               <div style={{flex:1,minWidth:140}}>
@@ -2748,15 +2751,15 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
               </div>
             </div>
             <Btn full onClick={downloadLemburFromDropbox} disabled={dbxLemburBusy} style={{background:dbxLemburBusy?"#94A3B8":"#0061FF",color:"#fff",border:"none"}}>
-              {dbxLemburBusy?"⏳ Mengunduh...":"📦 Download Excel dari Dropbox"}
+              {dbxLemburBusy?"Mengunduh...":"Download Excel dari Dropbox"}
             </Btn>
           </Card>
 
           {lemburPegawai.length===0 ? (
             <Card><div style={{textAlign:"center",padding:32,color:C.tL}}>
-              <div style={{fontSize:32,marginBottom:8}}>👤</div>
+              <div style={{fontSize:32,marginBottom:8}}><div style={{marginBottom:4,color:"#0369A1"}}><IkUser size={44} strokeWidth={1.7} /></div></div>
               <div style={{fontSize:13,fontWeight:600}}>Belum ada data pegawai</div>
-              <div style={{fontSize:12,marginTop:4}}>Tambahkan pegawai di tab "👤 Data Pegawai" terlebih dahulu</div>
+              <div style={{fontSize:12,marginTop:4}}>Tambahkan pegawai di tab "Data Pegawai" terlebih dahulu</div>
             </div></Card>
           ) : (
             <>
@@ -2765,10 +2768,10 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                 {[
                   {label:"Total Pegawai",val:String(lemburPegawai.length)+" orang",icon:"👥",color:C.p},
                   {label:"Total Hari Lembur",val:String(rekapRows.reduce((s:number,r:any)=>s+r.jumlahHari,0))+" hari",icon:"📅",color:C.s},
-                  {label:"Total Jam Lembur",val:(()=>{const m=rekapRows.reduce((s:number,r:any)=>s+r.totalMins,0);return `${Math.floor(m/60)}j ${m%60}m`;})(),icon:"⏱",color:"#4338CA"},
+                  {label:"Total Jam Lembur",val:(()=>{const m=rekapRows.reduce((s:number,r:any)=>s+r.totalMins,0);return `${Math.floor(m/60)}j ${m%60}m`;})(),icon:"⏱",color:"#075985"},
                 ].map(c=>(
                   <div key={c.label} style={{background:C.white,borderRadius:12,padding:"12px 14px",boxShadow:"0 1px 6px rgba(0,0,0,.06)",textAlign:"center"}}>
-                    <div style={{fontSize:22,marginBottom:4}}>{c.icon}</div>
+                    <div style={{fontSize:22,marginBottom:4}}>{renderIko(c.icon,22)}</div>
                     <div style={{fontSize:18,fontWeight:800,color:c.color}}>{c.val}</div>
                     <div style={{fontSize:10,color:C.tL,marginTop:2}}>{c.label}</div>
                   </div>
@@ -2803,7 +2806,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                                 ? <span style={{background:C.sBg,color:C.s,borderRadius:20,padding:"2px 10px",fontWeight:700,fontSize:12}}>{r.jumlahHari} hari</span>
                                 : <span style={{color:C.tL}}>—</span>}
                             </td>
-                            <td style={{padding:"9px 12px",textAlign:"center",fontWeight:700,color:r.totalMins>0?"#4338CA":C.tL}}>{jam}</td>
+                            <td style={{padding:"9px 12px",textAlign:"center",fontWeight:700,color:r.totalMins>0?"#075985":C.tL}}>{jam}</td>
                             <td style={{padding:"9px 12px"}}>
                               <button onClick={()=>{setSelPeg(r.id);setSelYM(rekapYM);setSub("catat" as any);}} style={{background:C.pBg,border:`1px solid ${C.p}33`,borderRadius:8,color:C.p,padding:"4px 10px",cursor:"pointer",fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>
                                 {r.jumlahHari>0?"Lihat":"Input"} →
@@ -2819,7 +2822,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                         <td style={{padding:"9px 12px",textAlign:"center",fontWeight:800,color:C.s}}>
                           {rekapRows.reduce((s:number,r:any)=>s+r.jumlahHari,0)} hari
                         </td>
-                        <td style={{padding:"9px 12px",textAlign:"center",fontWeight:800,color:"#4338CA"}}>
+                        <td style={{padding:"9px 12px",textAlign:"center",fontWeight:800,color:"#075985"}}>
                           {(()=>{const m=rekapRows.reduce((s:number,r:any)=>s+r.totalMins,0);return `${Math.floor(m/60)}j ${m%60}m`;})()} 
                         </td>
                         <td/>
@@ -2831,11 +2834,11 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
 
               {/* Download card */}
               <Card style={{marginTop:14,background:"#EDE9FE",border:"1px solid #C4B5FD"}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#4338CA",marginBottom:6}}>📥 Unduh Rekap Excel</div>
-                <div style={{fontSize:12,color:"#4338CA",marginBottom:10,lineHeight:1.5}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#075985",marginBottom:6}}><IkUnduh size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Unduh Rekap Excel</div>
+                <div style={{fontSize:12,color:"#075985",marginBottom:10,lineHeight:1.5}}>
                   File Excel berisi 1 sheet rekap ringkasan semua pegawai + sheet detail per pegawai (hanya yang ada datanya).
                 </div>
-                <Btn full onClick={downloadRekapExcel} style={{background:"#4338CA",color:"#fff"}}>⬇ Download Rekap Lembur — {ymLabel(rekapYM)}</Btn>
+                <Btn full onClick={downloadRekapExcel} style={{background:"#075985",color:"#fff"}}>⬇ Download Rekap Lembur — {ymLabel(rekapYM)}</Btn>
               </Card>
             </>
           )}
@@ -2846,7 +2849,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
       {sub==="pegawai" && (
         <div>
           <Card>
-            <SH label="✚ Tambah Pegawai"/>
+            <SH label="Tambah Pegawai"/>
             <div style={{display:"flex",gap:10}}>
               <div style={{flex:2}}>
                 <LF label="Nama Lengkap">
@@ -2862,13 +2865,13 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
             <Btn full onClick={async ()=>{
               if(!pegForm.name.trim()){showToast("Nama wajib diisi",C.d);return;}
               const newPeg={id:gId(),name:pegForm.name.trim(),nik:pegForm.nik.trim()};
-              showToast("⟳ Menyimpan...",C.p);
+              showToast("Menyimpan...",C.p);
               const res = await upsertOneToSupa?.("kb_lembur_pegawai", newPeg);
-              if(!res?.ok){ showToast(`⚠ Gagal menyimpan pegawai: ${res?.error||"kesalahan tidak diketahui"}`,C.d); return; }
+              if(!res?.ok){ showToast(`Gagal menyimpan pegawai: ${res?.error||"kesalahan tidak diketahui"}`,C.d); return; }
               setLemburPegawai((p:any[])=>[...p,newPeg]);
               setPegForm({name:"",nik:""});
-              showToast("✓ Pegawai ditambahkan & tersinkron",C.s);
-            }}>✚ Tambah Pegawai</Btn>
+              showToast("Pegawai ditambahkan & tersinkron",C.s);
+            }}><IkTambah size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Tambah Pegawai</Btn>
           </Card>
 
           {lemburPegawai.length===0 ? (
@@ -2887,17 +2890,17 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                       <button onClick={()=>{setSelPeg(p.id);setSub("catat");}} style={{background:C.pBg,border:`1px solid ${C.p}33`,borderRadius:8,color:C.p,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:600}}>Lihat Lembur</button>
                       <button onClick={async ()=>{
                         if(!window.confirm(`Hapus pegawai "${p.name}"?\nSemua data lembur pegawai ini juga akan dihapus.`)) return;
-                        showToast("⟳ Menghapus...",C.p);
+                        showToast("Menghapus...",C.p);
                         const res = await deleteFromSupa?.("kb_lembur_pegawai", p.id);
-                        if(!res?.ok){ showToast(`⚠ Gagal menghapus pegawai: ${res?.error||"kesalahan tidak diketahui"}`,C.d); return; }
+                        if(!res?.ok){ showToast(`Gagal menghapus pegawai: ${res?.error||"kesalahan tidak diketahui"}`,C.d); return; }
                         setLemburPegawai((prev:any[])=>prev.filter((x:any)=>x.id!==p.id));
                         /* Hapus juga setiap row kb_lembur_data milik pegawai ini (best-effort,
                            tidak menghalangi UI — kegagalan hanya menyisakan row tak terpakai). */
                         const relatedKeys = Object.keys(lemburData).filter(k=>k.startsWith(p.id+"_"));
                         await Promise.all(relatedKeys.map(k=>deleteFromSupa?.("kb_lembur_data", k)));
                         setLemburData((prev:Record<string,any>)=>{ const n={...prev}; relatedKeys.forEach(k=>delete n[k]); return n; });
-                        showToast("✓ Pegawai dihapus & tersinkron",C.d);
-                      }} style={{background:C.dBg,border:`1px solid ${C.dL}`,borderRadius:8,color:C.d,padding:"5px 10px",cursor:"pointer",fontSize:12}}>🗑</button>
+                        showToast("Pegawai dihapus & tersinkron",C.d);
+                      }} style={{background:C.dBg,border:`1px solid ${C.dL}`,borderRadius:8,color:C.d,padding:"5px 10px",cursor:"pointer",fontSize:12}}><IkSampah size={16} strokeWidth={2.4} style={{verticalAlign:"-2px"}}/></button>
                     </div>
                   </div>
                 </Card>
@@ -3044,7 +3047,7 @@ function monXlsx(
     XLSX.utils.book_append_sheet(wb,ws3,"Laporan Akreditasi");
   }
   XLSX.writeFile(wb,"Monitoring_"+(type==="harian"?"Harian":type==="rekap"?"Rekap":"Akreditasi")+"_"+ym+".xlsx");
-  showToast("✓ Monitoring "+(type==="harian"?"Harian":type==="rekap"?"Rekap":"Akreditasi")+" "+mName+" "+year+" diunduh",MC.ok);
+  showToast("Monitoring "+(type==="harian"?"Harian":type==="rekap"?"Rekap":"Akreditasi")+" "+mName+" "+year+" diunduh",MC.ok);
 }
 
 function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,setMonitoringCfg,showToast,supaCfg,dbxCfg,role,upsertOneToSupa,deleteFromSupa}:any) {
@@ -3120,12 +3123,12 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
       });
     });
     if(!nw.length){showToast("Isi minimal satu slot suhu/kelembaban","#E65100");return;}
-    showToast(`⟳ Menyimpan ${nw.length} data monitoring...`,MC.pri);
+    showToast(`Menyimpan ${nw.length} data monitoring...`,MC.pri);
     /* Upsert granular per slot — arsitektur identik dengan eksisting */
     const results = await Promise.all(nw.map((e:MonitoringEntry)=>upsertOneToSupa?.("kb_monitoring", e)));
     const failed  = results.filter((r:any)=>!r?.ok);
     if(failed.length){
-      showToast(`⚠ Gagal menyimpan ${failed.length} data: ${failed[0]?.error||"kesalahan tidak diketahui"}`,MC.err);
+      showToast(`Gagal menyimpan ${failed.length} data: ${failed[0]?.error||"kesalahan tidak diketahui"}`,MC.err);
       return;
     }
     /* Update local state: filter lama berdasarkan (ruang AND tanggal AND jam) */
@@ -3135,7 +3138,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
       );
       return [...filtered,...nw];
     });
-    showToast("✓ "+nw.length+" data monitoring "+formDate+" disimpan & tersinkron",MC.ok);
+    showToast(""+nw.length+" data monitoring "+formDate+" disimpan & tersinkron",MC.ok);
   };
 
   /* ── Download dari Supabase backup ── */
@@ -3149,7 +3152,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
       const cfg2:MonitoringCfg   = raw.monitoringCfg||raw.data?.monitoringCfg||monitoringCfg;
       if(!me.length){showToast("Tidak ada data monitoring "+supaMonYM+" di Supabase",MC.err);setSupaMonBusy(false);return;}
       monXlsx(me,cfg2,supaMonYM,type,showToast);
-      showToast("✓ Monitoring dari Supabase ("+supaMonYM+") diunduh",MC.ok);
+      showToast("Monitoring dari Supabase ("+supaMonYM+") diunduh",MC.ok);
     } catch(err:any){showToast("Gagal: "+(err?.message||"Error Supabase"),MC.err);}
     setSupaMonBusy(false);
   };
@@ -3164,7 +3167,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
       const cfg2:MonitoringCfg   = res.data.monitoringCfg||monitoringCfg;
       if(!me2.length){showToast("Tidak ada data monitoring "+dbxMonYM+" di Dropbox",MC.err);setDbxMonBusy(false);return;}
       monXlsx(me2,cfg2,dbxMonYM,type,showToast);
-      showToast("✓ Monitoring dari Dropbox ("+dbxMonYM+") diunduh",MC.ok);
+      showToast("Monitoring dari Dropbox ("+dbxMonYM+") diunduh",MC.ok);
     } catch(err:any){showToast("Gagal: "+(err?.message||"Error Dropbox"),MC.err);}
     setDbxMonBusy(false);
   };
@@ -3325,13 +3328,13 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
       URL.revokeObjectURL(url);
 
       if (chartFailures.length) {
-        showToast(`⚠ Data tersimpan, tapi grafik gagal disisipkan untuk: ${chartFailures.join(", ")}`, MC.warn);
+        showToast(`Data tersimpan, tapi grafik gagal disisipkan untuk: ${chartFailures.join(", ")}`, MC.warn);
       } else {
-        showToast("✓ Grafik & data " + mLabel + " diunduh (per ruangan)", MC.ok);
+        showToast("Grafik & data " + mLabel + " diunduh (per ruangan)", MC.ok);
       }
     } catch (err: any) {
       console.error(err);
-      showToast("⚠ Gagal mengekspor grafik: " + (err?.message || "kesalahan tidak diketahui"), MC.err);
+      showToast("Gagal mengekspor grafik: " + (err?.message || "kesalahan tidak diketahui"), MC.err);
     } finally {
       setGrafikExporting(false);
     }
@@ -3347,7 +3350,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
     <div>
       {/* ── Header ── */}
       <div style={{marginBottom:14}}>
-        <div style={{fontWeight:800,fontSize:18,color:MC.pri,marginBottom:2}}>🌡 Monitoring Suhu &amp; Kelembaban</div>
+        <div style={{fontWeight:800,fontSize:18,color:MC.pri,marginBottom:2}}><IkSuhu size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Monitoring Suhu &amp; Kelembaban</div>
         <div style={{fontSize:12,color:"#64748B"}}>
           {MON_ROOMS.join(" · ")} · Standar Suhu {monitoringCfg.suhuMin}-{monitoringCfg.suhuMax}°C · RH {monitoringCfg.rhMin}-{monitoringCfg.rhMax}%
         </div>
@@ -3355,7 +3358,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
 
       {/* ── Sub-tabs ── */}
       <div style={{display:"flex",gap:6,marginBottom:18,flexWrap:"wrap"}}>
-        {[{k:"harian",l:"📋 Harian"},{k:"grafik",l:"📊 Grafik"},{k:"unduh",l:"📥 Unduh"},{k:"standar",l:"⚙ Standar"}].map(t=>(
+        {[{k:"harian",l:"Harian"},{k:"grafik",l:"Grafik"},{k:"unduh",l:"Unduh"},{k:"standar",l:"Standar"}].map(t=>(
           <button key={t.k} onClick={()=>setSubTab(t.k)} style={{padding:"7px 18px",borderRadius:20,border:"none",background:subTab===t.k?MC.pri:"#E2E8F0",color:subTab===t.k?"#fff":"#475569",fontWeight:600,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>{t.l}</button>
         ))}
       </div>
@@ -3383,7 +3386,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
         <div>
           {/* Form input: 1 tabel per ruangan */}
           <div style={{background:"linear-gradient(135deg,#F5F3FF,#F0FDF4)",border:"1px solid #DDD6FE",borderRadius:14,padding:18,marginBottom:18}}>
-            <div style={{fontWeight:700,color:MC.pri,fontSize:14,marginBottom:16}}>📝 Input Pemantauan — {fDMY(formDate)}</div>
+            <div style={{fontWeight:700,color:MC.pri,fontSize:14,marginBottom:16}}><IkFile size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Input Pemantauan — {fDMY(formDate)}</div>
             {MON_ROOMS.map((ruang,ri)=>(
               <div key={ruang} style={{marginBottom:ri<MON_ROOMS.length-1?22:0}}>
                 {/* Section header ruangan */}
@@ -3437,8 +3440,8 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
                               {ok===null
                                 ? <span style={{color:"#94A3B8",fontSize:12}}>—</span>
                                 : ok
-                                  ? <span style={{background:MC.okBg,color:MC.ok,fontWeight:700,fontSize:11,padding:"3px 9px",borderRadius:20}}>✓ SESUAI</span>
-                                  : <span style={{background:MC.errBg,color:MC.err,fontWeight:700,fontSize:11,padding:"3px 9px",borderRadius:20}}>✕ TIDAK SESUAI</span>
+                                  ? <span style={{background:MC.okBg,color:MC.ok,fontWeight:700,fontSize:11,padding:"3px 9px",borderRadius:20}}><IkCek size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>SESUAI</span>
+                                  : <span style={{background:MC.errBg,color:MC.err,fontWeight:700,fontSize:11,padding:"3px 9px",borderRadius:20}}><IkX size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>TIDAK SESUAI</span>
                               }
                             </td>
                           </tr>
@@ -3451,7 +3454,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
             ))}
             <div style={{marginTop:18}}>
               <Btn color={MC.pri} onClick={handleSave} style={{background:MC.pri,color:"#fff",border:"none"}}>
-                💾 Simpan Semua Data {fDMY(formDate)}
+                <IkSimpan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Simpan Semua Data {fDMY(formDate)}
               </Btn>
             </div>
           </div>
@@ -3459,12 +3462,12 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
           {/* Tabel data tersimpan — tambah kolom "Ruangan" */}
           <div style={{background:"#fff",border:"1px solid #E2E8F0",borderRadius:12,overflow:"hidden"}}>
             <div style={{background:"linear-gradient(90deg,"+MC.pri+","+MC.priL+")",padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{color:"#fff",fontWeight:700,fontSize:14}}>📋 Data {mLabel}</span>
+              <span style={{color:"#fff",fontWeight:700,fontSize:14}}><IkClip size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Data {mLabel}</span>
               <span style={{color:"rgba(255,255,255,.75)",fontSize:12}}>{meHarian.length} entri</span>
             </div>
             {meHarian.length===0?(
               <div style={{padding:32,textAlign:"center",color:"#94A3B8"}}>
-                <div style={{fontSize:32,marginBottom:8}}>🌡</div>
+                <div style={{fontSize:32,marginBottom:8}}><div style={{marginBottom:4,color:"#0369A1"}}><IkSuhu size={44} strokeWidth={1.7} /></div></div>
                 <div style={{fontWeight:600}}>Belum ada data monitoring bulan ini</div>
                 <div style={{fontSize:12,marginTop:4}}>Gunakan form di atas untuk menambahkan data</div>
               </div>
@@ -3510,10 +3513,10 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
                           <td style={{padding:"7px 10px"}}>
                             <button onClick={async ()=>{
                               const res = await deleteFromSupa?.("kb_monitoring", e.id);
-                              if(!res?.ok){showToast(`⚠ Gagal menghapus: ${res?.error||"kesalahan tidak diketahui"}`,C.d);return;}
+                              if(!res?.ok){showToast(`Gagal menghapus: ${res?.error||"kesalahan tidak diketahui"}`,C.d);return;}
                               setMonitoringEntries((p:any[])=>p.filter((x:any)=>x.id!==e.id));
-                              showToast("✓ Data dihapus & tersinkron",C.d);
-                            }} style={{background:"none",border:"none",cursor:"pointer",color:"#EF4444",fontSize:16}}>✕</button>
+                              showToast("Data dihapus & tersinkron",C.d);
+                            }} style={{background:"none",border:"none",cursor:"pointer",color:"#EF4444",fontSize:16}}><IkX size={16} strokeWidth={2.4} style={{verticalAlign:"-2px"}}/></button>
                           </td>
                         </tr>
                       );
@@ -3544,12 +3547,12 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
                 onChange={e=>setGrafikRuang(e.target.value)}
                 style={{padding:"7px 12px",border:"1px solid #D1D5DB",borderRadius:8,fontSize:13,background:"#fff",fontFamily:"inherit",cursor:"pointer",outline:"none"}}
               >
-                <option value="all">🏥 Semua Ruangan</option>
+                <option value="all">Semua Ruangan</option>
                 {MON_ROOMS.map(r=><option key={r} value={r}>{r}</option>)}
               </select>
             </div>
-            <button onClick={()=>setSelMonth(todayDate().slice(0,7))} style={{padding:"7px 14px",background:selMonth===todayDate().slice(0,7)?"#8B5CF6":"#F0F9FF",color:selMonth===todayDate().slice(0,7)?"#fff":"#6D28D9",border:"1px solid #DDD6FE",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
-              📅 Bulan Ini
+            <button onClick={()=>setSelMonth(todayDate().slice(0,7))} style={{padding:"7px 14px",background:selMonth===todayDate().slice(0,7)?"#0284C7":"#F0F9FF",color:selMonth===todayDate().slice(0,7)?"#fff":"#0369A1",border:"1px solid #DDD6FE",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
+              <IkKal size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Bulan Ini
             </button>
             <button
               onClick={downloadGrafikExcel}
@@ -3567,21 +3570,21 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
                 whiteSpace: "nowrap",
               }}
             >
-              {grafikExporting ? "⏳ Mengunduh Excel..." : "⬇ Download Excel"}
+              {grafikExporting ? "Mengunduh Excel..." : "⬇ Download Excel"}
             </button>
           </div>
 
           {/* Stat cards — berdasarkan ruangan yang difilter */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:10,marginBottom:20}}>
             {([
-              {l:"Rata-rata Suhu",v:avgS+"°C",ico:"🌡",bg:"#EDE9FE",c:"#4F46E5"},
+              {l:"Rata-rata Suhu",v:avgS+"°C",ico:"🌡",bg:"#EDE9FE",c:"#0369A1"},
               {l:"Rata-rata RH",   v:avgR+"%", ico:"💧",bg:"#DCFCE7",c:"#16A34A"},
               {l:"Total Ukur",    v:String(me.length),ico:"📊",bg:"#FEF3C7",c:"#B45309"},
               {l:"Tidak Sesuai",  v:String(tidakS),ico:"⚠️",bg:"#FEE2E2",c:"#DC2626"},
               {l:"Kepatuhan",     v:cmpPct+"%",ico:"✅",bg:"#F0FDF4",c:"#16A34A"},
             ] as {l:string;v:string;ico:string;bg:string;c:string}[]).map(s=>(
               <div key={s.l} style={{background:s.bg,borderRadius:12,padding:"12px 10px",textAlign:"center",border:"1px solid "+s.c+"20"}}>
-                <div style={{fontSize:20,marginBottom:3}}>{s.ico}</div>
+                <div style={{fontSize:20,marginBottom:3}}>{renderIko(s.ico,20)}</div>
                 <div style={{fontSize:17,fontWeight:800,color:s.c}}>{s.v}</div>
                 <div style={{fontSize:10,color:"#64748B",marginTop:2,lineHeight:1.3}}>{s.l}</div>
               </div>
@@ -3591,20 +3594,20 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
           {/* Label ruangan aktif */}
           {grafikRuang!=="all"&&(
             <div style={{background:MC.priBg,borderRadius:8,padding:"6px 14px",marginBottom:12,fontSize:12,color:MC.pri,fontWeight:700,display:"inline-block"}}>
-              📍 Menampilkan: {grafikRuang}
+              <IkPin size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Menampilkan: {grafikRuang}
             </div>
           )}
 
           {me.length===0?(
             <div style={{textAlign:"center",padding:48,color:"#94A3B8"}}>
-              <div style={{fontSize:40,marginBottom:10}}>📊</div>
+              <div style={{fontSize:40,marginBottom:10}}><div style={{marginBottom:4,color:"#0369A1"}}><IkGrafik size={44} strokeWidth={1.7} /></div></div>
               <div style={{fontWeight:600}}>Belum ada data untuk pilihan ini</div>
             </div>
           ):(
             <>
               {/* ── Grafik Suhu ── */}
               <div style={{background:"#fff",border:"1px solid #E2E8F0",borderRadius:12,padding:"16px 16px 8px",marginBottom:14}}>
-                <div style={{fontWeight:700,color:MC.pri,marginBottom:10,fontSize:13}}>🌡 Grafik Suhu — {mLabel}{grafikRuang!=="all"?` (${grafikRuang})`:""}</div>
+                <div style={{fontWeight:700,color:MC.pri,marginBottom:10,fontSize:13}}><IkSuhu size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Grafik Suhu — {mLabel}{grafikRuang!=="all"?` (${grafikRuang})`:""}</div>
                 <ResponsiveContainer width="100%" height={220}>
                   {grafikRuang==="all"?(
                     /* Multi-line: 1 garis per ruangan */
@@ -3647,7 +3650,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
 
               {/* ── Grafik Kelembaban ── */}
               <div style={{background:"#fff",border:"1px solid #E2E8F0",borderRadius:12,padding:"16px 16px 8px"}}>
-                <div style={{fontWeight:700,color:MC.ok,marginBottom:10,fontSize:13}}>💧 Grafik Kelembaban — {mLabel}{grafikRuang!=="all"?` (${grafikRuang})`:""}</div>
+                <div style={{fontWeight:700,color:MC.ok,marginBottom:10,fontSize:13}}><IkTetes size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Grafik Kelembaban — {mLabel}{grafikRuang!=="all"?` (${grafikRuang})`:""}</div>
                 <ResponsiveContainer width="100%" height={220}>
                   {grafikRuang==="all"?(
                     <LineChart data={buildMultiChartData("kelembaban")} margin={{top:4,right:20,left:0,bottom:4}}>
@@ -3750,13 +3753,13 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
         <div>
           <div style={{display:"grid",gap:12,marginBottom:16}}>
             {([
-              {type:"harian"    as const,ico:"📋",title:"Laporan Monitoring Harian",   desc:"Data harian 3 ruangan + rekap statistik bulanan",c:"#6D28D9",bg:"#F5F3FF"},
-              {type:"rekap"     as const,ico:"📊",title:"Rekap Bulanan",               desc:"Statistik per ruangan: rata-rata suhu, RH, kepatuhan (tidak dicampur)",c:"#7C3AED",bg:"#F5F3FF"},
+              {type:"harian"    as const,ico:"📋",title:"Laporan Monitoring Harian",   desc:"Data harian 3 ruangan + rekap statistik bulanan",c:"#0369A1",bg:"#F5F3FF"},
+              {type:"rekap"     as const,ico:"📊",title:"Rekap Bulanan",               desc:"Statistik per ruangan: rata-rata suhu, RH, kepatuhan (tidak dicampur)",c:"#0284C7",bg:"#F5F3FF"},
               {type:"akreditasi"as const,ico:"🏅",title:"Laporan Akreditasi",          desc:"Laporan lengkap per ruangan + format akreditasi & kolom tanda tangan",c:"#B45309",bg:"#FFFBEB"},
             ]).map(r=>(
               <div key={r.type} style={{background:r.bg,border:"1px solid "+r.c+"25",borderRadius:12,padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                 <div style={{flex:1}}>
-                  <div style={{fontWeight:700,color:r.c,fontSize:14,marginBottom:3}}>{r.ico} {r.title}</div>
+                  <div style={{fontWeight:700,color:r.c,fontSize:14,marginBottom:3}}><span style={{display:"inline-block",verticalAlign:"-2px",marginRight:6}}>{renderIko(r.ico,15)}</span>{r.title}</div>
                   <div style={{fontSize:12,color:"#64748B"}}>{r.desc}</div>
                 </div>
                 <Btn color={r.c} onClick={()=>monXlsx(monitoringEntries,monitoringCfg,selMonth,r.type,showToast)} style={{background:r.c,color:"#fff",border:"none",whiteSpace:"nowrap",flexShrink:0}}>⬇ Excel</Btn>
@@ -3764,12 +3767,12 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
             ))}
           </div>
           <div style={{background:"#F8FAFC",borderRadius:10,padding:"12px 14px",fontSize:12,color:"#64748B",border:"1px solid #E2E8F0",lineHeight:1.7,marginBottom:14}}>
-            <b>📌 Penyimpanan:</b> Data monitoring disertakan dalam backup otomatis JSON bersama data operasi dan lembur. Aktifkan di tab Arsip → Setelan → Dropbox.
+            <b><IkPaku size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Penyimpanan:</b> Data monitoring disertakan dalam backup otomatis JSON bersama data operasi dan lembur. Aktifkan di tab Arsip → Setelan → Dropbox.
           </div>
 
           {/* Supabase cloud download */}
           <div style={{background:"#EEF2FF",border:"1.5px solid #6366F133",borderRadius:14,padding:"16px 16px 14px"}}>
-            <div style={{fontWeight:700,color:"#4F46E5",fontSize:14,marginBottom:6}}>☁️ Download Monitoring dari Supabase</div>
+            <div style={{fontWeight:700,color:"#0369A1",fontSize:14,marginBottom:6}}><IkCloud size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Download Monitoring dari Supabase</div>
             <div style={{fontSize:12,color:"#64748B",marginBottom:12}}>Unduh data monitoring langsung dari cloud Supabase, tanpa bergantung data perangkat ini. Data tersinkron dari semua device.</div>
             <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
               <div style={{flex:1,minWidth:160}}>
@@ -3778,21 +3781,21 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
               </div>
             </div>
             <div style={{display:"grid",gap:8}}>
-              {([{type:"harian" as const,ico:"📋",title:"Harian",c:"#6D28D9"},{type:"rekap" as const,ico:"📊",title:"Rekap Bulanan",c:"#7C3AED"},{type:"akreditasi" as const,ico:"🏅",title:"Akreditasi",c:"#B45309"}]).map(r=>(
+              {([{type:"harian" as const,ico:"📋",title:"Harian",c:"#0369A1"},{type:"rekap" as const,ico:"📊",title:"Rekap Bulanan",c:"#0284C7"},{type:"akreditasi" as const,ico:"🏅",title:"Akreditasi",c:"#B45309"}]).map(r=>(
                 <div key={r.type} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(255,255,255,.7)",borderRadius:10,padding:"10px 14px",gap:10}}>
-                  <div style={{fontWeight:600,color:r.c,fontSize:13}}>{r.ico} {r.title}</div>
-                  <button onClick={()=>downloadMonFromSupa(r.type)} disabled={supaMonBusy} style={{background:supaMonBusy?"#9CA3AF":"#4F46E5",color:"#fff",border:"none",borderRadius:8,padding:"6px 14px",cursor:supaMonBusy?"not-allowed":"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
-                    {supaMonBusy?"⏳ ...":"☁️ Download Excel"}
+                  <div style={{fontWeight:600,color:r.c,fontSize:13}}><span style={{display:"inline-block",verticalAlign:"-2px",marginRight:6}}>{renderIko(r.ico,15)}</span>{r.title}</div>
+                  <button onClick={()=>downloadMonFromSupa(r.type)} disabled={supaMonBusy} style={{background:supaMonBusy?"#9CA3AF":"#0369A1",color:"#fff",border:"none",borderRadius:8,padding:"6px 14px",cursor:supaMonBusy?"not-allowed":"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                    {supaMonBusy?"...":"Download Excel"}
                   </button>
                 </div>
               ))}
             </div>
-            {!supaCfg?.url && <div style={{fontSize:11,color:"#EF4444",marginTop:10}}>⚠ Supabase belum dikonfigurasi — atur di tab Arsip → Setelan.</div>}
+            {!supaCfg?.url && <div style={{fontSize:11,color:"#EF4444",marginTop:10}}><IkPeringatan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Supabase belum dikonfigurasi — atur di tab Arsip → Setelan.</div>}
           </div>
 
           {/* Dropbox download */}
           <div style={{background:"#F5F3FF",border:"1.5px solid #0061FF33",borderRadius:14,padding:"16px 16px 14px",marginTop:14}}>
-            <div style={{fontWeight:700,color:"#0061FF",fontSize:14,marginBottom:6}}>📦 Download Monitoring dari Dropbox</div>
+            <div style={{fontWeight:700,color:"#0061FF",fontSize:14,marginBottom:6}}><IkBox size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Download Monitoring dari Dropbox</div>
             <div style={{fontSize:12,color:"#64748B",marginBottom:12}}>Unduh data monitoring dari backup Dropbox sesuai pilihan bulan dan format laporan.</div>
             <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
               <div style={{flex:1,minWidth:160}}>
@@ -3801,11 +3804,11 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
               </div>
             </div>
             <div style={{display:"grid",gap:8}}>
-              {([{type:"harian" as const,ico:"📋",title:"Harian",c:"#6D28D9"},{type:"rekap" as const,ico:"📊",title:"Rekap Bulanan",c:"#7C3AED"},{type:"akreditasi" as const,ico:"🏅",title:"Akreditasi",c:"#B45309"}]).map(r=>(
+              {([{type:"harian" as const,ico:"📋",title:"Harian",c:"#0369A1"},{type:"rekap" as const,ico:"📊",title:"Rekap Bulanan",c:"#0284C7"},{type:"akreditasi" as const,ico:"🏅",title:"Akreditasi",c:"#B45309"}]).map(r=>(
                 <div key={r.type} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"rgba(255,255,255,.7)",borderRadius:10,padding:"10px 14px",gap:10}}>
-                  <div style={{fontWeight:600,color:r.c,fontSize:13}}>{r.ico} {r.title}</div>
+                  <div style={{fontWeight:600,color:r.c,fontSize:13}}><span style={{display:"inline-block",verticalAlign:"-2px",marginRight:6}}>{renderIko(r.ico,15)}</span>{r.title}</div>
                   <button onClick={()=>downloadMonFromDropbox(r.type)} disabled={dbxMonBusy} style={{background:dbxMonBusy?"#9CA3AF":"#0061FF",color:"#fff",border:"none",borderRadius:8,padding:"6px 14px",cursor:dbxMonBusy?"not-allowed":"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>
-                    {dbxMonBusy?"⏳ ...":"📦 Download Excel"}
+                    {dbxMonBusy?"...":"Download Excel"}
                   </button>
                 </div>
               ))}
@@ -3820,7 +3823,7 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
       {subTab==="standar"&&(
         <div style={{maxWidth:480}}>
           <div style={{background:"#fff",border:"1px solid #E2E8F0",borderRadius:12,padding:18}}>
-            <div style={{fontWeight:700,color:MC.pri,fontSize:14,marginBottom:16}}>⚙ Konfigurasi Standar Monitoring</div>
+            <div style={{fontWeight:700,color:MC.pri,fontSize:14,marginBottom:16}}><IkSetelan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Konfigurasi Standar Monitoring</div>
             <div style={{fontSize:12,color:"#64748B",marginBottom:14,background:MC.priBg,padding:"8px 12px",borderRadius:8}}>
               Standar yang diatur di sini berlaku untuk ketiga ruangan: <b>{MON_ROOMS.join(", ")}</b>
             </div>
@@ -3843,8 +3846,8 @@ function ViewMonitoring({monitoringEntries,setMonitoringEntries,monitoringCfg,se
             <div style={{background:MC.okBg,borderRadius:8,padding:"8px 12px",marginBottom:16,fontSize:12,color:MC.ok,border:"1px solid #BBF7D0"}}>
               Standar aktif: Suhu {monitoringCfg.suhuMin}-{monitoringCfg.suhuMax}°C · RH {monitoringCfg.rhMin}-{monitoringCfg.rhMax}%
             </div>
-            <Btn color={MC.pri} onClick={()=>{setMonitoringCfg(cfgForm);showToast("✓ Pengaturan standar disimpan",MC.ok);}} style={{background:MC.pri,color:"#fff",border:"none"}}>
-              💾 Simpan Pengaturan
+            <Btn color={MC.pri} onClick={()=>{setMonitoringCfg(cfgForm);showToast("Pengaturan standar disimpan",MC.ok);}} style={{background:MC.pri,color:"#fff",border:"none"}}>
+              <IkSimpan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Simpan Pengaturan
             </Btn>
           </div>
         </div>
@@ -3975,10 +3978,10 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
           );
         } else if(error){
           console.warn("[kb_roster_master] fetch error:", formatSupaError(error));
-          showToast("⚠ Gagal memuat data master dari Supabase", "#DC2626");
+          showToast("Gagal memuat data master dari Supabase", "#DC2626");
         }
       } catch(e) {
-        if(!cancelled) showToast("⚠ Koneksi ke Supabase gagal saat memuat data master", "#DC2626");
+        if(!cancelled) showToast("Koneksi ke Supabase gagal saat memuat data master", "#DC2626");
       } finally {
         if(!cancelled) setMasterLoading(false);
       }
@@ -4064,7 +4067,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
     if(!navigator.onLine){
       pendingOfflineRef.current = true;
       setCloudStatus("offline");
-      if(showFeedback) showToast("⚠ Jaringan offline — jadwal tersimpan lokal, akan sync saat kembali online.", "#E65100");
+      if(showFeedback) showToast("Jaringan offline — jadwal tersimpan lokal, akan sync saat kembali online.", "#E65100");
       return false;
     }
     try {
@@ -4087,11 +4090,11 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
 
       setCloudStatus("ok");
       pendingOfflineRef.current = false;
-      if(showFeedback) showToast("✓ Jadwal berhasil disimpan permanen ke database pusat.", "#2E7D32");
+      if(showFeedback) showToast("Jadwal berhasil disimpan permanen ke database pusat.", "#2E7D32");
       return true;
     } catch(e: any) {
       setCloudStatus("error");
-      if(showFeedback) showToast("⚠ Gagal sync cloud: " + (e?.message || "error"), "#D62828");
+      if(showFeedback) showToast("Gagal sync cloud: " + (e?.message || "error"), "#D62828");
       return false;
     }
   }, [buildPayload, upsertOneToSupa, dbxCfg, showToast]);
@@ -4180,12 +4183,12 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
       if(res.ok){
         setNurseMasterList(p => [...p, newEntry]);
         setMasterForm({ nik:"", name:"", pk:"III" });
-        showToast(`✅ "${name}" (NIK: ${nik}) disimpan ke Supabase!`, "#2E7D32");
+        showToast(`"${name}" (NIK: ${nik}) disimpan ke Supabase!`, "#2E7D32");
       } else {
-        showToast(`✗ Gagal menyimpan ke Supabase: ${res.error||"unknown error"}`, "#DC2626");
+        showToast(`Gagal menyimpan ke Supabase: ${res.error||"unknown error"}`, "#DC2626");
       }
     } catch(e:any) {
-      showToast(`✗ Koneksi ke Supabase gagal: ${e?.message||"unknown error"}`, "#DC2626");
+      showToast(`Koneksi ke Supabase gagal: ${e?.message||"unknown error"}`, "#DC2626");
     }
     setMasterSaving(false);
   };
@@ -4197,12 +4200,12 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
       const res = await deleteFromSupa(KB_ROSTER_MASTER_TABLE, id);
       if(res.ok){
         setNurseMasterList(p => p.filter(m => m.id !== id));
-        showToast(`🗑 Perawat "${target.name}" dihapus dari database master.`, "#5C677D");
+        showToast(`Perawat "${target.name}" dihapus dari database master.`, "#5C677D");
       } else {
-        showToast(`✗ Gagal menghapus dari Supabase: ${res.error||"unknown error"}`, "#DC2626");
+        showToast(`Gagal menghapus dari Supabase: ${res.error||"unknown error"}`, "#DC2626");
       }
     } catch(e:any) {
-      showToast(`✗ Koneksi ke Supabase gagal: ${e?.message||"unknown error"}`, "#DC2626");
+      showToast(`Koneksi ke Supabase gagal: ${e?.message||"unknown error"}`, "#DC2626");
     }
   };
 
@@ -4303,7 +4306,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
       availKaru.forEach(i=>{ newGrid[i][d]="L"; }); // Karu selalu L di hari libur
 
       if(lgAssigned.length < LG_PER_DAY){
-        warns.push(`⚠️ Hari ke-${d+1} (Libur): hanya ${lgAssigned.length} LG tersedia (target ${LG_PER_DAY}).`);
+        warns.push(`Hari ke-${d+1} (Libur): hanya ${lgAssigned.length} LG tersedia (target ${LG_PER_DAY}).`);
       }
     }
 
@@ -4375,7 +4378,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
       const pagiHariIni = nurses.filter((_,i)=>newGrid[i][d]==="P"||newGrid[i][d]==="PG").length;
       const siangHariIni= nurses.filter((_,i)=>newGrid[i][d]==="S"||newGrid[i][d]==="SG").length;
       if(cutiHariIni>=3){
-        warns.push(`⚠️ Hari ke-${d+1}: ${cutiHariIni} cuti/libur. Pagi: ${pagiHariIni}, Siang: ${siangHariIni}.`);
+        warns.push(`Hari ke-${d+1}: ${cutiHariIni} cuti/libur. Pagi: ${pagiHariIni}, Siang: ${siangHariIni}.`);
       }
     }
 
@@ -4404,7 +4407,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
       `Roster di-generate: ${BULAN_NAMA_ID[month]} ${year} — ${nurses.length} perawat`,
       { month, year, nurseCount: nurses.length, warns: warns.length }
     );
-    showToast(`✅ Roster berhasil di-generate! LG: ${lgCount.map((c,i)=>nurses[i]?.name?`${nurses[i].name.split(" ")[0]}:${c}`:"").filter(Boolean).join(", ")}`, "#2E7D32");
+    showToast(`Roster berhasil di-generate! LG: ${lgCount.map((c,i)=>nurses[i]?.name?`${nurses[i].name.split(" ")[0]}:${c}`:"").filter(Boolean).join(", ")}`, "#2E7D32");
   };
 
   /* ─── Live counter per kolom ──────────────────────────────────────── */
@@ -4667,13 +4670,13 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
       a.download = `Jadwal_Petugas_KamarBedah_${BULAN_NAMA_ID[month]}_${year}.xlsx`;
       document.body.appendChild(a); a.click();
       document.body.removeChild(a); URL.revokeObjectURL(url);
-      showToast("✅ File Excel berhasil diunduh!", "#2E7D32");
+      showToast("File Excel berhasil diunduh!", "#2E7D32");
       AmbilLogMedis("LAPORAN_BACKUP","Admin","DOWNLOAD_EXCEL_ROSTER",
         `Excel Roster diunduh: ${BULAN_NAMA_ID[month]} ${year}`,
         { month, year, nurses: nurses.length }
       );
     } catch(e:any) {
-      showToast("⚠ Gagal export Excel: " + (e?.message||"error"), "#D62828");
+      showToast("Gagal export Excel: " + (e?.message||"error"), "#D62828");
     }
   };
 
@@ -4730,10 +4733,10 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
       const stamp  = `${year}-${String(month+1).padStart(2,"0")}`;
       const path   = `${folder}Jadwal_KamarBedah_${stamp}.xlsx`;
       const res = await dropboxUploadBytes(path, await wb.xlsx.writeBuffer() as unknown as ArrayBuffer);
-      if(res.ok) showToast("✅ Roster berhasil di-backup ke Dropbox!", "#0061FF");
-      else showToast("⚠ Gagal backup Dropbox: " + res.msg, "#D62828");
+      if(res.ok) showToast("Roster berhasil di-backup ke Dropbox!", "#0061FF");
+      else showToast("Gagal backup Dropbox: " + res.msg, "#D62828");
     } catch(e:any) {
-      showToast("⚠ Error backup Dropbox: " + (e?.message||"error"), "#D62828");
+      showToast("Error backup Dropbox: " + (e?.message||"error"), "#D62828");
     }
     setSyncingDbx(false);
   };
@@ -4743,7 +4746,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
 
   const cellStyle = (code: string): React.CSSProperties => {
     const base: React.CSSProperties = { textAlign:"center", fontSize:10, fontWeight:700, padding:"2px 0", border:"1px solid #e0e0e0", minWidth:28, cursor:"text" };
-    if(code==="P"||code==="PG") return {...base, background:"#EDE9FE", color:"#4338CA"};
+    if(code==="P"||code==="PG") return {...base, background:"#EDE9FE", color:"#075985"};
     if(code==="S"||code==="SG") return {...base, background:"#FFF3E0", color:"#E65100"};
     if(code==="L"||code==="LG") return {...base, background:"#F3F3F3", color:"#5C677D"};
     if(code==="T") return {...base, background:"#FFEBEE", color:"#C62828"};
@@ -4753,29 +4756,29 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
   /* ── Label & warna indikator status cloud ── */
   const cloudStatusUI: Record<string, {label:string; color:string; bg:string}> = {
     idle:    { label:"● Belum ada perubahan",  color:"#94A3B8", bg:"#F1F5F9" },
-    saving:  { label:"⟳ Menyimpan...",          color:"#7C3AED", bg:"#EDE9FE" },
-    ok:      { label:"✓ Tersimpan di cloud",    color:"#16A34A", bg:"#DCFCE7" },
-    error:   { label:"✕ Gagal sync cloud",      color:"#DC2626", bg:"#FEE2E2" },
-    offline: { label:"⚡ Offline — draft lokal", color:"#D97706", bg:"#FEF3C7" },
+    saving:  { label:"Menyimpan...",          color:"#0284C7", bg:"#EDE9FE" },
+    ok:      { label:"Tersimpan di cloud",    color:"#16A34A", bg:"#DCFCE7" },
+    error:   { label:"Gagal sync cloud",      color:"#DC2626", bg:"#FEE2E2" },
+    offline: { label:"Offline — draft lokal", color:"#D97706", bg:"#FEF3C7" },
   };
   const csUI = cloudStatusUI[cloudStatus];
 
   return (
     <div style={{paddingBottom:40}}>
       {/* Header */}
-      <Row title="🗓 Generator Roster Perawat" right={
+      <Row title="Generator Roster Perawat" right={
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          <Btn sm onClick={generateRoster} color="linear-gradient(135deg,#4C1D95,#7C3AED)">⚡ Generate</Btn>
-          <Btn sm onClick={downloadExcel}  color="linear-gradient(135deg,#6D28D9,#A78BFA)">⬇ Excel</Btn>
-          <Btn sm onClick={syncToCloud}    color="linear-gradient(135deg,#4F46E5,#6366f1)" disabled={syncing}>{syncing?"⏳ Supabase...":"☁ Supabase"}</Btn>
-          <Btn sm onClick={backupToDropbox} color="linear-gradient(135deg,#0061FF,#A78BFA)" disabled={syncingDbx}>{syncingDbx?"⏳ Dropbox...":"📦 Dropbox"}</Btn>
+          <Btn sm onClick={generateRoster} color="linear-gradient(135deg,#4C1D95,#0284C7)"><IkZap size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Generate</Btn>
+          <Btn sm onClick={downloadExcel}  color="linear-gradient(135deg,#0369A1,#A78BFA)">⬇ Excel</Btn>
+          <Btn sm onClick={syncToCloud}    color="linear-gradient(135deg,#0369A1,#0284C7)" disabled={syncing}>{syncing?"Supabase...":"Supabase"}</Btn>
+          <Btn sm onClick={backupToDropbox} color="linear-gradient(135deg,#0061FF,#A78BFA)" disabled={syncingDbx}>{syncingDbx?"Dropbox...":"Dropbox"}</Btn>
         </div>
       }/>
 
       {/* ── Tombol Simpan Jadwal + Indikator Status Cloud ── */}
       <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
-        <button onClick={saveJadwal} disabled={savingJadwal} style={{flex:1,minWidth:200,padding:"13px 20px",background:savingJadwal?"#94A3B8":"linear-gradient(135deg,#7C3AED,#6D28D9)",color:"#fff",border:"none",borderRadius:12,fontSize:14,fontWeight:800,cursor:savingJadwal?"not-allowed":"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(2,132,199,.35)",display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"all .2s"}}>
-          {savingJadwal?<><span style={{animation:"spin 1s linear infinite",display:"inline-block"}}>⟳</span> Menyimpan...</>:<>💾 Simpan Jadwal</>}
+        <button onClick={saveJadwal} disabled={savingJadwal} style={{flex:1,minWidth:200,padding:"13px 20px",background:savingJadwal?"#94A3B8":"linear-gradient(135deg,#0284C7,#0369A1)",color:"#fff",border:"none",borderRadius:12,fontSize:14,fontWeight:800,cursor:savingJadwal?"not-allowed":"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(2,132,199,.35)",display:"flex",alignItems:"center",justifyContent:"center",gap:8,transition:"all .2s"}}>
+          {savingJadwal?<><span style={{animation:"spin 1s linear infinite",display:"inline-block"}}>⟳</span> Menyimpan...</>:<><IkSimpan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Simpan Jadwal</>}
         </button>
         <div style={{background:csUI.bg,color:csUI.color,fontSize:11,fontWeight:700,padding:"8px 12px",borderRadius:10,border:`1px solid ${csUI.color}33`,whiteSpace:"nowrap",flexShrink:0}}>
           {csUI.label}
@@ -4787,9 +4790,9 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
          ══════════════════════════════════════════════════════════════════ */}
       <Card style={{marginBottom:12,background:"#F0FDF4",border:"1px solid #BBF7D0"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-          <SH label="📁 Kelola Data Master Perawat" color="#15803D"/>
+          <SH label="Kelola Data Master Perawat" color="#15803D"/>
           <span style={{fontSize:10,fontWeight:700,background:"#DCFCE7",color:"#15803D",padding:"3px 8px",borderRadius:6,border:"1px solid #BBF7D0",whiteSpace:"nowrap"}}>
-            ☁ Supabase (real-time)
+            <IkCloud size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Supabase (real-time)
           </span>
         </div>
 
@@ -4807,10 +4810,10 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
             </select>
           </LF>
           <button onClick={addToMaster} disabled={masterSaving} style={{padding:"11px 16px",background:masterSaving?"#94A3B8":"linear-gradient(135deg,#16a34a,#15803d)",color:"#fff",border:"none",borderRadius:10,fontSize:12,fontWeight:700,cursor:masterSaving?"not-allowed":"pointer",fontFamily:"inherit",whiteSpace:"nowrap",flexShrink:0,transition:"all .2s"}}>
-            {masterSaving ? "⟳ Menyimpan..." : "+ Tambah"}
+            {masterSaving ? "Menyimpan..." : "+ Tambah"}
           </button>
         </div>
-        {masterFormErr && <div style={{fontSize:11,color:"#DC2626",marginBottom:8,marginTop:-4}}>⚠ {masterFormErr}</div>}
+        {masterFormErr && <div style={{fontSize:11,color:"#DC2626",marginBottom:8,marginTop:-4}}><IkPeringatan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>{masterFormErr}</div>}
 
         {/* Tabel Master */}
         {masterLoading ? (
@@ -4862,7 +4865,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
 
       {/* Konfigurasi Dokumen */}
       <Card style={{marginBottom:12,background:"#F0F9FF",border:"1px solid #DDD6FE"}}>
-        <SH label="📋 Konfigurasi Dokumen" color="#6D28D9"/>
+        <SH label="Konfigurasi Dokumen" color="#0369A1"/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           <LF label="PJ SIRS"><input style={iS} value={pjSirs} onChange={e=>setPjSirs(e.target.value)} placeholder="Nama PJ SIRS"/></LF>
           <LF label="Pembawa HP"><input style={iS} value={pembawHP} onChange={e=>setPembawHP(e.target.value)} placeholder="Nama pembawa HP"/></LF>
@@ -4878,7 +4881,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
       <Card style={{marginBottom:12}}>
         <div style={{fontSize:11,fontWeight:700,color:C.g,marginBottom:8}}>KETERANGAN KODE SHIFT</div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          {[["P","Pagi","#EDE9FE","#4338CA"],["PG","Pagi Siaga","#EDE9FE","#4338CA"],["S","Siang","#FFF3E0","#E65100"],["SG","Siang Siaga","#FFF3E0","#E65100"],["L","Libur","#F3F3F3","#5C677D"],["LG","Libur Siaga","#F3F3F3","#5C677D"],["T","Cuti","#FFEBEE","#C62828"]].map(([k,l,bg,cl])=>(
+          {[["P","Pagi","#EDE9FE","#075985"],["PG","Pagi Siaga","#EDE9FE","#075985"],["S","Siang","#FFF3E0","#E65100"],["SG","Siang Siaga","#FFF3E0","#E65100"],["L","Libur","#F3F3F3","#5C677D"],["LG","Libur Siaga","#F3F3F3","#5C677D"],["T","Cuti","#FFEBEE","#C62828"]].map(([k,l,bg,cl])=>(
             <span key={k} style={{background:bg,color:cl,border:`1px solid ${cl}33`,fontSize:11,fontWeight:700,padding:"3px 8px",borderRadius:6}}>{k} = {l}</span>
           ))}
         </div>
@@ -4887,7 +4890,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
       {/* Warnings */}
       {warnings.length>0 && (
         <Card style={{marginBottom:12,background:"#FFF8E1",border:"1px solid #E07800"}}>
-          <div style={{fontSize:12,fontWeight:700,color:"#E07800",marginBottom:8}}>⚠ Peringatan Formasi Darurat</div>
+          <div style={{fontSize:12,fontWeight:700,color:"#E07800",marginBottom:8}}><IkPeringatan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Peringatan Formasi Darurat</div>
           {warnings.map((w,i)=><div key={i} style={{fontSize:11,color:"#5C4000",marginBottom:4}}>• {w}</div>)}
         </Card>
       )}
@@ -4925,7 +4928,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
                   );
                 })}
                 {/* FITUR 3 — Header Ringkasan Individu (Sumbu Kanan) */}
-                {[["∑P","#4338CA"],["∑PG","#4338CA"],["∑S","#E65100"],["∑SG","#E65100"],["∑L/LG","#5C677D"],["∑T","#C62828"],["∑Total","#374151"]].map(([lbl,cl])=>(
+                {[["∑P","#075985"],["∑PG","#075985"],["∑S","#E65100"],["∑SG","#E65100"],["∑L/LG","#5C677D"],["∑T","#C62828"],["∑Total","#374151"]].map(([lbl,cl])=>(
                   <th key={lbl} style={{padding:"4px 3px",color:"#fff",fontWeight:700,fontSize:9,textAlign:"center",background:"#3730A3",minWidth:30,borderLeft:"2px solid rgba(255,255,255,.3)",whiteSpace:"nowrap"}}>{lbl}</th>
                 ))}
               </tr>
@@ -4977,7 +4980,7 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
 
                     {/* FITUR 3 — Ringkasan individu real-time (Sumbu Kanan) */}
                     {[
-                      {v:rs.P,    bg:"#EDE9FE",cl:"#4338CA"},
+                      {v:rs.P,    bg:"#EDE9FE",cl:"#075985"},
                       {v:rs.PG,   bg:"#DDD6FE",cl:"#5B21B6"},
                       {v:rs.S,    bg:"#FEF3C7",cl:"#D97706"},
                       {v:rs.SG,   bg:"#FDE68A",cl:"#B45309"},
@@ -4997,8 +5000,8 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
             {/* FITUR 4/5 — Summary footer (Sumbu Bawah) — dipertahankan utuh */}
             <tfoot>
               {[
-                {label:"∑ Pagi (P)",         key:"P"   as keyof typeof colSummaries, bg:"#EDE9FE", cl:"#4338CA"},
-                {label:"∑ Pagi Siaga (PG)",  key:"PG"  as keyof typeof colSummaries, bg:"#DDD6FE", cl:"#4338CA"},
+                {label:"∑ Pagi (P)",         key:"P"   as keyof typeof colSummaries, bg:"#EDE9FE", cl:"#075985"},
+                {label:"∑ Pagi Siaga (PG)",  key:"PG"  as keyof typeof colSummaries, bg:"#DDD6FE", cl:"#075985"},
                 {label:"∑ Siang (S)",        key:"S"   as keyof typeof colSummaries, bg:"#FFF3E0", cl:"#E65100"},
                 {label:"∑ Siang Siaga (SG)", key:"SG"  as keyof typeof colSummaries, bg:"#FFE0B2", cl:"#E65100"},
                 {label:"∑ Libur/LG",         key:"LLG" as keyof typeof colSummaries, bg:"#F3F3F3", cl:"#5C677D"},
@@ -5023,8 +5026,8 @@ function ViewRosterGenerator({ showToast, upsertOneToSupa, deleteFromSupa, dbxCf
         <Btn sm onClick={addNurse} color={C.g} outline>+ Tambah Baris Perawat</Btn>
         <span style={{fontSize:11,color:C.tL}}>Total: {nurses.length} perawat</span>
         <div style={{flex:1}}/>
-        <button onClick={saveJadwal} disabled={savingJadwal} style={{padding:"10px 18px",background:savingJadwal?"#94A3B8":"linear-gradient(135deg,#7C3AED,#4C1D95)",color:"#fff",border:"none",borderRadius:10,fontSize:12,fontWeight:700,cursor:savingJadwal?"not-allowed":"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(2,132,199,.3)"}}>
-          {savingJadwal?"⟳ Menyimpan...":"💾 Simpan Jadwal"}
+        <button onClick={saveJadwal} disabled={savingJadwal} style={{padding:"10px 18px",background:savingJadwal?"#94A3B8":"linear-gradient(135deg,#0284C7,#4C1D95)",color:"#fff",border:"none",borderRadius:10,fontSize:12,fontWeight:700,cursor:savingJadwal?"not-allowed":"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(2,132,199,.3)"}}>
+          {savingJadwal?"Menyimpan...":"Simpan Jadwal"}
         </button>
       </div>
       <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
@@ -5097,7 +5100,7 @@ export default function App() {
   if (!SUPA_URL || !SUPA_ANON) {
     return (
       <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:24,background:"#FEF2F2",textAlign:"center"}}>
-        <div style={{fontSize:40,marginBottom:12}}>⚠️</div>
+        <div style={{marginBottom:12,color:"#E07800"}}><IkPeringatan size={44} strokeWidth={1.7}/></div>
         <div style={{fontSize:16,fontWeight:800,color:"#991B1B",marginBottom:8}}>Konfigurasi Server Belum Lengkap</div>
         <div style={{fontSize:13,color:"#7F1D1D",maxWidth:420,lineHeight:1.5}}>
           Aplikasi tidak dapat terhubung ke database (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY belum diset).
@@ -5423,7 +5426,7 @@ export default function App() {
          fokus, berlaku global ke semua input/select/textarea. */
       input,select,textarea{transition:border-color .18s ease,box-shadow .18s ease;}
       input:focus,select:focus,textarea:focus{
-        border-color:#8B5CF6!important;
+        border-color:#0284C7!important;
         box-shadow:0 0 0 3px rgba(59,130,246,.18)!important;
         outline:none;
       }
@@ -5432,7 +5435,7 @@ export default function App() {
          dipicu oleh state global topLoading — lihat App() untuk trigger. */
       @keyframes kbTopBarSlide{0%{left:-30%;width:30%;}50%{left:40%;width:45%;}100%{left:100%;width:30%;}}
       .kb-topbar{position:fixed;top:0;left:0;right:0;height:3px;z-index:99999;overflow:hidden;pointer-events:none;background:transparent;}
-      .kb-topbar span{position:absolute;top:0;height:100%;background:linear-gradient(90deg,#A78BFA,#4F46E5);
+      .kb-topbar span{position:absolute;top:0;height:100%;background:linear-gradient(90deg,#A78BFA,#0369A1);
         border-radius:2px;animation:kbTopBarSlide 1.1s ease-in-out infinite;box-shadow:0 0 8px rgba(59,130,246,.6);}
 
       /* #7 Toast: masuk dengan sedikit "bounce" (spring-like), keluar
@@ -5511,20 +5514,26 @@ export default function App() {
       body{background:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;}
       .kbShell{width:100%;min-height:100vh;}
       .kb-header{padding:12px 16px 0;}
-      .kb-header-inner{margin-bottom:10px;}
+      .kb-header-inner{margin-bottom:10px;flex-wrap:wrap;gap:8px 10px;}
+      .kb-logo{width:64px;height:64px;}
+      .kb-header-right{flex-wrap:wrap;}
+      .kb-header-clock,.kb-header-clock *{color:#0B0F14!important;}
       .kb-tabs{display:flex;overflow-x:auto;-webkit-overflow-scrolling:touch;gap:0;padding-bottom:0;}
       .kb-tab-btn{padding:10px 14px;flex-shrink:0;white-space:nowrap;font-size:15px;font-weight:700;
         transition:transform .18s cubic-bezier(.34,1.56,.64,1);}
       .kb-tab-btn:active{transform:scale(1.18) translateY(-2px);}
       .kb-content{padding:14px 16px 32px;background:#f8fafc;}
       .kb-sidebar{display:none;}
+      .kb-content .kb-home-bg{background:linear-gradient(160deg,#E0F2FE 0%,#F0F9FF 50%,#DBEAFE 100%);border-radius:20px;}
+      .kb-home-bg .kb-kaca{background:rgba(255,255,255,.88)!important;border:1px solid rgba(255,255,255,.95)!important;border-radius:20px!important;box-shadow:0 8px 28px rgba(14,116,180,.12)!important;}
+      @supports (backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px)){.kb-home-bg .kb-kaca{background:rgba(255,255,255,.66)!important;-webkit-backdrop-filter:blur(14px) saturate(160%);backdrop-filter:blur(14px) saturate(160%);}}
       .kb-main{display:block;}
       .kb-hospital{font-size:11px;}
       .kb-title{font-size:20px;}
 
       /* ── Tablet (640px–1023px) ── */
       @media(min-width:640px){
-        body{background:#EDE9FE;}
+        body{background:#E0F2FE;}
         .kbShell{max-width:720px;margin:0 auto;box-shadow:0 4px 24px rgba(59,130,246,.12);}
         input,select,textarea{font-size:15px!important;}
         .kb-tab-btn{padding:11px 18px;font-size:16px;font-weight:800;}
@@ -5532,6 +5541,8 @@ export default function App() {
         .kb-title{font-size:28px;}
         .kb-br{display:none;}
         .kb-header-inner>div:first-child{flex:1;min-width:0;}
+        .kb-header-inner{flex-wrap:nowrap;}
+        .kb-logo{width:76px;height:76px;}
         .kb-header-inner>div:first-child>div:last-child{flex:1;text-align:center;}
         .kb-hospital{font-size:12px;}
       }
@@ -5539,7 +5550,7 @@ export default function App() {
       /* ── Desktop (≥1024px) ── */
       @media(min-width:1024px){
         body{
-          background:linear-gradient(135deg,#2E1065 0%,#4C1D95 45%,#7C3AED 100%)!important;
+          background:linear-gradient(135deg,#E0F2FE 0%,#BAE6FD 45%,#7DD3FC 100%)!important;
           min-height:100vh;
           display:flex;align-items:flex-start;justify-content:center;
           padding:28px 20px;
@@ -5556,26 +5567,28 @@ export default function App() {
         }
         .kb-header{padding:18px 28px 0;}
         .kb-header-inner{margin-bottom:0;}
+        .kb-logo{width:84px;height:84px;}
         .kb-tabs{display:none;}
         .kb-sidebar{
           display:flex;flex-direction:column;
           width:200px;min-width:200px;
-          background:linear-gradient(180deg,#1E1B4B,#2E1065 60%,#1E1B4B);
+          background:linear-gradient(180deg,rgba(255,255,255,.86),rgba(224,242,254,.90));-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);
           padding:16px 10px;gap:4px;position:relative;
-          border-right:1px solid rgba(232,206,143,.14);
+          border-right:1px solid rgba(14,116,180,.16);
           min-height:calc(100vh - 56px - 60px);
         }
         .kb-sidebar-btn{
           display:flex;align-items:center;gap:10px;
           padding:11px 14px;border-radius:10px;
           font-size:14px;font-weight:600;
-          color:rgba(255,255,255,.72);
+          color:#111827;
           background:none;border:none;cursor:pointer;
           text-align:left;width:100%;
           font-family:inherit;transition:all .15s;
         }
-        .kb-sidebar-btn:hover{background:rgba(255,255,255,.10);color:#fff;}
-        .kb-sidebar-btn.active{background:rgba(232,206,143,.14);color:#fff;font-weight:900;box-shadow:inset 3px 0 0 #E8CE8F;}
+        .kb-sidebar-btn:hover{background:rgba(255,255,255,.75);color:#0B0F14;}
+        .kb-sidebar-btn.active{background:rgba(255,255,255,.95);color:#0B0F14;font-weight:900;box-shadow:0 2px 10px rgba(14,116,180,.18),inset 3px 0 0 #0284C7;}
+        .kb-side-glass{}
         .kb-main{display:flex;flex:1;background:#f8fafc;}
         .kb-content{flex:1;padding:24px 32px 40px;overflow-y:auto;background:#f8fafc;}
         .kb-title{font-size:clamp(26px,2.9vw,38px);}
@@ -5933,12 +5946,12 @@ export default function App() {
       }
       if(hasData){
         if(toastTimerRef.current) clearTimeout(toastTimerRef.current);
-        setToast({msg:"✅ Data tersinkron dari Supabase",color:"#2E7D32"});
+        setToast({msg:"Data tersinkron dari Supabase",color:"#2E7D32"});
         toastTimerRef.current = setTimeout(()=>{ setToast(null); toastTimerRef.current=null; },3200);
       }
     } catch(e){
       if(toastTimerRef.current) clearTimeout(toastTimerRef.current);
-      setToast({msg:"⚠ Koneksi Supabase gagal — mode offline",color:C.w});
+      setToast({msg:"Koneksi Supabase gagal — mode offline",color:C.w});
       toastTimerRef.current = setTimeout(()=>{ setToast(null); toastTimerRef.current=null; }, 4000);
     } finally {
       /* PENAMBAHAN #3 (skeleton loading): SELALU diset false di sini —
@@ -5993,7 +6006,7 @@ export default function App() {
     if (pending.length === 0) return;
     flushOfflineQueueRef.current = true;
     try {
-      showToast(`🔄 Menyinkronkan ${pending.length} data yang tersimpan offline…`, C.tL);
+      showToast(`Menyinkronkan ${pending.length} data yang tersimpan offline…`, C.tL);
       let successCount = 0;
       for (const item of pending) {
         const res = await upsertOneToSupa("kb_operasi", item.payload);
@@ -6003,8 +6016,8 @@ export default function App() {
       if (successCount > 0) {
         showToast(
           remaining > 0
-            ? `✓ ${successCount} data tersinkron. ${remaining} masih tertunda (akan dicoba lagi).`
-            : `✓ Semua ${successCount} data offline berhasil tersinkron ke database.`,
+            ? `${successCount} data tersinkron. ${remaining} masih tertunda (akan dicoba lagi).`
+            : `Semua ${successCount} data offline berhasil tersinkron ke database.`,
           C.s
         );
       }
@@ -6046,13 +6059,13 @@ export default function App() {
           setPinAdmin(hashedAdmin);
           setPinPerawat(hashedPerawat);
           await SUPA_CLIENT.from("kamar_bedah_config").upsert({key:"pins",value:JSON.stringify({admin:hashedAdmin,perawat:hashedPerawat})},{onConflict:"key"});
-          showToast("✓ PIN tersimpan ke Supabase — berlaku di semua perangkat",C.s);
+          showToast("PIN tersimpan ke Supabase — berlaku di semua perangkat",C.s);
         }catch(e){
           // Jika hashing/penyimpanan gagal, tetap izinkan login sesi ini dengan PIN
           // plaintext di memori lokal agar admin tidak terkunci dari sistem.
           setPinAdmin(newAdminPin);
           setPinPerawat(newPerawatPin);
-          showToast("✓ PIN disimpan (Supabase error, coba lagi)",C.w);
+          showToast("PIN disimpan (Supabase error, coba lagi)",C.w);
         }
       })();
     }
@@ -6089,7 +6102,7 @@ export default function App() {
     setSupaStatus(res);
     if(res.ok) {
       setSupaCfg((p:any)=>({...p,lastBackup:fNow()}));
-      showToast("✓ Backup Supabase berhasil","#3ECF8E");
+      showToast("Backup Supabase berhasil","#3ECF8E");
       AmbilLogMedis("LAPORAN_BACKUP","Sistem","BACKUP_SUPABASE_SUKSES","Backup Supabase berhasil",{waktu:fNow()});
     } else {
       showToast(res.msg,C.d);
@@ -6104,8 +6117,8 @@ export default function App() {
     const res = await supabaseRestore(supaCfg, SUPA_CLIENT);
     setSupaStatus({ok:res.ok, msg:res.msg});
     if(res.ok && res.data) {
-      if(res.data.ops) { setOps(res.data.ops); showToast("✓ Jadwal operasi dipulihkan dari Supabase","#3ECF8E"); }
-      else showToast("⚠ Data operasi tidak ditemukan di backup","#E65100");
+      if(res.data.ops) { setOps(res.data.ops); showToast("Jadwal operasi dipulihkan dari Supabase","#3ECF8E"); }
+      else showToast("Data operasi tidak ditemukan di backup","#E65100");
     } else { showToast(res.msg, C.d); }
     setSupaBU(false);
   }, [supaCfg]);
@@ -6118,7 +6131,7 @@ export default function App() {
     if(res.ok && res.data) {
       if(res.data.lemburPegawai) setLemburPegawai(res.data.lemburPegawai);
       if(res.data.lemburData) setLemburData(res.data.lemburData);
-      showToast("✓ Data lembur dipulihkan dari Supabase","#3ECF8E");
+      showToast("Data lembur dipulihkan dari Supabase","#3ECF8E");
     } else { showToast(res.msg, C.d); }
     setSupaBU(false);
   }, [supaCfg]);
@@ -6131,7 +6144,7 @@ export default function App() {
     if(res.ok && res.data) {
       if(res.data.monitoringEntries) setMonitoringEntries(res.data.monitoringEntries);
       if(res.data.monitoringCfg) setMonitoringCfg(res.data.monitoringCfg);
-      showToast("✓ Data monitoring dipulihkan dari Supabase","#3ECF8E");
+      showToast("Data monitoring dipulihkan dari Supabase","#3ECF8E");
     } else { showToast(res.msg, C.d); }
     setSupaBU(false);
   }, [supaCfg]);
@@ -6167,7 +6180,7 @@ export default function App() {
       const w:any = (tabel === "kb_laporan_kepala_jaga" || tabel === "kb_beset_jadwal") ? await (async()=>{ try { const ts=new Date().toISOString(); const {error}=await SUPA_CLIENT.from(tabel).upsert(hilang.map((r:any)=>({id:String(r.id), data:r, updated_at:r.updated_at||ts})),{onConflict:"id"}); return error?{ok:false,error:error.message}:{ok:true}; } catch(e:any){ return {ok:false,error:e?.message||"error"}; } })() : await upsertBulkToSupa(tabel, hilang);
       ringkas.push(w.ok ? `${label}: ${hilang.length} dikembalikan` : `${label}: gagal (${w.error})`);
     }
-    showToast("✓ "+ringkas.join(" • "), "#3ECF8E");
+    showToast(""+ringkas.join(" • "), "#3ECF8E");
     setSupaBU(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supaCfg]);
@@ -6185,7 +6198,7 @@ export default function App() {
       if(res.data.lemburData) setLemburData(res.data.lemburData);
       if(res.data.monitoringEntries) setMonitoringEntries(res.data.monitoringEntries);
       if(res.data.monitoringCfg) setMonitoringCfg(res.data.monitoringCfg);
-      showToast("✓ Semua data berhasil dipulihkan dari Supabase","#3ECF8E");
+      showToast("Semua data berhasil dipulihkan dari Supabase","#3ECF8E");
     } else { showToast(res.msg, C.d); }
     setSupaBU(false);
   }, [supaCfg]);
@@ -6205,7 +6218,7 @@ export default function App() {
     const path = `${folder}Monitoring_${todayDate()}.xlsx`;
     const res = await dropboxUploadExcel(path, wb);
     setDbxStatus(res);
-    if(res.ok){ setDbxCfg((p:DropboxConfig)=>({...p,lastBackup:fNow()})); showToast("✓ Excel Monitoring berhasil diupload ke Dropbox","#6D28D9"); }
+    if(res.ok){ setDbxCfg((p:DropboxConfig)=>({...p,lastBackup:fNow()})); showToast("Excel Monitoring berhasil diupload ke Dropbox","#0369A1"); }
     else showToast(res.msg, C.d);
     setDbxBacking(false);
   }, [dbxCfg]);
@@ -6219,7 +6232,7 @@ export default function App() {
     setDbxStatus(res);
     if(res.ok) {
       setDbxCfg(p=>({...p,lastBackup:fNow()}));
-      showToast("✓ Backup Dropbox berhasil","#0061FF");
+      showToast("Backup Dropbox berhasil","#0061FF");
       AmbilLogMedis("LAPORAN_BACKUP","Sistem","BACKUP_DROPBOX_SUKSES","Backup Dropbox berhasil",{path:dbxCfg.path,waktu:fNow()});
     } else {
       showToast(res.msg, C.d);
@@ -6243,7 +6256,7 @@ export default function App() {
     const path = `${folder}Operasi_${todayDate()}.xlsx`;
     const res = await dropboxUploadExcel(path, wb);
     setDbxStatus(res);
-    if(res.ok){ setDbxCfg((p:DropboxConfig)=>({...p,lastBackup:fNow()})); showToast("✓ Excel Operasi berhasil diupload ke Dropbox","#3730A3"); }
+    if(res.ok){ setDbxCfg((p:DropboxConfig)=>({...p,lastBackup:fNow()})); showToast("Excel Operasi berhasil diupload ke Dropbox","#3730A3"); }
     else showToast(res.msg, C.d);
     setDbxBacking(false);
   }, [dbxCfg]);
@@ -6274,7 +6287,7 @@ export default function App() {
     const path = `${folder}Lembur_${todayDate()}.xlsx`;
     const res = await dropboxUploadExcel(path, wb);
     setDbxStatus(res);
-    if(res.ok){ setDbxCfg((p:DropboxConfig)=>({...p,lastBackup:fNow()})); showToast("✓ Excel Lembur berhasil diupload ke Dropbox","#3730A3"); }
+    if(res.ok){ setDbxCfg((p:DropboxConfig)=>({...p,lastBackup:fNow()})); showToast("Excel Lembur berhasil diupload ke Dropbox","#3730A3"); }
     else showToast(res.msg, C.d);
     setDbxBacking(false);
   }, [dbxCfg]);
@@ -6287,7 +6300,7 @@ export default function App() {
     if(res.ok && res.data) {
       if(res.data.ops) setOps(res.data.ops);
       setDbxCfg(p=>({...p,lastBackup:fNow()}));
-      showToast("✓ Jadwal operasi berhasil dipulihkan dari Dropbox","#0061FF");
+      showToast("Jadwal operasi berhasil dipulihkan dari Dropbox","#0061FF");
     } else { showToast(res.msg, C.d); }
     setDbxBacking(false);
   }, [dbxCfg]);
@@ -6301,7 +6314,7 @@ export default function App() {
       if(res.data.lemburPegawai) setLemburPegawai(res.data.lemburPegawai);
       if(res.data.lemburData) setLemburData(res.data.lemburData);
       setDbxCfg(p=>({...p,lastBackup:fNow()}));
-      showToast("✓ Data lembur berhasil dipulihkan dari Dropbox","#0061FF");
+      showToast("Data lembur berhasil dipulihkan dari Dropbox","#0061FF");
     } else { showToast(res.msg, C.d); }
     setDbxBacking(false);
   }, [dbxCfg]);
@@ -6443,7 +6456,7 @@ export default function App() {
        Akibatnya: (a) berpindah ke Tab Jadwal SEBELUM setOps sempat
        terpanggil dari .then(), sehingga pasien baru sempat tidak terlihat
        sesaat — terlihat seperti "belum masuk"; (b) kalau salah satu upsert
-       GAGAL (network drop dsb), toast UTAMA tetap bilang "✓ semua
+       GAGAL (network drop dsb), toast UTAMA tetap bilang "semua
        tersimpan" karena tidak pernah menunggu hasil sebenarnya — pasien itu
        tidak akan pernah muncul di Jadwal meski perawat sudah lihat toast
        sukses. Sekarang: SEMUA upsert ditunggu (Promise.allSettled) dulu,
@@ -6512,7 +6525,7 @@ export default function App() {
       });
     }
     failedOps.forEach(({ newOp, error }) => {
-      showToast(`⚠ Gagal menyimpan "${newOp?.patient || "(tanpa nama)"}" ke Supabase: ${error}`, C.d);
+      showToast(`Gagal menyimpan "${newOp?.patient || "(tanpa nama)"}" ke Supabase: ${error}`, C.d);
     });
 
     if (skippedDup > 0) {
@@ -6527,17 +6540,17 @@ export default function App() {
 
     const jumlahDugaanCyto = savedOps.filter(o=>o.specialNeeds?.includes("CYTO")).length;
     const bagianDup = skippedDup>0 ? ` (${skippedDup} entri dilewati karena sudah terdaftar sebelumnya)` : "";
-    const bagianGagal = failedOps.length>0 ? ` — ⚠ ${failedOps.length} entri GAGAL tersimpan (lihat notifikasi merah), coba scan ulang untuk entri tsb.` : "";
-    const bagianQueued = queuedCount>0 ? ` — 📴 ${queuedCount} entri disimpan LOKAL (offline), akan otomatis sinkron ke database saat koneksi kembali.` : "";
+    const bagianGagal = failedOps.length>0 ? ` — ${failedOps.length} entri GAGAL tersimpan (lihat notifikasi merah), coba scan ulang untuk entri tsb.` : "";
+    const bagianQueued = queuedCount>0 ? ` — ${queuedCount} entri disimpan LOKAL (offline), akan otomatis sinkron ke database saat koneksi kembali.` : "";
     if (newOps.length === 0 && skippedDup > 0) {
-      showToast(`⚠ Semua ${skippedDup} entri hasil scan sudah terdaftar sebelumnya — tidak ada yang disimpan (cegah duplikat).`, C.w);
+      showToast(`Semua ${skippedDup} entri hasil scan sudah terdaftar sebelumnya — tidak ada yang disimpan (cegah duplikat).`, C.w);
     } else if (savedOps.length === 0) {
-      showToast(`⚠ Tidak ada pasien yang berhasil tersimpan.${bagianGagal || " Periksa koneksi lalu coba lagi."}`, C.d);
+      showToast(`Tidak ada pasien yang berhasil tersimpan.${bagianGagal || " Periksa koneksi lalu coba lagi."}`, C.d);
     } else {
       showToast(
         jumlahDugaanCyto>0
-          ? `✓ ${savedOps.length} pasien otomatis tersimpan${bagianDup}${bagianGagal}${bagianQueued} — ⚠ ${jumlahDugaanCyto} di antaranya DIDUGA CYTO, segera verifikasi manual!`
-          : `✓ ${savedOps.length} pasien otomatis tersimpan${bagianDup}${bagianGagal}${bagianQueued} — mohon lengkapi & periksa data yang belum lengkap`,
+          ? `${savedOps.length} pasien otomatis tersimpan${bagianDup}${bagianGagal}${bagianQueued} — ${jumlahDugaanCyto} di antaranya DIDUGA CYTO, segera verifikasi manual!`
+          : `${savedOps.length} pasien otomatis tersimpan${bagianDup}${bagianGagal}${bagianQueued} — mohon lengkapi & periksa data yang belum lengkap`,
         (jumlahDugaanCyto>0 || failedOps.length>0) ? C.d : C.s
       );
     }
@@ -6563,8 +6576,8 @@ export default function App() {
     const clean={...opForm,opType:(opForm.opType||"elektif") as "elektif"|"semi"|"cyto",patient:sanitize(opForm.patient||""),diagnosis:sanitize(opForm.diagnosis||""),procedure:sanitize(opForm.procedure||""),ruangAsal:sanitize(opForm.ruangAsal||""),allergy:sanitize(opForm.allergy||"Tidak Ada"),specialNeeds:sanitize(opForm.specialNeeds||""),assistantNurse:sanitize(opForm.assistantNurse||""),rrKatim:sanitize(opForm.rrKatim||"")};
     const dupSameDay=ops.some((o:any)=>o.id!==editingOp?.id&&o.patient&&o.patient.toLowerCase().trim()===clean.patient.toLowerCase().trim()&&o.date===clean.date);
     const dup=ops.some((o:any)=>o.id!==editingOp?.id&&o.patient&&o.patient.toLowerCase().trim()===clean.patient.toLowerCase()&&o.date===clean.date&&o.time===clean.time);
-    if(dupSameDay&&!dup){showToast(`⚠ Perhatian: Pasien "${clean.patient}" sudah terdaftar pada ${clean.date} (jam berbeda)`,C.w);}
-    if(dup){setDupWarn(true);showToast(`⚠ Pasien "${clean.patient}" sudah terdaftar pada tanggal & jam yang sama!`,C.d);return;}
+    if(dupSameDay&&!dup){showToast(`Perhatian: Pasien "${clean.patient}" sudah terdaftar pada ${clean.date} (jam berbeda)`,C.w);}
+    if(dup){setDupWarn(true);showToast(`Pasien "${clean.patient}" sudah terdaftar pada tanggal & jam yang sama!`,C.d);return;}
     setDupWarn(false);
     /* SARAN PENINGKATAN #3 (audit trail OCR): kalau entri ini berasal dari
        scan OCR (ocrOriginalValues terisi — lihat applyOcrResult di
@@ -6628,19 +6641,19 @@ export default function App() {
            UI secara optimistic (sudah di-setOps di atas), dengan pesan
            jujur bahwa ini baru tersimpan lokal. */
         enqueueOfflineOp(updatedOp.id, updatedOp);
-        showToast("📴 Offline — perubahan tersimpan LOKAL, akan otomatis sinkron saat koneksi kembali.", "#E65100");
+        showToast("Offline — perubahan tersimpan LOKAL, akan otomatis sinkron saat koneksi kembali.", "#E65100");
       } else {
         upsertOneToSupa("kb_operasi", updatedOp).then((res:any)=>{
           if(!res?.ok) {
             if (!navigator.onLine) {
               enqueueOfflineOp(updatedOp.id, updatedOp);
-              showToast("📴 Koneksi terputus — perubahan tersimpan LOKAL, akan otomatis sinkron saat online.", "#E65100");
+              showToast("Koneksi terputus — perubahan tersimpan LOKAL, akan otomatis sinkron saat online.", "#E65100");
             } else {
               setOps(p=>p.map(o=>o.id===editingOp.id ? editingOp : o));
-              showToast(`⚠ Gagal menyimpan ke Supabase: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
+              showToast(`Gagal menyimpan ke Supabase: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
             }
           } else {
-            showToast("✓ Jadwal diperbarui & tersimpan ke Supabase",C.s);
+            showToast("Jadwal diperbarui & tersimpan ke Supabase",C.s);
           }
         });
       }
@@ -6662,20 +6675,20 @@ export default function App() {
       if (!navigator.onLine) {
         enqueueOfflineOp(newOp.id, newOp);
         setOps(p=>{ if(p.some((o:any)=>o.id===newOp.id)) return p; return [...p, newOp]; });
-        showToast("📴 Offline — pasien tersimpan LOKAL, akan otomatis sinkron saat koneksi kembali.", "#E65100");
+        showToast("Offline — pasien tersimpan LOKAL, akan otomatis sinkron saat koneksi kembali.", "#E65100");
       } else {
         upsertOneToSupa("kb_operasi", newOp).then((res:any)=>{
           if(!res?.ok) {
             if (!navigator.onLine) {
               enqueueOfflineOp(newOp.id, newOp);
               setOps(p=>{ if(p.some((o:any)=>o.id===newOp.id)) return p; return [...p, newOp]; });
-              showToast("📴 Koneksi terputus — pasien tersimpan LOKAL, akan otomatis sinkron saat online.", "#E65100");
+              showToast("Koneksi terputus — pasien tersimpan LOKAL, akan otomatis sinkron saat online.", "#E65100");
             } else {
-              showToast(`⚠ Gagal menyimpan ke Supabase: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
+              showToast(`Gagal menyimpan ke Supabase: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
             }
           } else {
             setOps(p=>{ if(p.some((o:any)=>o.id===newOp.id)) return p; return [...p, newOp]; });
-            showToast("✓ Jadwal tersimpan ke Supabase",C.s);
+            showToast("Jadwal tersimpan ke Supabase",C.s);
             fireConfettiBurst();
           }
         });
@@ -6701,9 +6714,9 @@ export default function App() {
     if(!res?.ok) {
       /* Rollback jika DB gagal */
       if(op) setOps(p=>[...p, op]);
-      showToast(`⚠ Gagal menghapus dari Supabase: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
+      showToast(`Gagal menghapus dari Supabase: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
     } else {
-      showToast("✓ Jadwal dihapus & tersinkron",C.d);
+      showToast("Jadwal dihapus & tersinkron",C.d);
     }
   };
   const sendReminder=(op:any,type:string)=>{
@@ -6720,13 +6733,13 @@ export default function App() {
         /* FIX AUDIT #26 (LOW — Rollback Tidak Lengkap): sebelumnya kalau
            upsertOneToSupa gagal, ops di-rollback tapi entri notifs yang
            sudah ditambahkan optimistically TIDAK ikut dihapus — log UI
-           tetap menampilkan "✓ berhasil" walau sebenarnya gagal tersimpan.
+           tetap menampilkan "berhasil" walau sebenarnya gagal tersimpan.
            Sekarang notifId dilacak agar entri log ikut dihapus saat rollback. */
         setNotifs(p=>p.filter((n:any)=>n.id!==notifId));
-        showToast(`⚠ Gagal mencatat pengingat: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
+        showToast(`Gagal mencatat pengingat: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
       }
     });
-    showToast("✓ Pengingat dicatat & tersinkron");
+    showToast("Pengingat dicatat & tersinkron");
   };
   const getPhone = (name: string) => { const s=staff.find(x=>x.name===name); return s&&s.phone||null; };
   const addReq   = (opId: string) => {
@@ -6737,9 +6750,9 @@ export default function App() {
     /* Optimistic update */
     setOps(p=>p.map((o:any)=>o.id===opId ? updatedOp : o));
     upsertOneToSupa("kb_operasi", updatedOp).then(res=>{
-      if(!res?.ok){ setOps(p=>p.map((o:any)=>o.id===opId ? targetOp : o)); showToast(`⚠ Gagal menyimpan permintaan: ${res?.error||"kesalahan tidak diketahui"}`,C.d); }
+      if(!res?.ok){ setOps(p=>p.map((o:any)=>o.id===opId ? targetOp : o)); showToast(`Gagal menyimpan permintaan: ${res?.error||"kesalahan tidak diketahui"}`,C.d); }
     });
-    setReqText(""); setReqOpId(null); showToast("✓ Permintaan disimpan & tersinkron");
+    setReqText(""); setReqOpId(null); showToast("Permintaan disimpan & tersinkron");
   };
   const delReq = (opId: string,rId: string) => {
     const targetOp = ops.find((o:any)=>o.id===opId);
@@ -6747,7 +6760,7 @@ export default function App() {
     const updatedOp = {...targetOp, requests:(targetOp.requests||[]).filter((r:any)=>r.id!==rId)};
     setOps(p=>p.map((o:any)=>o.id===opId ? updatedOp : o));
     upsertOneToSupa("kb_operasi", updatedOp).then(res=>{
-      if(!res?.ok){ setOps(p=>p.map((o:any)=>o.id===opId ? targetOp : o)); showToast(`⚠ Gagal menghapus permintaan: ${res?.error||"kesalahan tidak diketahui"}`,C.d); }
+      if(!res?.ok){ setOps(p=>p.map((o:any)=>o.id===opId ? targetOp : o)); showToast(`Gagal menghapus permintaan: ${res?.error||"kesalahan tidak diketahui"}`,C.d); }
     });
   };
 
@@ -6770,7 +6783,7 @@ export default function App() {
      TABS di-memoize bergantung hanya pada role — stabil selama role tidak berubah. */
   const handleTabChange = useCallback((k: string) => {
     if(k === "roster_gen" && role !== "admin"){
-      showToast("⚠️ Akses Ditolak: Fitur ini memerlukan hak akses Admin.", C.d);
+      showToast("Akses Ditolak: Fitur ini memerlukan hak akses Admin.", C.d);
       AmbilLogMedis("KEAMANAN", "Perawat", "AKSES_DITOLAK",
         `Akses ditolak ke tab roster_gen (role: ${role})`, { tab: k, role });
       setTab("home");
@@ -6787,7 +6800,7 @@ export default function App() {
     const k = e.currentTarget.dataset.tab;
     if(!k) return;
     if(k === "roster_gen" && role !== "admin"){
-      showToast("⚠️ Akses Ditolak: Fitur ini memerlukan hak akses Admin.", C.d);
+      showToast("Akses Ditolak: Fitur ini memerlukan hak akses Admin.", C.d);
       AmbilLogMedis("KEAMANAN", "Perawat", "AKSES_DITOLAK",
         `Akses ditolak ke tab roster_gen via bottom nav (role: ${role})`, { tab: k, role });
       setTab("home");
@@ -6825,7 +6838,7 @@ export default function App() {
           {/* #1 Aurora Background versi SUBTLE (opacity rendah) — benang
               merah visual dengan layar login, tanpa ganggu keterbacaan
               data dashboard. */}
-          <AuroraBackground opacity={0.12}/>
+          <AuroraBackground opacity={0}/>
           <div style={{position:"relative",zIndex:1}}>
           <BesetBanner setTab={setTab}/>
 
@@ -6833,7 +6846,7 @@ export default function App() {
 
           {/* Operasi hari ini ringkas */}
           <Card className="kb-kaca" style={{marginBottom:16}}>
-            <SH label="📋 Operasi Hari Ini" color="#5B4BCB"/>
+            <SH label="Operasi Hari Ini" color="#0369A1"/>
             {(() => {
               const todayOps = [...ops.filter((o:any)=>o.date===todayDate()&&o.status!=="batal")]
                 .sort((a:any,b:any)=>{
@@ -6862,18 +6875,18 @@ export default function App() {
                         const closed={...o,status:"done",updated_at:nowIso};
                         setOps((p:any[])=>p.map((x:any)=>x.id===o.id?closed:x));
                         AmbilLogMedis("JADWAL_OPERASI","Sistem","TUTUP_OTOMATIS_SEBELUM_MULAI","Operasi ditandai selesai karena operasi berikutnya dimulai di kamar yang sama",{id:o.id,room:o.room,next:op.id});
-                        upsertOneToSupa("kb_operasi",closed).then((res:any)=>{ if(!res?.ok){ setOps((p:any[])=>p.map((x:any)=>x.id===o.id?o:x)); showToast(`⚠ Gagal menutup operasi sebelumnya: ${res?.error||"error"}`,C.d); } });
+                        upsertOneToSupa("kb_operasi",closed).then((res:any)=>{ if(!res?.ok){ setOps((p:any[])=>p.map((x:any)=>x.id===o.id?o:x)); showToast(`Gagal menutup operasi sebelumnya: ${res?.error||"error"}`,C.d); } });
                       });
                     }
                   }
                   const upd={...op,status:newStatus,updated_at:new Date().toISOString()};
                   setOps((p:any[])=>p.map((o:any)=>o.id===op.id?upd:o));
-                  upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any[])=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`⚠ Gagal: ${res?.error||"error"}`,C.d); } });
+                  upsertOneToSupa("kb_operasi",upd).then((res:any)=>{ if(!res?.ok){ setOps((p:any[])=>p.map((o:any)=>o.id===op.id?op:o)); showToast(`Gagal: ${res?.error||"error"}`,C.d); } });
                 };
                 /* Auto-minimize: pasien selesai */
                 if(isDone) return (
                   <div key={op.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 10px",marginBottom:5,borderRadius:9,background:"#f1f5f9",opacity:.4}}>
-                    <span style={{fontSize:11}}>✅</span>
+                    <KbIkoSelesai size={14} strokeWidth={2.2} style={{color:"#16A34A",flexShrink:0}}/>
                     <span style={{fontSize:12,color:"#475569",flex:1,textDecoration:"line-through",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{maskName(op.patient,privacyMode)} — {op.time}</span>
                     <Bdg label="Selesai" color={C.s} bg={C.sBg}/>
                   </div>
@@ -6893,12 +6906,12 @@ export default function App() {
                     <div style={{display:"flex",gap:5,flexShrink:0}}>
                       {op.status==="scheduled" && (
                         <button onClick={()=>doUpdate("ongoing")} style={{background:"#22c55e",color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(34,197,94,.35)"}}>
-                          ▶ Mulai
+                          <KbIkoPlay size={14} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:4}}/>Mulai
                         </button>
                       )}
                       {op.status==="ongoing" && (
                         <button onClick={()=>doUpdate("done")} style={{background:"#ef4444",color:"#fff",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(239,68,68,.35)"}}>
-                          ✓ Selesai
+                          <KbIkoCek size={14} strokeWidth={2.6} style={{verticalAlign:"-2px",marginRight:4}}/>Selesai
                         </button>
                       )}
                     </div>
@@ -6914,30 +6927,30 @@ export default function App() {
             {/* Sel besar: Operasi Hari Ini — #2 SpotlightCard (cahaya
                 mengikuti kursor saat hover) */}
             <GlareHover>
-            <SpotlightCard style={{background:"linear-gradient(135deg,rgba(99,102,241,.24),rgba(59,130,246,.18))",borderRadius:18,padding:"20px 18px",boxShadow:"6px 6px 16px rgba(148,163,184,.16), -4px -4px 12px rgba(255,255,255,.7)",border:"1px solid #DDD6FE",display:"flex",flexDirection:"column",justifyContent:"center"}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#4338CA",letterSpacing:.5,textTransform:"uppercase",opacity:.8,marginBottom:6}}>
+            <SpotlightCard style={{background:"linear-gradient(135deg,rgba(255,255,255,.90),rgba(186,230,253,.55))",borderRadius:20,padding:"20px 18px",boxShadow:"0 8px 28px rgba(14,116,180,.14)",border:"1px solid rgba(255,255,255,.95)",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+              <div style={{fontSize:11,fontWeight:800,color:"#1F2937",letterSpacing:.5,textTransform:"uppercase",marginBottom:6}}>
                 {/* #8 DecryptedText: label "teracak lalu terbentuk" saat
                     pertama muncul — #7 ShinyText: highlight berkilau */}
-                <ShinyText style={{color:"#4338CA"}}><DecryptedText text="Operasi"/></ShinyText>
+                <ShinyText style={{color:"#1F2937"}}><DecryptedText text="Operasi"/></ShinyText>
               </div>
-              <div style={{fontSize:44,fontWeight:900,color:"#4338CA",lineHeight:1}}><AnimatedNumber value={todayOpsCount}/></div>
-              <div style={{fontSize:12,color:"#5B5FA8",marginTop:6,fontWeight:600}}>Terjadwal Hari Ini</div>
+              <div style={{fontSize:44,fontWeight:900,color:"#0B0F14",lineHeight:1}}><AnimatedNumber value={todayOpsCount}/></div>
+              <div style={{fontSize:12,color:"#1F2937",marginTop:6,fontWeight:700}}>Terjadwal Hari Ini</div>
             </SpotlightCard>
             </GlareHover>
             {/* 2 sel kecil bertumpuk — juga SpotlightCard */}
             <div style={{display:"flex",flexDirection:"column",gap:12}}>
-              <SpotlightCard spotlightColor={rtStatus==="online"?"rgba(34,197,94,.25)":"rgba(250,204,21,.25)"} style={{background:rtStatus==="online"?"linear-gradient(135deg,#F1F8F4,#E8F5E9)":"linear-gradient(135deg,#FFF8F0,#FFF3E0)",borderRadius:14,padding:"12px 14px",boxShadow:"4px 4px 12px rgba(148,163,184,.14), -3px -3px 8px rgba(255,255,255,.7)",border:`1px solid ${rtStatus==="online"?"#C8E6C9":"#FFE0B2"}`,flex:1,display:"flex",alignItems:"center",gap:10}}>
-                <div style={{fontSize:20}}>{rtStatus==="online"?"🟢":"🟡"}</div>
+              <SpotlightCard spotlightColor={rtStatus==="online"?"rgba(34,197,94,.25)":"rgba(250,204,21,.25)"} style={{background:"rgba(255,255,255,.88)",borderRadius:16,padding:"12px 14px",boxShadow:"0 6px 20px rgba(14,116,180,.12)",border:`1px solid ${rtStatus==="online"?"rgba(34,197,94,.45)":"rgba(245,158,11,.55)"}`,flex:1,display:"flex",alignItems:"center",gap:10}}>
+                <span style={{width:12,height:12,borderRadius:"50%",flexShrink:0,display:"inline-block",background:rtStatus==="online"?"#16A34A":"#F59E0B",boxShadow:rtStatus==="online"?"0 0 0 4px rgba(34,197,94,.20)":"0 0 0 4px rgba(245,158,11,.22)"}}/>
                 <div>
-                  <div style={{fontSize:11,fontWeight:700,color:rtStatus==="online"?C.s:C.w}}>{rtStatus==="online"?"Online":"Offline"}</div>
-                  <div style={{fontSize:9,color:"#5C677D"}}>Cloud Sync</div>
+                  <div style={{fontSize:12,fontWeight:800,color:"#0B0F14"}}>{rtStatus==="online"?"Online":"Offline"}</div>
+                  <div style={{fontSize:10,color:"#1F2937"}}>Cloud Sync</div>
                 </div>
               </SpotlightCard>
-              <SpotlightCard spotlightColor="rgba(168,85,247,.25)" style={{background:"linear-gradient(135deg,rgba(139,92,246,.26),rgba(99,102,241,.18))",borderRadius:14,padding:"12px 14px",boxShadow:"4px 4px 12px rgba(148,163,184,.14), -3px -3px 8px rgba(255,255,255,.7)",border:"1px solid #D1C4E9",flex:1,display:"flex",alignItems:"center",gap:10}}>
-                <div style={{fontSize:20,fontWeight:900,color:"#512DA8"}}><AnimatedNumber value={staff.length}/></div>
+              <SpotlightCard spotlightColor="rgba(14,165,233,.25)" style={{background:"rgba(255,255,255,.88)",borderRadius:16,padding:"12px 14px",boxShadow:"0 6px 20px rgba(14,116,180,.12)",border:"1px solid rgba(14,116,180,.22)",flex:1,display:"flex",alignItems:"center",gap:10}}>
+                <div style={{fontSize:20,fontWeight:900,color:"#0B0F14"}}><AnimatedNumber value={staff.length}/></div>
                 <div>
-                  <div style={{fontSize:11,fontWeight:700,color:"#512DA8"}}>Staf</div>
-                  <div style={{fontSize:9,color:"#5C677D"}}>Terdaftar</div>
+                  <div style={{fontSize:12,fontWeight:800,color:"#0B0F14"}}>Staf</div>
+                  <div style={{fontSize:10,color:"#1F2937"}}>Terdaftar</div>
                 </div>
               </SpotlightCard>
             </div>
@@ -6957,24 +6970,24 @@ export default function App() {
           <ScrollReveal delay={140}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
             <TiltCard maxTilt={4}>
-              <MagneticButton onClick={()=>setTab("daftar")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#8B5CF6,#6366F1)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(2,132,199,.35)",textAlign:"center",fontFamily:"inherit"}}>
-                📝 Daftar Operasi
+              <MagneticButton onClick={()=>setTab("daftar")} strength={8} style={{width:"100%",background:"rgba(255,255,255,.88)",color:"#0B0F14",border:"1px solid rgba(14,116,180,.28)",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 6px 20px rgba(14,116,180,.16)",textAlign:"center",fontFamily:"inherit"}}>
+                <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:8}}><KbIkoDaftar size={18} strokeWidth={2.2}/>Daftar Operasi</span>
               </MagneticButton>
             </TiltCard>
             <TiltCard maxTilt={4}>
-              <MagneticButton onClick={()=>setTab("laporan")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#4F46E5,#7C3AED)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(29,78,216,.30)",textAlign:"center",fontFamily:"inherit"}}>
-                📄 Laporan Kepala Jaga
+              <MagneticButton onClick={()=>setTab("laporan")} strength={8} style={{width:"100%",background:"rgba(255,255,255,.88)",color:"#0B0F14",border:"1px solid rgba(14,116,180,.28)",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 6px 20px rgba(14,116,180,.16)",textAlign:"center",fontFamily:"inherit"}}>
+                <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:8}}><KbIkoLaporan size={18} strokeWidth={2.2}/>Laporan Kepala Jaga</span>
               </MagneticButton>
             </TiltCard>
             <TiltCard maxTilt={4}>
-              <MagneticButton onClick={()=>setTab("jadwal")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#4338CA,#8B5CF6)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(30,58,138,.30)",textAlign:"center",fontFamily:"inherit"}}>
-                📋 Lihat Jadwal
+              <MagneticButton onClick={()=>setTab("jadwal")} strength={8} style={{width:"100%",background:"rgba(255,255,255,.88)",color:"#0B0F14",border:"1px solid rgba(14,116,180,.28)",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 6px 20px rgba(14,116,180,.16)",textAlign:"center",fontFamily:"inherit"}}>
+                <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:8}}><KbIkoJadwal size={18} strokeWidth={2.2}/>Lihat Jadwal</span>
               </MagneticButton>
             </TiltCard>
             {role==="admin" && (
               <TiltCard maxTilt={4}>
-                <MagneticButton onClick={()=>setTab("roster_gen")} strength={8} style={{width:"100%",background:"linear-gradient(135deg,#6366F1,#8B5CF6)",color:"#fff",border:"none",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 4px 16px rgba(3,105,161,.30)",textAlign:"center",fontFamily:"inherit"}}>
-                  🗓 Generator Roster
+                <MagneticButton onClick={()=>setTab("roster_gen")} strength={8} style={{width:"100%",background:"rgba(255,255,255,.88)",color:"#0B0F14",border:"1px solid rgba(14,116,180,.28)",borderRadius:14,padding:"18px 14px",fontSize:15,fontWeight:800,cursor:"pointer",boxShadow:"0 6px 20px rgba(14,116,180,.16)",textAlign:"center",fontFamily:"inherit"}}>
+                  <span style={{display:"inline-flex",alignItems:"center",justifyContent:"center",gap:8}}><KbIkoRoster size={18} strokeWidth={2.2}/>Generator Roster</span>
                 </MagneticButton>
               </TiltCard>
             )}
@@ -6985,7 +6998,7 @@ export default function App() {
       )}
       {tab==="jadwal"     && <ViewJadwal ops={ops} setOps={setOps} startEditOp={startEditOp} deleteOp={deleteOp} sendReminder={sendReminder} reqOpId={reqOpId} setReqOpId={setReqOpId} reqText={reqText} setReqText={setReqText} addReq={addReq} delReq={delReq} getPhone={getPhone} setNotifs={setNotifs} showToast={showToast} privacyMode={privacyMode} role={role} upsertOneToSupa={upsertOneToSupa} initialLoading={initialLoading}/>}
       {tab==="daftar"     && <ViewDaftar pendingEditOp={pendingEditOp} clearPendingEditOp={()=>setPendingEditOp(null)} saveOpFn={saveOpFn} autoSaveOcrBatch={autoSaveOcrBatch} staff={staff} setTab={setTab} templates={templates} setTemplates={setTemplates} showToast={showToast}/>}
-      {tab==="laporan"    && <ViewLaporan ops={ops} staff={staff} roster={roster} showToast={showToast} role={role} privacyMode={privacyMode}/>}
+      {tab==="laporan"    && <LaporanPilihTab roster={roster} ops={ops} staff={staff} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg} tertulis={<ViewLaporan ops={ops} staff={staff} roster={roster} showToast={showToast} role={role} privacyMode={privacyMode}/>}/>}
       {tab==="laporan_harian" && <LaporanOKTab roster={roster} ops={ops} staff={staff} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg}/>}
       {tab==="pengumuman" && <ViewPengumuman staff={staff} showToast={showToast} role={role}/>}
       {tab==="beset_jadwal" && <ViewBesetJadwal staff={staff} showToast={showToast} role={role} cekAdmin={(p:string)=>verifyPin(p,pinAdmin)}/>}
@@ -7034,20 +7047,20 @@ export default function App() {
       )}
 
       {/* ── Sticky header (mobile + tablet: full header; desktop: top bar only) ── */}
-      <div className="kb-header" style={{background:"linear-gradient(135deg,rgba(30,27,75,.92),rgba(46,16,101,.90) 55%,rgba(30,27,75,.92))",backdropFilter:"blur(14px) saturate(160%)",WebkitBackdropFilter:"blur(14px) saturate(160%)",position:"sticky",top:0,zIndex:100,boxShadow:"0 4px 24px rgba(30,27,75,.35)",borderBottom:"1px solid rgba(232,206,143,.18)"}}>
+      <div className="kb-header" style={{background:"linear-gradient(135deg,rgba(255,255,255,.90),rgba(224,242,254,.88) 55%,rgba(255,255,255,.90))",backdropFilter:"blur(16px) saturate(170%)",WebkitBackdropFilter:"blur(16px) saturate(170%)",position:"sticky",top:0,zIndex:100,boxShadow:"0 6px 24px rgba(14,116,180,.16)",borderBottom:"1px solid rgba(255,255,255,.75)"}}>
         <div className="kb-header-inner" style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <img src="/logo.jpeg" alt="Logo KB" style={{width:50,height:50,borderRadius:"50%",objectFit:"cover",border:"2px solid rgba(255,255,255,.5)",animation:"lgFloat 3s ease-in-out infinite",flexShrink:0}}/>
+            <img src="/logo.jpeg" alt="Logo KB" className="kb-logo" style={{borderRadius:"50%",objectFit:"cover",border:"3px solid #fff",boxShadow:"0 6px 18px rgba(14,116,180,.28)",animation:"lgFloat 3s ease-in-out infinite",flexShrink:0}}/>
             <div>
-              <div style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,.6)",letterSpacing:2,textTransform:"uppercase",marginBottom:1}}>Rumah Sakit Panti Rini</div>
-              <div className="kb-title kb-font-display" style={{fontWeight:700,color:"#fff",letterSpacing:.3,lineHeight:1.15}}>SISTEM KOORDINASI <br className="kb-br"/>KAMAR BEDAH</div>
-              <HeaderClock/>
+              <div style={{fontSize:10,fontWeight:800,color:"#1F2937",letterSpacing:2,textTransform:"uppercase",marginBottom:1}}>Rumah Sakit Panti Rini</div>
+              <div className="kb-title kb-font-display" style={{fontWeight:800,color:"#0B0F14",letterSpacing:.3,lineHeight:1.15}}>SISTEM KOORDINASI <br className="kb-br"/>KAMAR BEDAH</div>
+              <div className="kb-header-clock"><HeaderClock/></div>
             </div>
           </div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <div className="kb-header-right" style={{display:"flex",gap:8,alignItems:"center"}}>
             {rtStatus==="online" && (
-              <span style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(255,255,255,.10)",color:"rgba(255,255,255,.85)",fontSize:10,fontWeight:700,padding:"4px 10px 4px 8px",borderRadius:20,border:"1px solid rgba(255,255,255,.18)"}}>
-                <span style={{width:7,height:7,borderRadius:"50%",background:"#C9A961",display:"inline-block",animation:"kbPulse 2s ease-in-out infinite"}}/>
+              <span style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(255,255,255,.75)",color:"#0B0F14",fontSize:10,fontWeight:800,padding:"4px 10px 4px 8px",borderRadius:20,border:"1px solid rgba(14,116,180,.30)"}}>
+                <span style={{width:7,height:7,borderRadius:"50%",background:"#16A34A",display:"inline-block",animation:"kbPulse 2s ease-in-out infinite"}}/>
                 Sync
               </span>
             )}
@@ -7056,16 +7069,16 @@ export default function App() {
                 ● {ops.filter((o:any)=>o.status==="ongoing"&&o.date===toLocalISODate(new Date())).length} berlangsung
               </span>
             )}
-            {role==="admin" && <button onClick={()=>setShowPinMgmt(true)} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,padding:"6px 10px",color:"#fff",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>⚙ PIN</button>}
-            <span style={{background:role==="admin"?"rgba(255,255,255,.25)":"rgba(255,255,255,.12)",border:"1px solid rgba(255,255,255,.3)",borderRadius:8,padding:"4px 9px",color:"#fff",fontSize:10,fontWeight:700}}>{role==="admin"?"🔐 Admin":"👤 Perawat"}</span>
-            <button onClick={()=>{setPinOK(false);setRole("perawat");setLemburOnlyMode(false);}} style={{background:"rgba(255,255,255,.15)",border:"none",borderRadius:8,padding:"6px 12px",color:"#fff",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:700}}>🔒 Kunci</button>
+            {role==="admin" && <button onClick={()=>setShowPinMgmt(true)} style={{background:"rgba(255,255,255,.75)",border:"1px solid rgba(14,116,180,.30)",borderRadius:10,color:"#0B0F14",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:800,display:"inline-flex",alignItems:"center",gap:6,padding:"6px 10px"}}><KbIkoPin size={14} strokeWidth={2.2}/>PIN</button>}
+            <span style={{background:role==="admin"?"rgba(14,165,233,.18)":"rgba(255,255,255,.75)",border:"1px solid rgba(14,116,180,.30)",borderRadius:10,padding:"5px 10px",color:"#0B0F14",fontSize:11,fontWeight:800,display:"inline-flex",alignItems:"center",gap:6}}>{role==="admin"?<KbIkoAdmin size={14} strokeWidth={2.2}/>:<KbIkoUser size={14} strokeWidth={2.2}/>}{role==="admin"?"Admin":"Perawat"}</span>
+            <button onClick={()=>{setPinOK(false);setRole("perawat");setLemburOnlyMode(false);}} style={{background:"rgba(255,255,255,.75)",border:"1px solid rgba(14,116,180,.30)",borderRadius:10,color:"#0B0F14",fontSize:11,cursor:"pointer",fontFamily:"inherit",fontWeight:800,display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px"}}><KbIkoKunci size={14} strokeWidth={2.2}/>Kunci</button>
           </div>
         </div>
         {/* Mobile/tablet tabs — hidden on desktop via CSS */}
         <div className="kb-tabs">
           {TABS.map(t=>(
             <button key={t.k} data-tab={t.k} onClick={handleTabClickEvt} className="kb-tab-btn"
-              style={{border:"none",background:tab===t.k?"rgba(255,255,255,.20)":"none",color:tab===t.k?"#fff":"rgba(255,255,255,.60)",fontWeight:tab===t.k?900:600,cursor:"pointer",borderBottom:tab===t.k?"3px solid #A78BFA":"3px solid transparent",borderRadius:"8px 8px 0 0",transition:"all .15s",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
+              style={{border:"none",background:tab===t.k?"rgba(14,165,233,.18)":"none",color:tab===t.k?"#0B0F14":"#1F2937",fontWeight:tab===t.k?900:600,cursor:"pointer",borderBottom:tab===t.k?"3px solid #0284C7":"3px solid transparent",borderRadius:"8px 8px 0 0",transition:"all .15s",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
               <TabIcon k={t.k}/>{t.l}
             </button>
           ))}
@@ -7078,7 +7091,7 @@ export default function App() {
 
         {/* Desktop sidebar — hidden on mobile via CSS */}
         <aside className="kb-sidebar">
-          <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,.4)",letterSpacing:1,textTransform:"uppercase",padding:"4px 14px 8px",marginBottom:4}}>Menu</div>
+          <div style={{fontSize:11,fontWeight:800,color:"#374151",letterSpacing:1,textTransform:"uppercase",padding:"4px 14px 8px",marginBottom:4}}>Menu</div>
           {TABS.filter(t=>t.k!=="arsip").map(t=>(
             <button key={t.k} data-tab={t.k} onClick={handleTabClickEvt}
               className={`kb-sidebar-btn${tab===t.k?" active":""}`}>
@@ -7095,14 +7108,14 @@ export default function App() {
               className={`kb-sidebar-btn${tab===t.k?" active":""}`}>
               <span style={{flexShrink:0,display:"flex"}}><TabIcon k={t.k}/></span>
               <span>{t.l}</span>
-              {notifs.length>0 && <span style={{marginLeft:"auto",background:"rgba(255,255,255,.25)",color:"#fff",fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{notifs.length}</span>}
+              {notifs.length>0 && <span style={{marginLeft:"auto",background:"#0284C7",color:"#fff",fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{notifs.length}</span>}
             </button>
           ))}
           {/* Info footer in sidebar */}
-          <div style={{padding:"12px 14px 4px",borderTop:"1px solid rgba(255,255,255,.1)"}}>
-            <div style={{fontSize:10,color:"rgba(255,255,255,.35)",lineHeight:1.8}}>
+          <div style={{padding:"12px 14px 4px",borderTop:"1px solid rgba(14,116,180,.18)"}}>
+            <div style={{fontSize:10,color:"#1F2937",lineHeight:1.8}}>
               {ops.length} jadwal · {staff.length} staf<br/>
-              {privacyMode && <span style={{color:"#CE93D8"}}>🔒 Mode Privasi</span>}
+              {privacyMode && <span style={{color:"#0369A1",fontWeight:700}}><KbIkoKunci size={12} strokeWidth={2.2} style={{verticalAlign:"-2px"}}/> Mode Privasi</span>}
             </div>
           </div>
         </aside>
@@ -7119,15 +7132,15 @@ export default function App() {
       {showPinMgmt && role==="admin" && (
         <div className="kb-modal-backdrop" style={{position:"fixed",inset:0,background:"rgba(15,23,42,.45)",backdropFilter:"blur(6px)",WebkitBackdropFilter:"blur(6px)",zIndex:9000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div style={{background:C.white,borderRadius:20,padding:"28px 24px",width:"100%",maxWidth:380,boxShadow:"0 20px 60px rgba(0,0,0,.4)"}}>
-            <div style={{fontSize:16,fontWeight:800,color:C.p,marginBottom:4}}>⚙ Manajemen PIN</div>
+            <div style={{fontSize:16,fontWeight:800,color:C.p,marginBottom:4}}><IkSetelan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Manajemen PIN</div>
             <div style={{fontSize:12,color:C.tL,marginBottom:20}}>Ubah PIN Admin dan PIN Perawat</div>
-            <div style={{fontSize:13,fontWeight:700,color:C.p,marginBottom:8}}>🔐 PIN Admin Baru</div>
+            <div style={{fontSize:13,fontWeight:700,color:C.p,marginBottom:8}}><IkKunci size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>PIN Admin Baru</div>
             <LF label="PIN Admin Baru (min. 4 digit)"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="PIN admin baru" value={pmNewAdmin} onChange={e=>setPmNewAdmin(e.target.value)}/></LF>
             <LF label="Konfirmasi PIN Admin"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="Ulangi PIN admin" value={pmCfAdmin} onChange={e=>setPmCfAdmin(e.target.value)}/></LF>
-            <div style={{fontSize:13,fontWeight:700,color:C.g,margin:"12px 0 8px"}}>👤 PIN Perawat Baru</div>
+            <div style={{fontSize:13,fontWeight:700,color:C.g,margin:"12px 0 8px"}}><IkUser size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>PIN Perawat Baru</div>
             <LF label="PIN Perawat Baru (min. 4 digit)"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="PIN perawat baru" value={pmNewPerawat} onChange={e=>setPmNewPerawat(e.target.value)}/></LF>
             <LF label="Konfirmasi PIN Perawat"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="Ulangi PIN perawat" value={pmCfPerawat} onChange={e=>setPmCfPerawat(e.target.value)}/></LF>
-            {pmErr && <div style={{fontSize:12,color:C.d,marginBottom:10,fontWeight:600}}>⚠ {pmErr}</div>}
+            {pmErr && <div style={{fontSize:12,color:C.d,marginBottom:10,fontWeight:600}}><IkPeringatan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>{pmErr}</div>}
             <div style={{display:"flex",gap:8,marginTop:12}}>
               <Btn full onClick={()=>{
                 if(pmNewAdmin && pmNewAdmin.length<4){setPmErr("PIN Admin min. 4 digit");return;}
@@ -7145,8 +7158,8 @@ export default function App() {
                     if(pmNewAdmin){ setPinAdmin(finalAdmin); }
                     if(pmNewPerawat){ setPinPerawat(finalPerawat); }
                     await SUPA_CLIENT.from("kamar_bedah_config").upsert({key:"pins",value:JSON.stringify({admin:finalAdmin,perawat:finalPerawat})},{onConflict:"key"});
-                    showToast("✓ PIN diperbarui & tersinkron ke semua perangkat",C.s);
-                  }catch(e){ showToast("✓ PIN diperbarui (Supabase error, coba lagi)",C.w); }
+                    showToast("PIN diperbarui & tersinkron ke semua perangkat",C.s);
+                  }catch(e){ showToast("PIN diperbarui (Supabase error, coba lagi)",C.w); }
                 })();
                 setPmNewAdmin("");setPmCfAdmin("");setPmNewPerawat("");setPmCfPerawat("");setPmErr("");
                 setShowPinMgmt(false);
@@ -7168,4 +7181,13 @@ export default function App() {
       <FloatingAssistant autoSaveOcrBatch={autoSaveOcrBatch} showToast={showToast}/>
     </div>
   );
+}
+
+/* patch100 */
+import { Users as Ik2Staf, CalendarDays as Ik2Kal, Thermometer as Ik2Suhu, Droplets as Ik2Tetes, BarChart3 as Ik2Grafik, AlertTriangle as Ik2Peringatan, CheckCircle2 as Ik2Selesai, ClipboardList as Ik2Clip, Award as Ik2Medali } from "lucide-react";
+const IKO_MAP: Record<string, any> = { "👥": Ik2Staf, "📅": Ik2Kal, "🗓": Ik2Kal, "🌡": Ik2Suhu, "💧": Ik2Tetes, "📊": Ik2Grafik, "⚠": Ik2Peringatan, "✅": Ik2Selesai, "📋": Ik2Clip, "🏅": Ik2Medali };
+function renderIko(e: any, size: number) {
+  const k = String(e == null ? "" : e).replace(/\uFE0F/g, "");
+  const Komp = IKO_MAP[k];
+  return Komp ? <Komp size={size} strokeWidth={2.2} /> : e;
 }

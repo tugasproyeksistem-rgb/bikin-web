@@ -1,3 +1,4 @@
+import { Check as IkCek, AlertTriangle as IkPeringatan, Pencil as IkEdit, Save as IkSimpan, Printer as IkPrinter, ClipboardCopy as IkSalin, Smartphone as IkHP, Share2 as IkBagi, X as IkX } from "lucide-react"; /* patch95 */
 /* Tab Laporan Harian OK, pilihan "Laporan Kepala Jaga" (Versi 2).
    Lembar jadi satu hari penuh dari data operasi dan jadwal siaga. Tanpa formulir.
    Simpan = salinan tetap ke kb_laporan_kepala_jaga (id kj_YYYY-MM-DD).
@@ -20,6 +21,7 @@ import {
 } from "../utils/laporan-harian";
 import { buatWorkbookKepalaJaga } from "../utils/laporan-kepala-jaga-excel";
 import { ViewLaporanHarian } from "./view-laporan-harian";
+import { FileText as IkonTulis, FileImage as IkonGambar } from "lucide-react";
 
 const TABEL = "kb_laporan_kepala_jaga";
 
@@ -268,17 +270,17 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
     let ok = false;
     try {
       const { error } = await SUPA_CLIENT.from(TABEL).upsert({ id: snap.id, data: snap, updated_at: nowIso }, { onConflict: "id" });
-      if (error) showToast("⚠ Gagal menyimpan ke server: " + (error.message || "error"), C.d);
-      else { ok = true; showToast("✓ Laporan kepala jaga tersimpan", C.s); }
-    } catch (e: any) { showToast("⚠ Gagal menyimpan: " + (e?.message || "error"), C.d); }
+      if (error) showToast("Gagal menyimpan ke server: " + (error.message || "error"), C.d);
+      else { ok = true; showToast("Laporan kepala jaga tersimpan", C.s); }
+    } catch (e: any) { showToast("Gagal menyimpan: " + (e?.message || "error"), C.d); }
     if (ok) {
       setDaftar((x) => [snap, ...x.filter((r) => r.id !== snap.id)]);
       try {
         const folder = (dbxCfg?.path || "/kamarbedah/").replace(/[^/]+$/, "");
         const buf = await buatWorkbookKepalaJaga([snap], { cytoIds }).xlsx.writeBuffer();
         const d = await dropboxUploadBytes(`${folder}LaporanKepalaJaga_${snap.tanggal}.xlsx`, buf as unknown as ArrayBuffer);
-        if (!d?.ok) showToast("⚠ Excel ke Dropbox gagal: " + (d?.msg || "error"), C.w);
-      } catch { showToast("⚠ Excel ke Dropbox gagal", C.w); }
+        if (!d?.ok) showToast("Excel ke Dropbox gagal: " + (d?.msg || "error"), C.w);
+      } catch { showToast("Excel ke Dropbox gagal", C.w); }
       try {
         AmbilLogMedis("LAPORAN_HARIAN", "Kepala Jaga", "SIMPAN_LAPORAN_KEPALA_JAGA",
           `Laporan kepala jaga ${snap.tanggal} disimpan`, { id: snap.id, jumlahOperasi: snap.jumlah });
@@ -291,11 +293,11 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
     if (!window.confirm(`Hapus laporan kepala jaga ${fmtTgl(l.tanggal)}?`)) return;
     try {
       const { error } = await SUPA_CLIENT.from(TABEL).delete().eq("id", l.id);
-      if (error) { showToast("⚠ Gagal menghapus: " + (error.message || "error"), C.d); return; }
-    } catch (e: any) { showToast("⚠ Gagal menghapus: " + (e?.message || "error"), C.d); return; }
+      if (error) { showToast("Gagal menghapus: " + (error.message || "error"), C.d); return; }
+    } catch (e: any) { showToast("Gagal menghapus: " + (e?.message || "error"), C.d); return; }
     setDaftar((x) => x.filter((r) => r.id !== l.id));
     if (lihat && lihat.id === l.id) setLihat(null);
-    showToast("✓ Laporan dihapus", C.s);
+    showToast("Laporan dihapus", C.s);
   };
 
   const cetak = () => {
@@ -323,7 +325,7 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
       const cv = await ambilCanvas(3);
       const a = document.createElement("a");
       a.href = cv.toDataURL("image/jpeg", 0.95); a.download = namaFile("jpg"); a.click();
-      showToast("✓ JPG diunduh", C.s);
+      showToast("JPG diunduh", C.s);
     } catch (e: any) { showToast("Gagal membuat JPG: " + (e?.message || "error"), C.d); }
     setBusy(false);
   };
@@ -351,12 +353,12 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
       const a = document.createElement("a");
       a.href = url; a.download = namaFile("pdf"); a.click();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
-      showToast("✓ PDF diunduh", C.s);
+      showToast("PDF diunduh", C.s);
     } catch (e: any) { showToast("Gagal membuat PDF: " + (e?.message || "error"), C.d); }
     setBusy(false);
   };
   const salinTeks = async () => {
-    try { await navigator.clipboard.writeText(buatTeks(tampil, mask)); showToast("✓ Teks laporan disalin", C.s); }
+    try { await navigator.clipboard.writeText(buatTeks(tampil, mask)); showToast("Teks laporan disalin", C.s); }
     catch { showToast("Gagal menyalin teks", C.w); }
   };
   const labelStaf = (s: any): string => (s.type === "surgeon" ? "Dokter bedah" : s.type === "anesthesiologist" ? "Dokter anestesi" : "Perawat");
@@ -422,7 +424,7 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
       const link = "https://wa.me/" + (s ? normalizePhone62(String(s.phone)) : "") + "?text=" + encodeURIComponent(pesan);
       if (jendela) jendela.location.href = link; else window.open(link, "_blank");
       if (s) setWaTerkirim((x) => (x.includes(String(s.id)) ? x : [...x, String(s.id)]));
-      showToast("✓ File diunduh. Lampirkan " + nama + " di chat WhatsApp", C.s);
+      showToast("File diunduh. Lampirkan " + nama + " di chat WhatsApp", C.s);
     } catch (e: any) {
       if (jendela) jendela.close();
       showToast("Gagal menyiapkan file: " + (e?.message || "error"), C.d);
@@ -455,7 +457,7 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
     const el = lembarRef.current;
     if (!el) { showToast("Lembar belum siap", C.w); return; }
     downloadElementAsWord(el, namaFile("doc"));
-    showToast("✓ Word diunduh", C.s);
+    showToast("Word diunduh", C.s);
   };
   const unduhExcel = () => {
     buatWorkbookKepalaJaga([tampil], { cytoIds }).xlsx.writeBuffer().then((buf) => {
@@ -463,7 +465,7 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
       const a = document.createElement("a");
       a.href = url; a.download = namaFile("xlsx"); a.click();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
-      showToast("✓ Excel diunduh", C.s);
+      showToast("Excel diunduh", C.s);
     }).catch((e) => showToast("Gagal membuat Excel: " + ((e as any)?.message || "error"), C.d));
   };
 
@@ -472,7 +474,7 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
   const itemRiwayat = daftar.map((l: any) => ({ id: String(l.id), tanggal: String(l.tanggal), ket: l.jumlah + " operasi", data: l }));
   const unduhXlsxKJ = (list: any[], nama: string) => {
     buatWorkbookKepalaJaga(list, { cytoIds }).xlsx.writeBuffer()
-      .then((buf) => { unduhBlob(new Blob([buf as unknown as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), nama); showToast("✓ Excel diunduh", C.s); })
+      .then((buf) => { unduhBlob(new Blob([buf as unknown as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), nama); showToast("Excel diunduh", C.s); })
       .catch((e) => showToast("Gagal membuat Excel: " + ((e as any)?.message || "error"), C.d));
   };
   const unduhRiwayat = (it: any, fmt: "excel" | "word" | "pdf") => {
@@ -498,10 +500,10 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
         </LF>
         {lihat
           ? <div style={{ fontSize: 13, fontWeight: 700, color: "#166534", background: "#DCFCE7", borderRadius: 10, padding: "8px 12px", marginTop: 8 }}>
-              ✓ Menampilkan salinan tersimpan ({fmtTgl(lihat.tanggal)}). Data hari ini tidak dipakai.
+              <IkCek size={14} strokeWidth={2.8} style={{verticalAlign:"-2px",marginRight:5}}/>Menampilkan salinan tersimpan ({fmtTgl(lihat.tanggal)}). Data hari ini tidak dipakai.
             </div>
           : <>
-              {!rs && <div style={{ fontSize: 12, color: C.w, marginTop: 6 }}>⚠ Belum ada jadwal siaga untuk tanggal ini. Bagian siaga di lembar kosong.</div>}
+              {!rs && <div style={{ fontSize: 12, color: C.w, marginTop: 6 }}><IkPeringatan size={13} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:5}}/>Belum ada jadwal siaga untuk tanggal ini. Bagian siaga di lembar kosong.</div>}
               <div style={{ fontSize: 12, color: C.tL, marginTop: 6 }}>
                 {v1
                   ? `Bagian bawah (peralatan, stok, kejadian, tanda tangan) diambil dari Laporan Harian OK ${SHIFT_LABEL[v1.shift]} tanggal ini.`
@@ -511,7 +513,7 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
           {!lihat && (
             <div style={{ flexBasis: "100%", border: "1px solid " + C.b, borderRadius: 10, padding: 10 }}>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>✎ Siaga dan Pembawa HP (isi manual bila ada perubahan)</div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}><IkEdit size={14} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:5}}/>Siaga dan Pembawa HP (isi manual bila ada perubahan)</div>
               {([["anest", "Siaga anestesi"], ["cyto", "Siaga anestesi cyto"], ["nurses", "Perawat siaga"], ["hp", "Pembawa HP"]] as const).map(([k, l]) => (
                 <div key={k} style={{ marginBottom: 6 }}>
                   <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 2 }}>{l}</div>
@@ -527,39 +529,39 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
               <div style={{ flexBasis: "100%" }}>
                 {sudah
                   ? <div style={{ fontSize: 14, fontWeight: 700, color: "#166534", background: "#DCFCE7", borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
-                      ✓ Laporan tanggal ini sudah tersimpan. Jika ada perubahan operasi atau jadwal, klik SIMPAN lagi untuk memperbarui.
+                      <IkCek size={15} strokeWidth={2.8} style={{verticalAlign:"-2px",marginRight:6}}/>Laporan tanggal ini sudah tersimpan. Jika ada perubahan operasi atau jadwal, klik SIMPAN lagi untuk memperbarui.
                     </div>
                   : <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", background: "#DC2626", borderRadius: 10, padding: "14px 12px", marginBottom: 8, textAlign: "center", lineHeight: 1.4 }}>
-                      ⚠ HARAP KLIK SIMPAN! Laporan belum tersimpan.
+                      <IkPeringatan size={15} strokeWidth={2.6} style={{verticalAlign:"-2px",marginRight:6}}/>HARAP KLIK SIMPAN! Laporan belum tersimpan.
                     </div>}
                 <button type="button" onClick={simpan} disabled={busy}
                   style={{ width: "100%", fontSize: 20, fontWeight: 800, padding: "16px 12px", borderRadius: 12, border: "none", cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1, color: "#fff", background: sudah ? "#16A34A" : "#DC2626" }}>
-                  {busy ? "Menyimpan..." : sudah ? "💾 SIMPAN ULANG" : "💾 SIMPAN LAPORAN"}
+                  {busy ? "Menyimpan..." : <><IkSimpan size={16} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>{sudah ? "SIMPAN ULANG" : "SIMPAN LAPORAN"}</>}
                 </button>
               </div>
             );
           })()}
-          <Btn outline onClick={cetak} disabled={busy}>🖨 Print</Btn>
+          <Btn outline onClick={cetak} disabled={busy}><IkPrinter size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Print</Btn>
           <Btn outline onClick={unduhPdf} disabled={busy}>⬇ PDF</Btn>
           <Btn outline onClick={unduhJpg} disabled={busy}>⬇ JPG</Btn>
-          <Btn outline onClick={salinTeks} disabled={busy}>📋 Salin teks</Btn>
+          <Btn outline onClick={salinTeks} disabled={busy}><IkSalin size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Salin teks</Btn>
           <Btn outline onClick={unduhExcel} disabled={busy}>⬇ Excel</Btn>
           <Btn outline onClick={unduhWord} disabled={busy}>⬇ Word</Btn>
           <button type="button" onClick={() => setWaBuka((v) => !v)} disabled={busy}
-            style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "#16A34A", color: "#fff", fontSize: 15, fontWeight: 800, cursor: "pointer", boxShadow: "0 2px 8px rgba(22,163,74,.5)" }}>📲 KIRIM WA</button>
+            style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "#16A34A", color: "#fff", fontSize: 15, fontWeight: 800, cursor: "pointer", boxShadow: "0 2px 8px rgba(22,163,74,.5)" }}><IkHP size={16} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>KIRIM WA</button>
           {waBuka && (
             <div style={{ flexBasis: "100%", border: "2px solid #16A34A", borderRadius: 10, padding: 10, background: "#F0FDF4" }}>
               <div style={{ fontWeight: 800, marginBottom: 6 }}>Pilih penerima laporan ({fmtTgl(tampil.tanggal)})</div>
               <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Kirim dalam bentuk:</div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                {([["teks", "💬 Teks"], ["jpg", "🖼 JPG"], ["pdf", "📄 PDF"], ["word", "📝 Word"], ["excel", "📊 Excel"]] as const).map(([k2, l]) => (
+                {([["teks", "Teks"], ["jpg", "JPG"], ["pdf", "PDF"], ["word", "Word"], ["excel", "Excel"]] as const).map(([k2, l]) => (
                   <button key={k2} type="button" onClick={() => setWaFormat(k2)}
                     style={{ padding: "8px 12px", borderRadius: 10, border: "2px solid #16A34A", background: waFormat === k2 ? "#16A34A" : "#fff", color: waFormat === k2 ? "#fff" : "#166534", fontSize: 14, fontWeight: 800, cursor: "pointer" }}>{l}</button>
                 ))}
               </div>
               {waFormat !== "teks" && (
                 <div style={{ marginBottom: 8 }}>
-                  <Btn onClick={bagikanFile} disabled={busy}>📤 Bagikan file {waFormat.toUpperCase()} langsung ke WhatsApp (HP)</Btn>
+                  <Btn onClick={bagikanFile} disabled={busy}><IkBagi size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Bagikan file {waFormat.toUpperCase()} langsung ke WhatsApp (HP)</Btn>
                   <div style={{ fontSize: 12, color: C.tL, marginTop: 4 }}>Di HP: pilih WhatsApp lalu penerima atau grup. Tombol Kirim per nama: file diunduh, chat WhatsApp terbuka, lalu Anda tinggal melampirkan file yang baru diunduh.</div>
                 </div>
               )}
@@ -570,7 +572,7 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
                     <div style={{ fontSize: 14 }}><b>{s.name}</b><div style={{ fontSize: 12, color: C.tL }}>{labelStaf(s)}</div></div>
                     <button type="button" onClick={() => kirimWaPilihan(s)}
                       style={{ padding: "8px 14px", borderRadius: 10, border: "none", background: waTerkirim.includes(String(s.id)) ? "#15803D" : "#16A34A", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
-                      {waTerkirim.includes(String(s.id)) ? "✓ Kirim lagi" : "Kirim"}
+                      {waTerkirim.includes(String(s.id)) ? <><IkCek size={13} strokeWidth={2.8} style={{verticalAlign:"-2px",marginRight:3}}/>Kirim lagi</> : "Kirim"}
                     </button>
                   </div>
                 ))}
@@ -579,7 +581,7 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
               <div style={{ marginTop: 8 }}><Btn sm outline onClick={() => kirimWaPilihan(null)}>Pilih kontak / grup di WhatsApp</Btn></div>
             </div>
           )}
-          {lihat && <Btn outline onClick={() => setLihat(null)} disabled={busy}>✕ Tutup</Btn>}
+          {lihat && <Btn outline onClick={() => setLihat(null)} disabled={busy}><IkX size={15} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:5}}/>Tutup</Btn>}
         </div>
       </Card>
 
@@ -597,18 +599,32 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
   );
 }
 
-/* Pemilih versi di atas tab. Kedua tampilan tetap terpasang (hanya disembunyikan)
-   supaya preview Laporan Harian OK yang belum disimpan tidak hilang saat berpindah. */
+/* Tab Laporan Harian OK: hanya Laporan Harian OK.
+   Laporan Kepala Jaga sudah dipindah ke tab Laporan (lihat LaporanPilihTab di bawah). */
 export function LaporanOKTab(props: any) {
-  const [v, setV] = useState<"harian" | "kj">("harian");
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-        <Btn onClick={() => setV("harian")} outline={v !== "harian"}>📋 Laporan Harian OK</Btn>
-        <Btn onClick={() => setV("kj")} outline={v !== "kj"}>📝 Laporan Kepala Jaga</Btn>
-      </div>
-      <div style={{ display: v === "harian" ? "block" : "none" }}><ViewLaporanHarian {...props} /></div>
-      <div style={{ display: v === "kj" ? "block" : "none" }}><ViewLaporanKepalaJaga {...props} /></div>
+      <ViewLaporanHarian {...props} />
     </div>
   );
 }
+
+/* Pemilih di tab Laporan: Laporan Tertulis (form yang sudah ada, dikirim lewat prop "tertulis")
+   atau Laporan Kepala Jaga (Gambar / Dokumen). Kedua tampilan tetap terpasang (hanya disembunyikan)
+   supaya isian yang belum disimpan tidak hilang saat berpindah. */
+export function LaporanPilihTab(props: any) {
+  const { tertulis, ...sisa } = props;
+  const [v, setV] = useState<"tulis" | "kj">("tulis");
+  const isi = { display: "inline-flex", alignItems: "center", gap: 6 } as const;
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+        <Btn onClick={() => setV("tulis")} outline={v !== "tulis"}><span style={isi}><IkonTulis size={16} strokeWidth={2} />Laporan Tertulis</span></Btn>
+        <Btn onClick={() => setV("kj")} outline={v !== "kj"}><span style={isi}><IkonGambar size={16} strokeWidth={2} />Laporan Kepala Jaga (Gambar / Dokumen)</span></Btn>
+      </div>
+      <div style={{ display: v === "tulis" ? "block" : "none" }}>{tertulis}</div>
+      <div style={{ display: v === "kj" ? "block" : "none" }}><ViewLaporanKepalaJaga {...sisa} /></div>
+    </div>
+  );
+}
+

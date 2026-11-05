@@ -1,3 +1,4 @@
+import { FolderOpen as IkFolder, Save as IkSimpan, Check as IkCek } from "lucide-react"; /* patch98 */
 /* src/components/upload-jadwal-perawat.tsx
    Kartu "Upload Jadwal Perawat" di tab Staf (admin). Membaca file Excel/CSV
    jadwal semua perawat 1 bulan, tampil ringkasan, lalu simpan ke Supabase
@@ -43,27 +44,27 @@ export function UploadJadwalPerawat({ showToast, upsertOneToSupa }: any) {
       const h = await bacaJadwalPerawat(f);
       if (!h.perawat.length) {
         setHasil(null);
-        showToast("⚠ Tidak ada baris perawat terbaca. Pastikan ada kolom NAMA, tanggal 1-31, dan kode P/PG/S/SG/T per sel.", C.d);
+        showToast("Tidak ada baris perawat terbaca. Pastikan ada kolom NAMA, tanggal 1-31, dan kode P/PG/S/SG/T per sel.", C.d);
       } else {
         setHasil(h);
         if (h.tahun && h.bulan) setBulan(`${h.tahun}-${String(h.bulan).padStart(2, "0")}`);
-        else showToast("⚠ Bulan tidak terbaca dari file, pilih bulannya di bawah", C.w);
+        else showToast("Bulan tidak terbaca dari file, pilih bulannya di bawah", C.w);
       }
-    } catch (err: any) { setHasil(null); showToast("⚠ Gagal membaca file: " + (err?.message || "error"), C.d); }
+    } catch (err: any) { setHasil(null); showToast("Gagal membaca file: " + (err?.message || "error"), C.d); }
     setBusy(false);
   };
 
   const simpan = async () => {
     if (!hasil) return;
     const [y, m] = bulan.split("-").map(Number);
-    if (!y || !m) { showToast("⚠ Pilih bulan jadwal dulu", C.w); return; }
+    if (!y || !m) { showToast("Pilih bulan jadwal dulu", C.w); return; }
     if (tersimpan.some((t) => t.id === bulan) && !window.confirm(`Jadwal perawat ${labelBulan(bulan)} sudah ada. Timpa dengan file ini?`)) return;
     setBusy(true);
     const data: JadwalPerawatBulan = { id: `jp_${y}_${String(m).padStart(2, "0")}`, tahun: y, bulan: m, perawat: hasil.perawat, updated_at: new Date().toISOString() };
     const res = await upsertOneToSupa("kb_jadwal_perawat", data);
-    if (!res?.ok) { showToast(`⚠ Gagal menyimpan ke server: ${res?.error || "error"}`, C.d); setBusy(false); return; }
+    if (!res?.ok) { showToast(`Gagal menyimpan ke server: ${res?.error || "error"}`, C.d); setBusy(false); return; }
     AmbilLogMedis("JADWAL_PERAWAT", "Admin", "UPLOAD_JADWAL_PERAWAT", `Upload jadwal perawat ${bulan}`, { id: data.id, jumlahPerawat: data.perawat.length });
-    showToast(`✓ Jadwal perawat ${labelBulan(bulan)} tersimpan (${data.perawat.length} perawat)`, C.s);
+    showToast(`Jadwal perawat ${labelBulan(bulan)} tersimpan (${data.perawat.length} perawat)`, C.s);
     setHasil(null);
     await muatDaftar();
     setBusy(false);
@@ -72,13 +73,13 @@ export function UploadJadwalPerawat({ showToast, upsertOneToSupa }: any) {
   const t = hasil ? hitungKode(hasil) : null;
   return (
     <Card style={{ background: "#E0F2F1", border: "2px solid #80CBC4" }}>
-      <SH label="🩺 Upload Jadwal Perawat (semua perawat)" color="#00695C" />
+      <SH label="Upload Jadwal Perawat (semua perawat)" color="#00695C" />
       <div style={{ background: "#B2DFDB55", borderRadius: 8, padding: "10px 12px", marginBottom: 12, fontSize: 12, color: "#004D40", lineHeight: 1.7 }}>
         <b>Fungsi:</b> mengisi perawat jaga (Pagi, PG, Sore, SG, Cuti) di tab Jadwal & Peserta.<br />
         Format: Excel/CSV seperti ekspor tab Generator. Kolom NAMA, lalu tanggal 1-31 berisi kode P, PG, S, SG, T.
       </div>
       <input ref={inputRef} type="file" accept=".csv,.txt,.xlsx,.xls" onChange={pilihFile} style={{ display: "none" }} />
-      <Btn sm color="#00695C" onClick={() => inputRef.current && inputRef.current.click()} disabled={busy}>📂 Upload Jadwal Perawat (Excel/CSV)</Btn>
+      <Btn sm color="#00695C" onClick={() => inputRef.current && inputRef.current.click()} disabled={busy}><IkFolder size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Upload Jadwal Perawat (Excel/CSV)</Btn>
 
       {hasil && t && (
         <div style={{ marginTop: 12, background: "#fff", borderRadius: 10, padding: "10px 12px", border: "1px solid #B2DFDB" }}>
@@ -89,7 +90,7 @@ export function UploadJadwalPerawat({ showToast, upsertOneToSupa }: any) {
           <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Bulan jadwal:</div>
           <input style={iS} type="month" value={bulan} onChange={(e) => setBulan(e.target.value)} />
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-            <Btn onClick={simpan} disabled={busy}>💾 Simpan jadwal {bulan ? labelBulan(bulan) : ""}</Btn>
+            <Btn onClick={simpan} disabled={busy}><IkSimpan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Simpan jadwal {bulan ? labelBulan(bulan) : ""}</Btn>
             <Btn outline color={C.g} onClick={() => setHasil(null)} disabled={busy}>Batal</Btn>
           </div>
         </div>
@@ -97,7 +98,7 @@ export function UploadJadwalPerawat({ showToast, upsertOneToSupa }: any) {
 
       {tersimpan.length > 0 && (
         <div style={{ marginTop: 10, fontSize: 12, color: "#004D40", fontWeight: 600 }}>
-          ✓ Tersimpan: {tersimpan.slice(0, 6).map((x) => `${labelBulan(x.id)} (${x.n} perawat)`).join(" • ")}
+          <IkCek size={13} strokeWidth={2.8} style={{verticalAlign:"-2px",marginRight:4}}/>Tersimpan: {tersimpan.slice(0, 6).map((x) => `${labelBulan(x.id)} (${x.n} perawat)`).join(" • ")}
         </div>
       )}
     </Card>

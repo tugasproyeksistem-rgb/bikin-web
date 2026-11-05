@@ -1,3 +1,4 @@
+import { Package as IkBox, Check as IkCek, ClipboardList as IkClip, Cloud as IkCloud, FileText as IkFile, BarChart3 as IkGrafik, Clock as IkJam, CalendarDays as IkKal, Lightbulb as IkLampu, RotateCcw as IkPulih, CheckCircle2 as IkSelesai, Save as IkSimpan, Thermometer as IkSuhu, Zap as IkZap } from "lucide-react"; /* patch97 */
 import { KOLOM_TAMBAHAN_OPS, nilaiTambahanOps } from "../utils/operasi-excel";
 /* src/components/view-arsip.tsx
    Tab "Arsip" — log notifikasi, arsip harian, download data per bulan
@@ -67,7 +68,7 @@ export function ViewArsip(props: ViewArsipProps) {
       const label = (arsipTipe==="laporan_operasi"?"Laporan":"Jadwal")+" Operasi"+(arsipTahun?" "+arsipTahun:"")+(arsipBulan?" "+MONTH_LABELS[arsipBulan]:"");
       XLSX.utils.book_append_sheet(wb, ws, label.slice(0,31));
       XLSX.writeFile(wb, `${arsipTipe==="laporan_operasi"?"Laporan":"Jadwal"}_Operasi${arsipTahun?"_"+arsipTahun:""}${arsipBulan?"_"+arsipBulan:""}_${todayDate()}.xlsx`);
-      showToast("✓ Excel arsip diunduh",C.s);
+      showToast("Excel arsip diunduh",C.s);
     } else if(arsipTipe==="monitoring_suhu") {
       const me = (monitoringEntries||[]).filter((e:any)=>{
         if(arsipTahun && !e.tanggal?.startsWith(arsipTahun)) return false;
@@ -93,7 +94,7 @@ export function ViewArsip(props: ViewArsipProps) {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Monitoring Suhu");
       XLSX.writeFile(wb, `Monitoring_Suhu${arsipTahun?"_"+arsipTahun:""}${arsipBulan?"_"+arsipBulan:""}_${todayDate()}.xlsx`);
-      showToast("✓ Excel monitoring suhu diunduh",C.s);
+      showToast("Excel monitoring suhu diunduh",C.s);
     } else {
       const rows: string[][] = [];
       (lemburPegawai||[]).forEach((p:any)=>{
@@ -114,7 +115,7 @@ export function ViewArsip(props: ViewArsipProps) {
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Data Lembur");
       XLSX.writeFile(wb, `Data_Lembur${arsipTahun?"_"+arsipTahun:""}${arsipBulan?"_"+arsipBulan:""}_${todayDate()}.xlsx`);
-      showToast("✓ Excel lembur arsip diunduh",C.s);
+      showToast("Excel lembur arsip diunduh",C.s);
     }
   };
 
@@ -125,7 +126,7 @@ export function ViewArsip(props: ViewArsipProps) {
       const rows: string[][] = filteredOpsArsip.map((o:any,i:number)=>[String(i+1),o.date||"",o.time||"",o.patient||"",o.diagnosis||"",o.procedure||"",o.room||"",o.surgeon||"",o.anesthesiologist||"",o.status||""]);
       const label = (arsipTipe==="laporan_operasi"?"Laporan":"Jadwal")+" Operasi"+(arsipTahun?" "+arsipTahun:"")+(arsipBulan?" "+MONTH_LABELS[arsipBulan]:"");
       downloadAsWord(label+" — "+HOSPITAL, [h,...rows], `${arsipTipe==="laporan_operasi"?"Laporan":"Jadwal"}_Operasi${arsipTahun?"_"+arsipTahun:""}${arsipBulan?"_"+arsipBulan:""}_${todayDate()}.doc`);
-      showToast("✓ Word arsip diunduh",C.s);
+      showToast("Word arsip diunduh",C.s);
     } else {
       const allRows: string[][] = [];
       (lemburPegawai||[]).forEach((p:any)=>{
@@ -144,7 +145,7 @@ export function ViewArsip(props: ViewArsipProps) {
       const h=["Nama","NIK","Bulan","Tgl Lembur","Jam Masuk","Jam Keluar","Keperluan","Keterangan"];
       const label="Data Lembur"+(arsipTahun?" "+arsipTahun:"")+(arsipBulan?" "+MONTH_LABELS[arsipBulan]:"");
       downloadAsWord(label+" — "+HOSPITAL,[h,...allRows],`Data_Lembur${arsipTahun?"_"+arsipTahun:""}${arsipBulan?"_"+arsipBulan:""}_${todayDate()}.doc`);
-      showToast("✓ Word lembur arsip diunduh",C.s);
+      showToast("Word lembur arsip diunduh",C.s);
     }
   };
 
@@ -156,10 +157,10 @@ export function ViewArsip(props: ViewArsipProps) {
     if(fmt==="excel"){
       const ws=XLSX.utils.aoa_to_sheet([h,...rows]);
       const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Tracking Operasi");
-      XLSX.writeFile(wb,fn+".xlsx"); showToast("✓ Tracking Operasi Excel diunduh",C.s);
+      XLSX.writeFile(wb,fn+".xlsx"); showToast("Tracking Operasi Excel diunduh",C.s);
     } else {
       downloadAsWord("Tracking Jadwal Operasi — "+HOSPITAL,[h,...rows],fn+".doc");
-      showToast("✓ Tracking Operasi Word diunduh",C.s);
+      showToast("Tracking Operasi Word diunduh",C.s);
     }
   };
 
@@ -177,10 +178,10 @@ export function ViewArsip(props: ViewArsipProps) {
     if(fmt==="excel"){
       const ws=XLSX.utils.aoa_to_sheet([h,...rows]);
       const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Tracking Lembur");
-      XLSX.writeFile(wb,fn+".xlsx"); showToast("✓ Tracking Lembur Excel diunduh",C.s);
+      XLSX.writeFile(wb,fn+".xlsx"); showToast("Tracking Lembur Excel diunduh",C.s);
     } else {
       downloadAsWord("Tracking Data Lembur — "+HOSPITAL,[h,...rows],fn+".doc");
-      showToast("✓ Tracking Lembur Word diunduh",C.s);
+      showToast("Tracking Lembur Word diunduh",C.s);
     }
   };
 
@@ -206,7 +207,7 @@ export function ViewArsip(props: ViewArsipProps) {
       if(!rows.length){showToast("Tidak ada data operasi "+ymLabel(month),C.w);return;}
       const h=["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status",...KOLOM_TAMBAHAN_OPS];
       buildAndDownloadXlsx("Operasi "+ymLabel(month),h,rows,`Operasi_${month}.xlsx`);
-      showToast(`✓ Excel Operasi ${ymLabel(month)} diunduh (${rows.length} data)`,C.s);
+      showToast(`Excel Operasi ${ymLabel(month)} diunduh (${rows.length} data)`,C.s);
     } else if(type==="lembur"){
       const rows: (string|number)[][] = [];
       (lemburPegawai||[]).forEach((p:any)=>{
@@ -217,14 +218,14 @@ export function ViewArsip(props: ViewArsipProps) {
       if(!rows.length){showToast("Tidak ada data lembur "+ymLabel(month),C.w);return;}
       const h=["Nama","NIK","Bulan","Tgl Awal","Tgl Akhir","Masuk","Keluar","Keperluan","Keterangan","TTD"];
       buildAndDownloadXlsx("Lembur "+ymLabel(month),h,rows,`Lembur_${month}.xlsx`);
-      showToast(`✓ Excel Lembur ${ymLabel(month)} diunduh`,C.s);
+      showToast(`Excel Lembur ${ymLabel(month)} diunduh`,C.s);
     } else {
       const filtered=(monitoringEntries||[]).filter((e:any)=>e.tanggal?.startsWith(month));
       if(!filtered.length){showToast("Tidak ada data monitoring "+ymLabel(month),C.w);return;}
       const h=["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"];
       const rows=filtered.map((e:any)=>[e.ruang||"",e.tanggal||"",e.jam||"",e.suhu??"",e.kelembaban??"",monIsOK(e.suhu,e.kelembaban,monitoringCfg)?"SESUAI":"TIDAK SESUAI",e.petugas||""]);
       buildAndDownloadXlsx("Monitoring "+ymLabel(month),h,rows,`Monitoring_${month}.xlsx`);
-      showToast(`✓ Excel Monitoring ${ymLabel(month)} diunduh`,C.s);
+      showToast(`Excel Monitoring ${ymLabel(month)} diunduh`,C.s);
     }
   };
 
@@ -243,7 +244,7 @@ export function ViewArsip(props: ViewArsipProps) {
         if(!rows.length){showToast("Tidak ada data operasi "+ymLabel(month)+" di Supabase",C.w);return;}
         const h=["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status",...KOLOM_TAMBAHAN_OPS];
         buildAndDownloadXlsx("Operasi "+ymLabel(month),h,rows,`Operasi_Supa_${month}.xlsx`);
-        showToast(`✓ ${rows.length} data operasi ${ymLabel(month)} dari Supabase`,C.s);
+        showToast(`${rows.length} data operasi ${ymLabel(month)} dari Supabase`,C.s);
       } else if(type==="lembur"){
         const ld:any = raw.lemburData||raw.data?.lemburData||{};
         const lp:any[] = raw.lemburPegawai||raw.data?.lemburPegawai||[];
@@ -256,7 +257,7 @@ export function ViewArsip(props: ViewArsipProps) {
         if(!rows.length){showToast("Tidak ada data lembur "+ymLabel(month)+" di Supabase",C.w);return;}
         const h=["Nama","NIK","Bulan","Tgl Awal","Tgl Akhir","Masuk","Keluar","Keperluan","Keterangan","TTD"];
         buildAndDownloadXlsx("Lembur "+ymLabel(month),h,rows,`Lembur_Supa_${month}.xlsx`);
-        showToast(`✓ Data lembur ${ymLabel(month)} dari Supabase diunduh`,C.s);
+        showToast(`Data lembur ${ymLabel(month)} dari Supabase diunduh`,C.s);
       } else {
         const me:any[] = raw.monitoringEntries||raw.data?.monitoringEntries||[];
         const cfg2:any = raw.monitoringCfg||raw.data?.monitoringCfg||monitoringCfg;
@@ -265,7 +266,7 @@ export function ViewArsip(props: ViewArsipProps) {
         const h=["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"];
         const rows=filtered.map((e:any)=>[e.ruang||"",e.tanggal||"",e.jam||"",e.suhu??"",e.kelembaban??"",monIsOK(e.suhu,e.kelembaban,cfg2)?"SESUAI":"TIDAK SESUAI",e.petugas||""]);
         buildAndDownloadXlsx("Monitoring "+ymLabel(month),h,rows,`Monitoring_Supa_${month}.xlsx`);
-        showToast(`✓ ${rows.length} data monitoring ${ymLabel(month)} dari Supabase`,C.s);
+        showToast(`${rows.length} data monitoring ${ymLabel(month)} dari Supabase`,C.s);
       }
     } catch(e:any){
       showToast("Gagal ambil dari Supabase: "+(e.message||e),C.d);
@@ -288,7 +289,7 @@ export function ViewArsip(props: ViewArsipProps) {
         if(!rows.length){showToast("Tidak ada data operasi "+ymLabel(month)+" di Dropbox",C.w);return;}
         const h=["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","Instrumen","P.Anestesi","Onloop","RR/Katim","Status",...KOLOM_TAMBAHAN_OPS];
         buildAndDownloadXlsx("Operasi "+ymLabel(month),h,rows,`Operasi_Dbx_${month}.xlsx`);
-        showToast(`✓ ${rows.length} data operasi ${ymLabel(month)} dari Dropbox`,C.s);
+        showToast(`${rows.length} data operasi ${ymLabel(month)} dari Dropbox`,C.s);
       } else if(type==="lembur"){
         const ld:any = raw.lemburData||raw.data?.lemburData||{};
         const lp:any[] = raw.lemburPegawai||raw.data?.lemburPegawai||[];
@@ -301,7 +302,7 @@ export function ViewArsip(props: ViewArsipProps) {
         if(!rows.length){showToast("Tidak ada data lembur "+ymLabel(month)+" di Dropbox",C.w);return;}
         const h=["Nama","NIK","Bulan","Tgl Awal","Tgl Akhir","Masuk","Keluar","Keperluan","Keterangan","TTD"];
         buildAndDownloadXlsx("Lembur "+ymLabel(month),h,rows,`Lembur_Dbx_${month}.xlsx`);
-        showToast(`✓ Data lembur ${ymLabel(month)} dari Dropbox diunduh`,C.s);
+        showToast(`Data lembur ${ymLabel(month)} dari Dropbox diunduh`,C.s);
       } else {
         const me:any[] = raw.monitoringEntries||raw.data?.monitoringEntries||[];
         const cfg2:any = raw.monitoringCfg||raw.data?.monitoringCfg||monitoringCfg;
@@ -310,7 +311,7 @@ export function ViewArsip(props: ViewArsipProps) {
         const h=["Ruangan","Tanggal","Jam","Suhu (°C)","Kelembaban (%)","Status","Petugas"];
         const rows=filtered.map((e:any)=>[e.ruang||"",e.tanggal||"",e.jam||"",e.suhu??"",e.kelembaban??"",monIsOK(e.suhu,e.kelembaban,cfg2)?"SESUAI":"TIDAK SESUAI",e.petugas||""]);
         buildAndDownloadXlsx("Monitoring "+ymLabel(month),h,rows,`Monitoring_Dbx_${month}.xlsx`);
-        showToast(`✓ ${rows.length} data monitoring ${ymLabel(month)} dari Dropbox`,C.s);
+        showToast(`${rows.length} data monitoring ${ymLabel(month)} dari Dropbox`,C.s);
       }
     } catch(e:any){
       showToast("Gagal ambil dari Dropbox: "+(e.message||e),C.d);
@@ -322,7 +323,7 @@ export function ViewArsip(props: ViewArsipProps) {
   return (
     <div>
       <div style={{display:"flex",gap:0,marginBottom:14,background:C.gBg,borderRadius:12,padding:4,flexWrap:"wrap"}}>
-        {[{k:"notif",l:"Log"},{k:"jadwal",l:"Jadwal"},{k:"arsip",l:"Arsip"},{k:"unduh",l:"📥 Unduh"},{k:"import",l:"Import"},{k:"audit",l:"📋 Audit"},{k:"pengaturan",l:"⚙ Setelan"}].map(t=>(
+        {[{k:"notif",l:"Log"},{k:"jadwal",l:"Jadwal"},{k:"arsip",l:"Arsip"},{k:"unduh",l:"Unduh"},{k:"import",l:"Import"},{k:"audit",l:"Audit"},{k:"pengaturan",l:"Setelan"}].map(t=>(
           <button key={t.k} onClick={()=>setSub(t.k)} style={{flex:1,minWidth:56,padding:"8px 2px",borderRadius:10,border:"none",background:sub===t.k?C.white:"none",color:sub===t.k?C.p:C.g,fontSize:10,fontWeight:sub===t.k?700:500,cursor:"pointer",boxShadow:sub===t.k?"0 1px 6px rgba(0,0,0,.1)":"none"}}>{t.l}</button>
         ))}
       </div>
@@ -359,20 +360,20 @@ export function ViewArsip(props: ViewArsipProps) {
             const h=["No","Tanggal","Jam","Pasien","Usia","RM","Jenis","Diagnosa","Tindakan","Kamar","Operator","Anestesi","Asisten","PERAWAT Instrumen","P.Anestesi","Onloop","RR/Katim","Alergi","Gol.Darah","Status"];
             const rows=ops.map((op:any,i:number)=>[i+1,op.date,op.time,sanitizeForCSV(op.patient),sanitizeForCSV(op.age||""),sanitizeForCSV(op.rm||""),OT[op.opType as keyof typeof OT||"elektif"]&&OT[op.opType as keyof typeof OT||"elektif"].label||"Elektif",sanitizeForCSV(op.diagnosis),sanitizeForCSV(op.procedure),op.room,op.surgeon,op.anesthesiologist||"",op.assistantNurse||"",op.circulatingNurse||"",op.anesthesiaNurse||"",op.onloopNurse||"",op.rrKatim||"",sanitizeForCSV(op.allergy||""),op.bloodType,op.status]);
             downloadBlob([h,...rows].map((r:any[])=>r.map((c:any)=>typeof c==="string"&&c.startsWith('"')?c:sanitizeForCSV(c)).join(",")).join("\n"),"JadwalOK_PantiRini_"+todayDate()+".csv");
-            showToast("✓ CSV berhasil diunduh",C.s);
+            showToast("CSV berhasil diunduh",C.s);
           }} style={{marginBottom:12}}>⬇ Unduh CSV Jadwal</Btn>
           {ops.length===0 && <Card><div style={{textAlign:"center",padding:20,color:C.tL,fontSize:13}}>Belum ada data jadwal</div></Card>}
           {ops.map((op:any)=>{
             const sc=STS[op.status as keyof typeof STS]||STS.scheduled, ot=OT[op.opType as keyof typeof OT||"elektif"];
             return (
-              <Card key={op.id} style={{padding:"12px 16px",marginBottom:6, ...(op.needsReview?{border:"2px solid #8B5CF6",background:"#F5F3FF"}:{})}}>
+              <Card key={op.id} style={{padding:"12px 16px",marginBottom:6, ...(op.needsReview?{border:"2px solid #0284C7",background:"#F5F3FF"}:{})}}>
                 <div style={{fontSize:13,fontWeight:700,color:C.t}}>{op.patient||"—"}</div>
                 <div style={{fontSize:12,color:C.tL}}>{op.procedure} · {fD(op.date)} {op.time} WIB</div>
                 <div style={{marginTop:6,display:"flex",gap:5,flexWrap:"wrap"}}>
                   <Bdg label={sc.l} color={sc.c} bg={sc.bg} icon={sc.icon}/>
                   <Bdg label={ot&&ot.label||"Elektif"} color={ot&&ot.c||C.i} bg={ot&&ot.bg||C.iBg}/>
                   {op.allergy&&op.allergy!=="Tidak Ada"&&<Bdg label="Alergi" color={C.d} bg={C.dBg}/>}
-                  {op.needsReview&&<Bdg label="🔍 Perlu Review (dari OCR)" color="#8B5CF6" bg="#EDE9FE"/>}
+                  {op.needsReview&&<Bdg label="🔍 Perlu Review (dari OCR)" color="#0284C7" bg="#EDE9FE"/>}
                 </div>
               </Card>
             );
@@ -386,7 +387,7 @@ export function ViewArsip(props: ViewArsipProps) {
           {archive.map((a:any)=>(
             <details key={a.id} style={{marginBottom:10}}>
               <summary style={{background:C.white,borderRadius:12,padding:"14px 16px",cursor:"pointer",border:"1px solid #DDE3EA",listStyle:"none",fontWeight:700,fontSize:14,color:C.t}}>
-                📅 {a.label} — {(a.ops||[]).length} operasi
+                <IkKal size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>{a.label} — {(a.ops||[]).length} operasi
                 <div style={{fontSize:11,color:C.tL,fontWeight:400,marginTop:3}}>{a.archivedAt}</div>
               </summary>
               <div style={{paddingTop:8,paddingLeft:6}}>
@@ -405,13 +406,13 @@ export function ViewArsip(props: ViewArsipProps) {
       {sub==="unduh" && (
         <div>
           <Card style={{background:"#EDE7F6",border:"1px solid #B39DDB",marginBottom:14}}>
-            <SH label="📥 Download Excel per Bulan" color="#4527A0"/>
+            <SH label="Download Excel per Bulan" color="#4527A0"/>
             <div style={{fontSize:12,color:"#5E35B1",marginBottom:12,lineHeight:1.7}}>
               Pilih bulan &amp; jenis data, lalu download langsung sebagai file Excel (.xlsx).
               Bisa dari data <b>Lokal</b> (perangkat ini), <b>Supabase</b> (cloud), atau <b>Dropbox</b> (cloud).
             </div>
             <div style={{background:"#F3E5F5",borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:12,color:"#6A1B9A",lineHeight:1.6}}>
-              ✅ <b>Multi-Device Sync Aktif:</b> Data tersinkron otomatis ke <b>Supabase</b> & <b>Dropbox</b> setiap ada perubahan.
+              <IkSelesai size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/><b>Multi-Device Sync Aktif:</b> Data tersinkron otomatis ke <b>Supabase</b> & <b>Dropbox</b> setiap ada perubahan.
               Buka dari HP/tablet lain = data langsung tersedia. Auto-delete backup &gt; 2 tahun.
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
@@ -420,36 +421,36 @@ export function ViewArsip(props: ViewArsipProps) {
               </LF>
               <LF label="Jenis Data">
                 <select style={{...iS,appearance:"none"} as React.CSSProperties} value={dlCloudType} onChange={e=>setDlCloudType(e.target.value as any)}>
-                  <option value="ops">📋 Jadwal Operasi</option>
+                  <option value="ops">Jadwal Operasi</option>
                   <option value="lembur">⏱ Data Lembur</option>
-                  <option value="monitoring">🌡 Monitoring Suhu</option>
+                  <option value="monitoring">Monitoring Suhu</option>
                 </select>
               </LF>
             </div>
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               <Btn full onClick={()=>dlFromLocal(dlCloudMonth,dlCloudType)} style={{flex:1,background:"#7B1FA2",color:"#fff",border:"none",minWidth:120}}>
-                💾 Lokal
+                <IkSimpan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Lokal
               </Btn>
               {supaCfg?.url&&supaCfg?.anonKey&&(
                 <Btn full onClick={()=>dlFromSupabase(dlCloudMonth,dlCloudType)} style={{flex:1,background:dlCloudBusy?"#aaa":"#3ECF8E",color:"#fff",border:"none",minWidth:120,opacity:dlCloudBusy?.6:1,cursor:dlCloudBusy?"not-allowed":"pointer"}}>
-                  {dlCloudBusy?"⏳ Mengunduh...":"☁️ Supabase"}
+                  {dlCloudBusy?"Mengunduh...":"Supabase"}
                 </Btn>
               )}
               {dbxCfg?.path&&(
                 <Btn full onClick={()=>dlFromDropbox(dlCloudMonth,dlCloudType)} style={{flex:1,background:dlCloudBusy?"#aaa":"#0061FF",color:"#fff",border:"none",minWidth:120,opacity:dlCloudBusy?.6:1,cursor:dlCloudBusy?"not-allowed":"pointer"}}>
-                  {dlCloudBusy?"⏳ Mengunduh...":"📦 Dropbox"}
+                  {dlCloudBusy?"Mengunduh...":"Dropbox"}
                 </Btn>
               )}
             </div>
             {!supaCfg?.url&&!dbxCfg?.path&&(
               <div style={{marginTop:10,fontSize:11,color:"#7B1FA2",background:"#F3E5F5",borderRadius:8,padding:"6px 10px"}}>
-                💡 Tombol Supabase &amp; Dropbox akan muncul setelah konfigurasi diisi di tab ⚙ Setelan.
+                <IkLampu size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Tombol Supabase &amp; Dropbox akan muncul setelah konfigurasi diisi di tab Setelan.
               </div>
             )}
           </Card>
 
           <Card style={{background:"#E8F5E9",border:"1px solid #A5D6A7",marginBottom:14}}>
-            <SH label="📁 Download Data Arsip / Lama" color="#2E7D32"/>
+            <SH label="Download Data Arsip / Lama" color="#2E7D32"/>
             <div style={{fontSize:12,color:"#2E7D32",marginBottom:12,lineHeight:1.6}}>
               Unduh data historis berdasarkan tahun, bulan, dan jenis laporan.
             </div>
@@ -483,42 +484,42 @@ export function ViewArsip(props: ViewArsipProps) {
             </div>
             <div style={{display:"flex",gap:8}}>
               <Btn full onClick={downloadArsipExcel} style={{flex:1,background:"#217346",color:"#fff",border:"none"}}>
-                📊 Download Excel
+                <IkGrafik size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Download Excel
               </Btn>
               <Btn full onClick={downloadArsipWord} style={{flex:1,background:"#5B21B6",color:"#fff",border:"none"}}>
-                📄 Download Word
+                <IkFile size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Download Word
               </Btn>
             </div>
           </Card>
 
           <Card style={{background:"#EDE9FE",border:"1px solid #C4B5FD",marginBottom:14}}>
-            <SH label="📋 Download File Tracking Operasi" color="#4338CA"/>
-            <div style={{fontSize:12,color:"#4338CA",marginBottom:12,lineHeight:1.6}}>
+            <SH label="Download File Tracking Operasi" color="#075985"/>
+            <div style={{fontSize:12,color:"#075985",marginBottom:12,lineHeight:1.6}}>
               Unduh semua data jadwal operasi sebagai file tracking (Excel atau Word).
               Total: <b>{ops.length} jadwal</b> operasi.
             </div>
             <div style={{display:"flex",gap:8}}>
-              <Btn full onClick={()=>downloadTrackingOps("excel")} style={{flex:1,background:"#4338CA",color:"#fff",border:"none"}}>
-                📊 Excel Tracking Operasi
+              <Btn full onClick={()=>downloadTrackingOps("excel")} style={{flex:1,background:"#075985",color:"#fff",border:"none"}}>
+                <IkGrafik size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Excel Tracking Operasi
               </Btn>
               <Btn full onClick={()=>downloadTrackingOps("word")} style={{flex:1,background:"#4C1D95",color:"#fff",border:"none"}}>
-                📄 Word Tracking Operasi
+                <IkFile size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Word Tracking Operasi
               </Btn>
             </div>
           </Card>
 
           <Card style={{background:"#E0F2F1",border:"1px solid #80CBC4"}}>
-            <SH label="📋 Download File Tracking Lembur" color="#1F5A52"/>
+            <SH label="Download File Tracking Lembur" color="#1F5A52"/>
             <div style={{fontSize:12,color:"#1F5A52",marginBottom:12,lineHeight:1.6}}>
               Unduh semua data lembur dari semua pegawai sebagai file tracking (Excel atau Word).
               Total pegawai: <b>{(lemburPegawai||[]).length}</b>.
             </div>
             {role==="admin" && <div style={{display:"flex",gap:8}}>
               <Btn full onClick={()=>downloadTrackingLembur("excel")} style={{flex:1,background:"#1F5A52",color:"#fff",border:"none"}}>
-                📊 Excel Tracking Lembur
+                <IkGrafik size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Excel Tracking Lembur
               </Btn>
               <Btn full onClick={()=>downloadTrackingLembur("word")} style={{flex:1,background:"#16685F",color:"#fff",border:"none"}}>
-                📄 Word Tracking Lembur
+                <IkFile size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Word Tracking Lembur
               </Btn>
             </div>}
           </Card>
@@ -531,12 +532,12 @@ export function ViewArsip(props: ViewArsipProps) {
 
       {sub==="audit" && (
         <div>
-          <div style={{fontSize:13,fontWeight:700,color:C.t,marginBottom:10}}>📋 Riwayat Perubahan ({auditLog.length})</div>
+          <div style={{fontSize:13,fontWeight:700,color:C.t,marginBottom:10}}><IkClip size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Riwayat Perubahan ({auditLog.length})</div>
           {auditLog.length===0 && <Card><div style={{textAlign:"center",padding:24,color:C.tL,fontSize:13}}>Belum ada riwayat. Perubahan pada jadwal akan tercatat di sini.</div></Card>}
           {[...auditLog].reverse().map((a:any)=>(
             <div key={a.id} style={{background:C.white,borderRadius:12,padding:"12px 16px",marginBottom:8,border:"1px solid #DDE3EA",borderLeft:`4px solid ${a.action==="Hapus"?C.d:a.action==="Edit"?C.i:C.s}`}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                <span style={{fontSize:12,fontWeight:800,color:a.action==="Hapus"?C.d:a.action==="Edit"?C.i:C.s}}>{a.action==="Hapus"?"🗑 HAPUS":a.action==="Edit"?"✏️ EDIT":"✚ TAMBAH"}</span>
+                <span style={{fontSize:12,fontWeight:800,color:a.action==="Hapus"?C.d:a.action==="Edit"?C.i:C.s}}>{a.action==="Hapus"?"HAPUS":a.action==="Edit"?"EDIT":"TAMBAH"}</span>
                 <span style={{fontSize:11,color:C.tL}}>{a.time}</span>
               </div>
               <div style={{fontSize:13,fontWeight:700,color:C.t}}>{a.patient}</div>
@@ -550,14 +551,14 @@ export function ViewArsip(props: ViewArsipProps) {
         <div>
           <Card>
             <SH label="Mode Privasi" color="#4A148C"/>
-            <Toggle value={privacyMode} onChange={(v:boolean)=>{setPrivacyMode(v);showToast(v?"🔒 Mode Privasi aktif":"Mode Privasi dimatikan",v?"#7B1FA2":C.g);}} color="#4A148C" label="🔒 Sembunyikan Data Pasien" sub="Nama & RM disamarkan di layar (pesan WA tetap asli)"/>
+            <Toggle value={privacyMode} onChange={(v:boolean)=>{setPrivacyMode(v);showToast(v?"Mode Privasi aktif":"Mode Privasi dimatikan",v?"#7B1FA2":C.g);}} color="#4A148C" label="Sembunyikan Data Pasien" sub="Nama & RM disamarkan di layar (pesan WA tetap asli)"/>
             {privacyMode && <div style={{background:"#F3E5F5",borderRadius:8,padding:"8px 12px",marginTop:10,fontSize:12,color:"#7B1FA2",lineHeight:1.6}}>Mode aktif. Aman untuk presentasi, audit & dokumentasi sistem.</div>}
           </Card>
 
           <Card>
-            <SH label="☁ Backup ke Supabase" color="#3ECF8E"/>
+            <SH label="Backup ke Supabase" color="#3ECF8E"/>
             <div style={{background:"#ECFDF5",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#065F46",lineHeight:1.7,border:"1px solid #A7F3D0"}}>
-              <b>✅ Koneksi Supabase aktif otomatis.</b><br/>
+              <b><IkSelesai size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Koneksi Supabase aktif otomatis.</b><br/>
               Project: <code style={{background:"#D1FAE5",padding:"1px 5px",borderRadius:4}}>ezwgnpdtzcabxmimovbp.supabase.co</code><br/>
               Konfigurasi dikelola secara terpusat — tidak perlu input manual.
             </div>
@@ -565,7 +566,7 @@ export function ViewArsip(props: ViewArsipProps) {
               value={supaCfg.autoBackup}
               onChange={(v:boolean)=>setSupaCfg((p:SupabaseConfig)=>({...p,autoBackup:v}))}
               color="#3ECF8E"
-              label="🔄 Auto-Backup JSON Otomatis"
+              label="Auto-Backup JSON Otomatis"
               sub={`Backup otomatis setiap ${supaCfg.backupInterval} menit (semua data: ops, lembur, monitoring)`}
             />
             {supaCfg.autoBackup && (
@@ -579,24 +580,24 @@ export function ViewArsip(props: ViewArsipProps) {
               value={supaCfg.realtimeBackup}
               onChange={(v:boolean)=>setSupaCfg((p:SupabaseConfig)=>({...p,realtimeBackup:v}))}
               color="#059669"
-              label="⚡ Backup Realtime ke Supabase"
+              label="Backup Realtime ke Supabase"
               sub="Setiap ada perubahan data, backup dikirim ke Supabase dalam 5 detik"
             />
             <Toggle
               value={supaCfg.autoExcelBackup}
               onChange={(v:boolean)=>setSupaCfg((p:SupabaseConfig)=>({...p,autoExcelBackup:v}))}
-              color="#6D28D9"
-              label="📊 Auto-Backup Excel 24 Jam ke Supabase"
+              color="#0369A1"
+              label="Auto-Backup Excel 24 Jam ke Supabase"
               sub="Upload Excel Operasi, Lembur & Monitoring otomatis setiap 24 jam via Supabase Storage"
             />
             {supaCfg.lastBackup && (
               <div style={{background:"#ECFDF5",borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:"#065F46",border:"1px solid #A7F3D0"}}>
-                🕐 Backup terakhir: {supaCfg.lastBackup}
+                <IkJam size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Backup terakhir: {supaCfg.lastBackup}
               </div>
             )}
             <div style={{background:"#F0F4F8",borderRadius:10,padding:"10px 14px",marginBottom:10,display:"flex",gap:12,flexWrap:"wrap"}}>
               <div style={{flex:1,minWidth:120}}>
-                <div style={{fontSize:10,fontWeight:700,color:C.p,marginBottom:4,textTransform:"uppercase",letterSpacing:.5}}>☁ Supabase</div>
+                <div style={{fontSize:10,fontWeight:700,color:C.p,marginBottom:4,textTransform:"uppercase",letterSpacing:.5}}><IkCloud size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Supabase</div>
                 <div style={{fontSize:11,color:C.g}}>Free: ~500MB · Auto-backup aktif</div>
                 <div style={{background:C.b,borderRadius:4,height:6,marginTop:4}}>
                   <div style={{background:C.p,height:6,borderRadius:4,width:"2%"}}/>
@@ -604,7 +605,7 @@ export function ViewArsip(props: ViewArsipProps) {
                 <div style={{fontSize:10,color:C.tL,marginTop:2}}>~2% terpakai · Auto-delete &gt;2 tahun</div>
               </div>
               <div style={{flex:1,minWidth:120}}>
-                <div style={{fontSize:10,fontWeight:700,color:"#0061FF",marginBottom:4,textTransform:"uppercase",letterSpacing:.5}}>📦 Dropbox</div>
+                <div style={{fontSize:10,fontWeight:700,color:"#0061FF",marginBottom:4,textTransform:"uppercase",letterSpacing:.5}}><IkBox size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Dropbox</div>
                 <div style={{fontSize:11,color:C.g}}>Free: ~2GB · Auto-backup aktif</div>
                 <div style={{background:C.b,borderRadius:4,height:6,marginTop:4}}>
                   <div style={{background:"#0061FF",height:6,borderRadius:4,width:"1%"}}/>
@@ -618,7 +619,7 @@ export function ViewArsip(props: ViewArsipProps) {
               </div>
             )}
             <Btn full color="#3ECF8E" onClick={onSupaBackup} disabled={supaBackingUp} style={{marginTop:4}}>
-              {supaBackingUp?"⟳ Memproses...":"☁ Backup Semua Data Sekarang ke Supabase"}
+              {supaBackingUp?"Memproses...":"Backup Semua Data Sekarang ke Supabase"}
             </Btn>
             <div style={{marginTop:12,background:"#F0FDF4",borderRadius:10,padding:"12px 14px",border:"1px solid #BBF7D0"}}>
               <div style={{fontSize:12,fontWeight:700,color:"#065F46",marginBottom:6}}>⬆ Pulihkan dari Supabase (backup terakhir)</div>
@@ -627,28 +628,28 @@ export function ViewArsip(props: ViewArsipProps) {
               </div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
                 <Btn full outline color="#065F46" onClick={onSupaRestoreOps} disabled={supaBackingUp} style={{flex:1,minWidth:130}}>
-                  🗓 Pulihkan Operasi
+                  <IkKal size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Pulihkan Operasi
                 </Btn>
                 <Btn full outline color="#065F46" onClick={onSupaRestoreLembur} disabled={supaBackingUp} style={{flex:1,minWidth:130}}>
                   ⏰ Pulihkan Lembur
                 </Btn>
-                <Btn full outline color="#6D28D9" onClick={onSupaRestoreMonitoring} disabled={supaBackingUp} style={{flex:1,minWidth:130}}>
-                  🌡 Pulihkan Monitoring
+                <Btn full outline color="#0369A1" onClick={onSupaRestoreMonitoring} disabled={supaBackingUp} style={{flex:1,minWidth:130}}>
+                  <IkSuhu size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Pulihkan Monitoring
                 </Btn>
               </div>
               <Btn full color="#065F46" onClick={onSupaRestoreAll} disabled={supaBackingUp} style={{background:"#065F46",color:"#fff",border:"none",width:"100%"}}>
-                ♻ Pulihkan SEMUA Data dari Supabase
+                <IkPulih size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Pulihkan SEMUA Data dari Supabase
               </Btn>
               <Btn full outline color="#065F46" onClick={onSupaRestoreTabelBaru} disabled={supaBackingUp} style={{marginTop:8,width:"100%"}}>
-                📋 Pulihkan Laporan & Jadwal (hanya yang hilang)
+                <IkClip size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Pulihkan Laporan & Jadwal (hanya yang hilang)
               </Btn>
             </div>
           </Card>
 
           <Card>
-            <SH label="📦 Backup ke Dropbox" color="#0061FF"/>
-            <div style={{background:"#F5F3FF",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#4F46E5",lineHeight:1.8,border:"1px solid #DDD6FE"}}>
-              <b>✅ Koneksi Dropbox aktif otomatis.</b><br/>
+            <SH label="Backup ke Dropbox" color="#0061FF"/>
+            <div style={{background:"#F5F3FF",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#0369A1",lineHeight:1.8,border:"1px solid #DDD6FE"}}>
+              <b><IkSelesai size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Koneksi Dropbox aktif otomatis.</b><br/>
               Token terkonfigurasi secara terpusat — tidak perlu input manual.<br/>
               Path backup: <code style={{background:"#EDE9FE",padding:"1px 4px",borderRadius:3}}>/KamarBedahPantiRini/backup.json</code>
             </div>
@@ -670,12 +671,12 @@ export function ViewArsip(props: ViewArsipProps) {
               value={dbxCfg.realtimeBackup}
               onChange={(v:boolean)=>setDbxCfg((p:DropboxConfig)=>({...p,realtimeBackup:v}))}
               color="#0061FF"
-              label="⚡ Cadangkan Realtime (otomatis)"
+              label="Cadangkan Realtime (otomatis)"
               sub="Setiap ada perubahan data, backup dikirim ke Dropbox dalam 3 detik"
             />
             {dbxCfg.realtimeBackup && (
-              <div style={{background:"#F5F3FF",borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:"#4F46E5",border:"1px solid #DDD6FE",display:"flex",alignItems:"center",gap:6}}>
-                <span style={{fontSize:16}}>⚡</span>
+              <div style={{background:"#F5F3FF",borderRadius:8,padding:"8px 12px",marginBottom:8,fontSize:12,color:"#0369A1",border:"1px solid #DDD6FE",display:"flex",alignItems:"center",gap:6}}>
+                <span style={{fontSize:16}}><IkZap size={16} strokeWidth={2.4} style={{verticalAlign:"-2px"}}/></span>
                 <span>Realtime aktif — setiap perubahan jadwal &amp; lembur otomatis tersimpan ke Dropbox</span>
               </div>
             )}
@@ -683,29 +684,29 @@ export function ViewArsip(props: ViewArsipProps) {
               value={dbxCfg.autoExcelBackup}
               onChange={(v:boolean)=>setDbxCfg((p:DropboxConfig)=>({...p,autoExcelBackup:v}))}
               color="#3730A3"
-              label="📊 Auto-Backup Excel setiap 24 Jam"
+              label="Auto-Backup Excel setiap 24 Jam"
               sub="Upload Excel Operasi &amp; Lembur otomatis ke Dropbox setiap 24 jam"
             />
             {dbxCfg.autoExcelBackup && (
               <div style={{background:"#EEF2FF",borderRadius:8,padding:"10px 12px",marginBottom:8,fontSize:12,color:"#3730A3",border:"1px solid #C7D2FE"}}>
                 <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
-                  <span style={{fontSize:15}}>📊</span>
+                  <span style={{fontSize:15}}><IkGrafik size={16} strokeWidth={2.4} style={{verticalAlign:"-2px"}}/></span>
                   <b>Auto Excel aktif</b>
                 </div>
-                <div style={{color:"#4F46E5",lineHeight:1.7}}>
+                <div style={{color:"#0369A1",lineHeight:1.7}}>
                   Setiap 24 jam, file <b>Auto_Operasi_YYYY-MM-DD.xlsx</b>, <b>Auto_Lembur_YYYY-MM-DD.xlsx</b>, dan <b>Auto_Monitoring_YYYY-MM-DD.xlsx</b> di-upload ke Dropbox secara otomatis.
                   {dbxCfg.lastExcelBackup && (
-                    <div style={{marginTop:4}}>🕐 Excel terakhir diupload: <b>{dbxCfg.lastExcelBackup}</b></div>
+                    <div style={{marginTop:4}}><IkJam size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Excel terakhir diupload: <b>{dbxCfg.lastExcelBackup}</b></div>
                   )}
                   {!dbxCfg.lastExcelBackup && (
-                    <div style={{marginTop:4,color:"#6366F1"}}>⏳ Menunggu waktu upload pertama (setiap 24 jam sekali)</div>
+                    <div style={{marginTop:4,color:"#0284C7"}}>⏳ Menunggu waktu upload pertama (setiap 24 jam sekali)</div>
                   )}
                 </div>
               </div>
             )}
             {dbxCfg.lastBackup && (
-              <div style={{background:"#F5F3FF",borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:"#4F46E5",border:"1px solid #DDD6FE"}}>
-                🕐 Backup JSON terakhir: <b>{dbxCfg.lastBackup}</b>
+              <div style={{background:"#F5F3FF",borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,color:"#0369A1",border:"1px solid #DDD6FE"}}>
+                <IkJam size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Backup JSON terakhir: <b>{dbxCfg.lastBackup}</b>
               </div>
             )}
             {dbxStatus && (
@@ -714,31 +715,31 @@ export function ViewArsip(props: ViewArsipProps) {
               </div>
             )}
             <Btn full color="#0061FF" onClick={onDbxBackup} disabled={dbxBacking} style={{background:"#0061FF",color:"#fff",border:"none",marginTop:4}}>
-              {dbxBacking?"⟳ Menyimpan...":"📦 Backup Semua Data (JSON) ke Dropbox"}
+              {dbxBacking?"Menyimpan...":"Backup Semua Data (JSON) ke Dropbox"}
             </Btn>
             <div style={{marginTop:10,background:"#EEF2FF",borderRadius:10,padding:"12px 14px"}}>
-              <div style={{fontSize:12,fontWeight:700,color:"#3730A3",marginBottom:8}}>📊 Backup per Kategori (Excel) ke Dropbox</div>
-              <div style={{fontSize:11,color:"#6366F1",marginBottom:10,lineHeight:1.6}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#3730A3",marginBottom:8}}><IkGrafik size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Backup per Kategori (Excel) ke Dropbox</div>
+              <div style={{fontSize:11,color:"#0284C7",marginBottom:10,lineHeight:1.6}}>
                 Backup data Operasi atau Lembur secara terpisah sebagai file Excel (.xlsx) ke Dropbox.
                 File tersimpan di folder yang sama dengan path backup utama.
               </div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                 <Btn full outline color="#3730A3" onClick={onDbxBackupOpsXls} disabled={dbxBacking} style={{flex:1,minWidth:140}}>
-                  🗓 Backup Operasi (Excel)
+                  <IkKal size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Backup Operasi (Excel)
                 </Btn>
                 <Btn full outline color="#3730A3" onClick={onDbxBackupLemburXls} disabled={dbxBacking} style={{flex:1,minWidth:140}}>
                   ⏰ Backup Lembur (Excel)
                 </Btn>
-                <Btn full outline color="#6D28D9" onClick={onDbxBackupMonitoringXls} disabled={dbxBacking} style={{flex:1,minWidth:140}}>
-                  🌡 Backup Monitoring (Excel)
+                <Btn full outline color="#0369A1" onClick={onDbxBackupMonitoringXls} disabled={dbxBacking} style={{flex:1,minWidth:140}}>
+                  <IkSuhu size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Backup Monitoring (Excel)
                 </Btn>
               </div>
             </div>
             <div style={{marginTop:10}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#4F46E5",marginBottom:6}}>⬇ Pulihkan dari Dropbox (pilih data yang ingin dipulihkan):</div>
+              <div style={{fontSize:11,fontWeight:700,color:"#0369A1",marginBottom:6}}>⬇ Pulihkan dari Dropbox (pilih data yang ingin dipulihkan):</div>
               <div style={{display:"flex",gap:8}}>
                 <Btn full outline color="#0061FF" onClick={onDbxRestoreOps} disabled={dbxBacking} style={{flex:1}}>
-                  🗓 Jadwal Operasi
+                  <IkKal size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Jadwal Operasi
                 </Btn>
                 <Btn full outline color="#0061FF" onClick={onDbxRestoreLembur} disabled={dbxBacking} style={{flex:1}}>
                   ⏰ Data Lembur
@@ -748,37 +749,37 @@ export function ViewArsip(props: ViewArsipProps) {
           </Card>
 
           <Card>
-            <SH label="💾 Backup & Recovery Lokal" color={C.w}/>
+            <SH label="Backup & Recovery Lokal" color={C.w}/>
             <div style={{fontSize:12,color:C.tL,marginBottom:12,lineHeight:1.6}}>Ekspor semua data lokal sebagai file JSON untuk backup darurat.</div>
             <Btn full outline color={C.w} onClick={()=>{
               const data={exportedAt:fNow(),ops,archive,notifs};
               downloadBlob(JSON.stringify(data,null,2),"BACKUP_OR_PantiRini_"+todayDate()+".json","application/json");
-              showToast("✓ File JSON berhasil diunduh",C.s);
+              showToast("File JSON berhasil diunduh",C.s);
             }}>⬇ Ekspor Semua Data (JSON)</Btn>
           </Card>
 
           <Card>
-            <SH label="📡 Sinkronisasi Real-time" color="#4338CA"/>
-            <div style={{background:"#EDE9FE",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#4338CA",lineHeight:1.7,border:"1px solid #C4B5FD"}}>
+            <SH label="Sinkronisasi Real-time" color="#075985"/>
+            <div style={{background:"#EDE9FE",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#075985",lineHeight:1.7,border:"1px solid #C4B5FD"}}>
               Sinkronisasi data antar HP/komputer secara langsung menggunakan Supabase Realtime. Aktifkan setelah mengisi URL & Anon Key Supabase di atas.
             </div>
-            <Toggle value={rtEnabled} onChange={(v:boolean)=>setRtEnabled(v)} color="#4338CA" label="📡 Aktifkan Sinkronisasi Real-time" sub="Semua perubahan jadwal akan disinkron ke perangkat lain"/>
+            <Toggle value={rtEnabled} onChange={(v:boolean)=>setRtEnabled(v)} color="#075985" label="Aktifkan Sinkronisasi Real-time" sub="Semua perubahan jadwal akan disinkron ke perangkat lain"/>
             {rtStatus && (
               <div style={{marginTop:10,background:rtStatus==="online"?"#E8F5E9":"#FFF3E0",borderRadius:8,padding:"8px 12px",fontSize:12,color:rtStatus==="online"?"#2E7D32":"#E65100",fontWeight:700,border:`1px solid ${rtStatus==="online"?"#A5D6A7":"#FFCC80"}`}}>
-                {rtStatus==="online"?"🟢 Terhubung — data disinkron secara real-time":rtStatus==="connecting"?"🟡 Menghubungkan...":"🔴 Tidak terhubung — periksa URL & Anon Key"}
+                {rtStatus==="online"?"Terhubung — data disinkron secara real-time":rtStatus==="connecting"?"Menghubungkan...":"Tidak terhubung — periksa URL & Anon Key"}
               </div>
             )}
           </Card>
 
           <Card style={{background:C.sBg,border:"1px solid #2E7D3233"}}>
             <div style={{fontSize:12,color:C.s,lineHeight:2.1}}>
-              ✓ <b>Zero dummy data</b> — sistem dimulai kosong<br/>
-              ✓ <b>Spasi bebas</b> saat mengetik (sanitize hanya saat simpan)<br/>
-              ✓ <b>PERAWAT Instrumen</b> mengganti Perawat Sirkuler<br/>
-              ✓ <b>Supabase Backup</b> — manual & auto terjadwal<br/>
-              ✓ <b>Pagination {PAGE_SIZE}/halaman</b> — tahan 100+ data<br/>
-              ✓ <b>Auto-lock</b> setelah {LOCK_MS/60000} menit idle<br/>
-              ✓ <b>Statistik lengkap</b> per bulan, kamar, dokter
+              <IkCek size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/><b>Zero dummy data</b> — sistem dimulai kosong<br/>
+              <IkCek size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/><b>Spasi bebas</b> saat mengetik (sanitize hanya saat simpan)<br/>
+              <IkCek size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/><b>PERAWAT Instrumen</b> mengganti Perawat Sirkuler<br/>
+              <IkCek size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/><b>Supabase Backup</b> — manual & auto terjadwal<br/>
+              <IkCek size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/><b>Pagination {PAGE_SIZE}/halaman</b> — tahan 100+ data<br/>
+              <IkCek size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/><b>Auto-lock</b> setelah {LOCK_MS/60000} menit idle<br/>
+              <IkCek size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/><b>Statistik lengkap</b> per bulan, kamar, dokter
             </div>
           </Card>
         </div>

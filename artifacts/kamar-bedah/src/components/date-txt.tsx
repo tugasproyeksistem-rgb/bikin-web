@@ -1,3 +1,4 @@
+import { CalendarDays as IkKal } from "lucide-react"; /* patch94 */
 /* src/components/date-txt.tsx
    Input tanggal custom dengan auto-slash-insertion (DD/MM/YYYY) — pengganti
    <input type="date"> native yang render format US (MM/DD/YYYY) di Windows.
@@ -75,7 +76,7 @@ export function DateTxt({value,onChange,style,...rest}: {value:string;onChange:(
         tabIndex={-1}
         aria-label="Buka kalender"
         style={{position:"absolute",right:4,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",padding:4,lineHeight:0,color:"#666",pointerEvents:"none"}}
-      >📅</button>
+      ><IkKal size={18} strokeWidth={2.2}/></button>
     </div>
   );
 }

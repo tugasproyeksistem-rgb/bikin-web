@@ -42,7 +42,7 @@ export async function callOcrScanEndpoint(
     /* FIX AUDIT #34: coerce semua item ke tipe string yang aman sebelum
        diteruskan ke pemanggil (applyOcrResult / autoSaveOcrBatch). */
     const rawData = Array.isArray(json.data) ? json.data : [];
-    return { ok: true, data: rawData.map(coerceOcrResult), msg: json.msg || "✓ Berhasil", notAFormError };
+    return { ok: true, data: rawData.map(coerceOcrResult), msg: json.msg || "Berhasil", notAFormError };
   } catch (e: any) {
     return { ok: false, msg: "Gagal menghubungi server OCR: " + (e?.message || "network error") };
   }
@@ -73,3 +73,4 @@ export async function runWorkerOcrScanText(
   if (!trimmed) return { ok: false, msg: "Teks kosong — tempel dulu instruksi/memo sebelum diproses." };
   return callOcrScanEndpoint({ text: trimmed.slice(0, MAX_OCR_PASTE_CHARS) });
 }
+/* patch103 */

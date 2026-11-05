@@ -1,3 +1,4 @@
+import { CheckCircle2 as IkSelesai, AlertTriangle as IkPeringatan, Check as IkCek, Lightbulb as IkLampu, Star as IkBintang, Settings as IkGear } from "lucide-react"; /* patch95 */
 /* src/components/view-laporan.tsx
    Tab "Laporan" — laporan Kepala Jaga (salam, penerima, keterangan, acara
    hari ini, rencana besok — dengan penanganan khusus hari Sabtu yang
@@ -98,8 +99,8 @@ export function ViewLaporan({ops,staff,roster,showToast,role,privacyMode}: ViewL
   return (
     <div>
       <Row title="Laporan Kepala Jaga"/>
-      {rTmrw ? <div style={{background:C.sBg,borderRadius:10,padding:"8px 14px",marginBottom:12,fontSize:12,color:C.s,border:`1px solid ${C.s}33`}}>✅ Jadwal siaga hari ini ditemukan — kolom siaga terisi otomatis. Bisa diedit.</div>
-              : <div style={{background:C.wBg,borderRadius:10,padding:"8px 14px",marginBottom:12,fontSize:12,color:C.w}}>⚠ Upload Jadwal Siaga di menu <b>Staf</b>, atau isi manual di bawah.</div>}
+      {rTmrw ? <div style={{background:C.sBg,borderRadius:10,padding:"8px 14px",marginBottom:12,fontSize:12,color:C.s,border:`1px solid ${C.s}33`}}><IkSelesai size={14} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:6}}/>Jadwal siaga hari ini ditemukan — kolom siaga terisi otomatis. Bisa diedit.</div>
+              : <div style={{background:C.wBg,borderRadius:10,padding:"8px 14px",marginBottom:12,fontSize:12,color:C.w}}><IkPeringatan size={14} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:6}}/>Upload Jadwal Siaga di menu <b>Staf</b>, atau isi manual di bawah.</div>}
       <Card>
         <SH label="① Salam & Penerima"/>
         <LF label="Waktu Salam">
@@ -115,17 +116,17 @@ export function ViewLaporan({ops,staff,roster,showToast,role,privacyMode}: ViewL
           <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
             <textarea style={{...iS,flex:1,resize:"vertical",minHeight:72,lineHeight:1.7,borderColor:foc==="rec"?C.p:C.b,boxShadow:foc==="rec"?`0 0 0 3px ${C.p}22`:""} as React.CSSProperties} placeholder="Nama penerima laporan..." value={lSet.recipients||""} onChange={(ev:any)=>setLSet((p:any)=>({...p,recipients:ev.target.value}))} onFocus={()=>setFoc("rec")} onBlur={()=>setFoc(null)} spellCheck={false}/>
             <div style={{display:"flex",flexDirection:"column",gap:8,flexShrink:0}}>
-              <button onClick={()=>setLSet((p:any)=>({...p,recipients:DEFAULT_RECIPIENT}))} style={{background:C.p,border:"none",borderRadius:10,color:"#fff",padding:"9px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",lineHeight:1.4,whiteSpace:"nowrap"}}>★ Default</button>
+              <button onClick={()=>setLSet((p:any)=>({...p,recipients:DEFAULT_RECIPIENT}))} style={{background:C.p,border:"none",borderRadius:10,color:"#fff",padding:"9px 12px",cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",lineHeight:1.4,whiteSpace:"nowrap"}}><IkBintang size={13} strokeWidth={2} fill="currentColor" style={{verticalAlign:"-2px",marginRight:5}}/>Default</button>
               <button onClick={()=>setLSet((p:any)=>({...p,recipients:""}))} style={{background:"none",border:`1.5px solid ${C.b}`,borderRadius:10,color:C.tL,padding:"8px 12px",cursor:"pointer",fontSize:12,fontFamily:"inherit"}}>Hapus</button>
             </div>
           </div>
-          {!lSet.recipients && <div style={{fontSize:11,color:C.tL,marginTop:4}}>💡 Klik <b>★ Default</b> untuk isi otomatis teks penerima standar</div>}
+          {!lSet.recipients && <div style={{fontSize:11,color:C.tL,marginTop:4}}><IkLampu size={13} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:5}}/>Klik <b>Default</b> untuk isi otomatis teks penerima standar</div>}
         </LF>
       </Card>
       <Card>
         <SH label="② Keterangan Tambahan"/>
         <textarea style={{...iS,resize:"vertical",minHeight:72,lineHeight:1.7,borderColor:foc==="ket"?C.p:C.b,boxShadow:foc==="ket"?`0 0 0 3px ${C.p}22`:""} as React.CSSProperties} placeholder="Catatan khusus shift ini (kosongkan jika tidak ada)..." value={lSet.keterangan||""} onChange={(ev:any)=>setLSet((p:any)=>({...p,keterangan:ev.target.value}))} onFocus={()=>setFoc("ket")} onBlur={()=>setFoc(null)} spellCheck={false}/>
-        {lSet.keterangan && <div style={{fontSize:11,color:C.p,marginTop:3}}>✓ Keterangan akan disisipkan di awal laporan</div>}
+        {lSet.keterangan && <div style={{fontSize:11,color:C.p,marginTop:3}}><IkCek size={12} strokeWidth={2.8} style={{verticalAlign:"-2px",marginRight:4}}/>Keterangan akan disisipkan di awal laporan</div>}
       </Card>
       <Card style={{background:tActive.length>0?"#F8FBF0":C.gBg,border:`1px solid ${tActive.length>0?"#D4E6A0":C.b}`}}>
         <SH label="③ Acara Operasi Hari Ini" color={C.s}/>
@@ -217,7 +218,7 @@ export function ViewLaporan({ops,staff,roster,showToast,role,privacyMode}: ViewL
       {/* ⑤ Siaga Dokter Anestesi — 2 kolom fixed */}
       <Card>
         <SH label="⑤ Siaga Dokter Anestesi" color={C.p}/>
-        {rTmrw && <div style={{fontSize:11,color:C.s,marginBottom:8,fontWeight:600}}>✓ Terisi otomatis dari jadwal jaga {fDMY(todayDate())} — bisa diedit</div>}
+        {rTmrw && <div style={{fontSize:11,color:C.s,marginBottom:8,fontWeight:600}}><IkCek size={12} strokeWidth={2.8} style={{verticalAlign:"-2px",marginRight:4}}/>Terisi otomatis dari jadwal jaga {fDMY(todayDate())} — bisa diedit</div>}
         <div style={{display:"flex",gap:8}}>
           {[0,1].map(i=>(
             <div key={i} style={{flex:1}}>
@@ -230,7 +231,7 @@ export function ViewLaporan({ops,staff,roster,showToast,role,privacyMode}: ViewL
       {/* ⑥ Siaga Cyto Dokter Anestesi — 3 kolom fixed */}
       <Card hi={C.dL}>
         <SH label="⑥ Siaga Cyto Dokter Anestesi" color="#B71C1C"/>
-        {rTmrw && <div style={{fontSize:11,color:C.s,marginBottom:8,fontWeight:600}}>✓ Terisi otomatis dari jadwal jaga {fDMY(todayDate())} — bisa diedit</div>}
+        {rTmrw && <div style={{fontSize:11,color:C.s,marginBottom:8,fontWeight:600}}><IkCek size={12} strokeWidth={2.8} style={{verticalAlign:"-2px",marginRight:4}}/>Terisi otomatis dari jadwal jaga {fDMY(todayDate())} — bisa diedit</div>}
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           {[0,1,2].map(i=>(
             <div key={i} style={{flex:"1 1 calc(33% - 8px)",minWidth:120}}>
@@ -243,7 +244,7 @@ export function ViewLaporan({ops,staff,roster,showToast,role,privacyMode}: ViewL
       {/* ⑦ Siaga Perawat — 4 kolom fixed */}
       <Card>
         <SH label="⑦ Siaga Perawat" color={C.p}/>
-        {rTmrw && <div style={{fontSize:11,color:C.s,marginBottom:8,fontWeight:600}}>✓ Terisi otomatis dari jadwal jaga {fDMY(todayDate())} — bisa diedit</div>}
+        {rTmrw && <div style={{fontSize:11,color:C.s,marginBottom:8,fontWeight:600}}><IkCek size={12} strokeWidth={2.8} style={{verticalAlign:"-2px",marginRight:4}}/>Terisi otomatis dari jadwal jaga {fDMY(todayDate())} — bisa diedit</div>}
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           {[0,1,2,3].map(i=>(
             <div key={i} style={{flex:"1 1 calc(50% - 8px)",minWidth:140}}>
@@ -264,15 +265,15 @@ export function ViewLaporan({ops,staff,roster,showToast,role,privacyMode}: ViewL
         </div>
         {katimList.length>0 && <div><div style={{fontSize:12,color:C.tL,marginBottom:6}}>Pilih nomor Katim dari staf:</div><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{katimList.map((s:any)=><button key={s.id} onClick={()=>setLSet((p:any)=>({...p,katimPhone:s.phone}))} style={{fontSize:12,padding:"5px 10px",borderRadius:8,border:`1px solid ${C.p}`,background:C.pBg,color:C.p,cursor:"pointer",fontFamily:"inherit"}}>{s.name.split(",")[0]}</button>)}</div></div>}
       </Card>
-      <Btn full onClick={gen} style={{marginBottom:12,padding:"14px",fontSize:15}}>⚙ Generate Laporan</Btn>
+      <Btn full onClick={gen} style={{marginBottom:12,padding:"14px",fontSize:15}}><IkGear size={16} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Generate Laporan</Btn>
       {preview && (
         <Card hi={C.pL+"55"}>
           <div style={{fontSize:13,fontWeight:700,color:C.p,marginBottom:8}}>Pratinjau — Verifikasi sebelum kirim</div>
           <div style={{background:"#F8FAFB",borderRadius:10,padding:"12px 14px",fontSize:13,lineHeight:1.9,whiteSpace:"pre-wrap",border:`1px solid ${C.b}`,marginBottom:12,maxHeight:320,overflowY:"auto",fontFamily:"inherit"}}>{preview}</div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <Btn outline color={C.p} onClick={()=>navigator.clipboard?.writeText(preview).then(()=>showToast("✓ Teks disalin")).catch(()=>showToast("Salin dari pratinjau di atas"))} style={{flex:1}}>Salin Teks</Btn>
-            <WaBt onClick={()=>{ if(!lSet.katimPhone){showToast("Nomor WA Katim belum diisi",C.d);return;} window.open(`https://wa.me/${normalizePhone62(lSet.katimPhone)}?text=${encodeURIComponent(preview)}`,"_blank"); showToast("✓ WA Katim dibuka","#25D366"); }} style={{flex:1}}>WA Katim</WaBt>
-            <WaBt onClick={()=>{ if(!lSet.grupPhone){showToast("Nomor WA Grup belum diisi",C.d);return;} window.open(`https://wa.me/${normalizePhone62(lSet.grupPhone)}?text=${encodeURIComponent(preview)}`,"_blank"); showToast("✓ WA Grup dibuka","#25D366"); }} style={{flex:1}}>WA Grup</WaBt>
+            <Btn outline color={C.p} onClick={()=>navigator.clipboard?.writeText(preview).then(()=>showToast("Teks disalin")).catch(()=>showToast("Salin dari pratinjau di atas"))} style={{flex:1}}>Salin Teks</Btn>
+            <WaBt onClick={()=>{ if(!lSet.katimPhone){showToast("Nomor WA Katim belum diisi",C.d);return;} window.open(`https://wa.me/${normalizePhone62(lSet.katimPhone)}?text=${encodeURIComponent(preview)}`,"_blank"); showToast("WA Katim dibuka","#25D366"); }} style={{flex:1}}>WA Katim</WaBt>
+            <WaBt onClick={()=>{ if(!lSet.grupPhone){showToast("Nomor WA Grup belum diisi",C.d);return;} window.open(`https://wa.me/${normalizePhone62(lSet.grupPhone)}?text=${encodeURIComponent(preview)}`,"_blank"); showToast("WA Grup dibuka","#25D366"); }} style={{flex:1}}>WA Grup</WaBt>
           </div>
         </Card>
       )}

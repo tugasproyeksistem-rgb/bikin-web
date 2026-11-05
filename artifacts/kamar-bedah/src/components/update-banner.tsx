@@ -1,3 +1,4 @@
+import { Bell as IkBel, X as IkX } from "lucide-react"; /* patch94 */
 /* src/components/update-banner.tsx
    Pita "Ada pembaruan": membandingkan versi build di kode ini dengan /version.json di server.
    Tidak memuat ulang otomatis supaya isian yang sedang diketik tidak hilang. */
@@ -36,10 +37,10 @@ export function UpdateBanner() {
   };
 
   return (
-    <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100000, display: "flex", justifyContent: "center", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "10px 14px", background: "linear-gradient(90deg,#4C1D95,#7C3AED)", color: "#fff", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(76,29,149,.45)" }}>
-      <span>🔔 Ada pembaruan aplikasi.</span>
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100000, display: "flex", justifyContent: "center", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "10px 14px", background: "linear-gradient(90deg,#4C1D95,#0284C7)", color: "#fff", fontSize: 14, fontWeight: 700, boxShadow: "0 4px 16px rgba(76,29,149,.45)" }}>
+      <span style={{display:"inline-flex",alignItems:"center",gap:6}}><IkBel size={16} strokeWidth={2.2}/>Ada pembaruan aplikasi.</span>
       <button type="button" onClick={muatUlang} style={{ padding: "7px 16px", borderRadius: 10, border: "none", background: "#fff", color: "#5B21B6", fontSize: 14, fontWeight: 800, cursor: "pointer" }}>Muat ulang sekarang</button>
-      <button type="button" onClick={() => setBaru(false)} aria-label="Tutup" style={{ border: "none", background: "transparent", color: "#fff", fontSize: 18, cursor: "pointer", lineHeight: 1 }}>✕</button>
+      <button type="button" onClick={() => setBaru(false)} aria-label="Tutup" style={{ border: "none", background: "transparent", color: "#fff", fontSize: 18, cursor: "pointer", lineHeight: 1 }}><IkX size={18} strokeWidth={2.4}/></button>
     </div>
   );
 }

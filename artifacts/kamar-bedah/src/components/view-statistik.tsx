@@ -1,3 +1,4 @@
+import { BarChart3 as IkGrafik, Download as IkUnduh } from "lucide-react"; /* patch97 */
 /* src/components/view-statistik.tsx
    Tab "Statistik" — ringkasan angka, grafik operasi per dokter/bulan/kamar,
    rekapitulasi tindakan & diagnosa, dan export Excel multi-sheet. Dipindah
@@ -14,7 +15,7 @@ import { StatistikBulanan } from "./statistik-bulanan";
 export function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
   const [range, setRange] = useState<"all"|"30"|"90">("all");
   const [exporting, setExporting] = useState(false);
-  const COLORS = ["#1F5A52","#4338CA","#E65100","#7B1FA2","#2E7D32","#C62828","#00838F","#E91E63"];
+  const COLORS = ["#1F5A52","#075985","#E65100","#7B1FA2","#2E7D32","#C62828","#00838F","#E91E63"];
 
   const allOps = [...ops, ...(archive.flatMap((a:any)=>a.ops||[]))];
   const now = new Date();
@@ -190,7 +191,7 @@ export function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
 
   return (
     <div>
-      <Row title="📊 Statistik Operasi"/>
+      <Row title="Statistik Operasi"/>
       <div style={{display:"flex",gap:6,marginBottom:14,background:C.gBg,borderRadius:12,padding:4}}>
         {[{v:"all",l:"Semua"},{v:"30",l:"30 Hari"},{v:"90",l:"90 Hari"}].map(r=>(
           <button key={r.v} onClick={()=>setRange(r.v as any)} style={{flex:1,padding:"8px 4px",borderRadius:10,border:"none",background:range===r.v?C.white:"none",color:range===r.v?C.p:C.g,fontSize:12,fontWeight:range===r.v?700:500,cursor:"pointer",boxShadow:range===r.v?"0 1px 6px rgba(0,0,0,.1)":"none"}}>{r.l}</button>
@@ -203,7 +204,7 @@ export function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
       >
         {exporting
           ? <><span style={{animation:"spin 1s linear infinite",display:"inline-block"}}>⟳</span> Mengekspor...</>
-          : <>📥 Ekspor Excel (.xlsx) — {total} operasi</>
+          : <><IkUnduh size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Ekspor Excel (.xlsx) — {total} operasi</>
         }
       </button>
       <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
@@ -227,7 +228,7 @@ export function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
       <Card>
         <SH label="Jenis Operasi"/>
         <MiniBar data={[
-          {label:"Elektif",value:elektif,color:"#4338CA"},
+          {label:"Elektif",value:elektif,color:"#075985"},
           {label:"Semi-Elektif",value:semi,color:"#E65100"},
           {label:"CYTO/Emergency",value:cyto,color:"#B71C1C"},
         ]}/>
@@ -246,7 +247,7 @@ export function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
       {/* ── Rekapitulasi Tindakan ── */}
       {procedureData.length>0 && (
         <Card>
-          <SH label="🔪 Rekapitulasi Tindakan Medis" color="#7C3AED"/>
+          <SH label="Rekapitulasi Tindakan Medis" color="#0284C7"/>
           <div style={{fontSize:11,color:C.tL,marginBottom:10}}>Total {procedureData.length} jenis tindakan · {filtered.length} operasi</div>
           {procedureData.map(([label,val],i)=>{
             const pct = filtered.length>0 ? Math.round((val/filtered.length)*100) : 0;
@@ -274,11 +275,11 @@ export function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
       {/* ── Rekapitulasi Diagnosa ── */}
       {diagnosisData.length>0 && (
         <Card>
-          <SH label="🏥 Rekapitulasi Diagnosa" color="#7c3aed"/>
+          <SH label="Rekapitulasi Diagnosa" color="#0284C7"/>
           <div style={{fontSize:11,color:C.tL,marginBottom:10}}>Total {diagnosisData.length} jenis diagnosa</div>
           {diagnosisData.map(([label,val],i)=>{
             const pct = filtered.length>0 ? Math.round((val/filtered.length)*100) : 0;
-            const barColor = ["#7c3aed","#a855f7","#8b5cf6","#6d28d9","#9333ea","#4f46e5","#7c3aed","#c026d3"][i%8];
+            const barColor = ["#0284C7","#a855f7","#0284C7","#0369A1","#9333ea","#0369A1","#0284C7","#c026d3"][i%8];
             return (
               <div key={label} style={{marginBottom:8}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
@@ -337,7 +338,7 @@ export function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
       {total===0 && (
         <Card>
           <div style={{textAlign:"center",padding:32,color:C.tL}}>
-            <div style={{fontSize:40,marginBottom:8}}>📊</div>
+            <div style={{fontSize:40,marginBottom:8}}><IkGrafik size={44} strokeWidth={1.7} style={{color:"#0369A1"}}/></div>
             <div style={{fontSize:14,fontWeight:600}}>Belum ada data operasi</div>
             <div style={{fontSize:12,marginTop:4}}>Daftarkan jadwal operasi untuk melihat statistik</div>
           </div>

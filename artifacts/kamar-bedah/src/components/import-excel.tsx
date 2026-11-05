@@ -1,3 +1,4 @@
+import { BarChart3 as IkGrafik } from "lucide-react"; /* patch98 */
 /* src/components/import-excel.tsx
    Komponen import jadwal operasi massal dari file Excel (.xlsx/.xls) —
    drag-drop atau klik, preview 10 baris pertama sebelum konfirmasi import.
@@ -95,7 +96,7 @@ export function ImportExcel({ops, setOps, showToast, upsertBulkToSupa}: any) {
        Ini memastikan data persist bahkan jika browser di-refresh sesaat setelah import.
        postgres_changes akan debounce ke device lain secara otomatis.
        ──────────────────────────────────────────────────────────────────── */
-    showToast(`⟳ Menyimpan ${newOps.length} jadwal ke Supabase...`,C.p);
+    showToast(`Menyimpan ${newOps.length} jadwal ke Supabase...`,C.p);
     const res = upsertBulkToSupa
       ? await upsertBulkToSupa("kb_operasi", newOps)
       : {ok:false, error:"upsertBulkToSupa tidak tersedia"};
@@ -106,9 +107,9 @@ export function ImportExcel({ops, setOps, showToast, upsertBulkToSupa}: any) {
         const toAdd = newOps.filter(o=>!existingIds.has(o.id));
         return [...p,...toAdd];
       });
-      showToast(`✓ ${newOps.length} jadwal berhasil diimport & tersinkron`,C.s);
+      showToast(`${newOps.length} jadwal berhasil diimport & tersinkron`,C.s);
     } else {
-      showToast(`⚠ Import gagal: ${res.error||"kesalahan tidak diketahui dari Supabase"}`,C.d);
+      showToast(`Import gagal: ${res.error||"kesalahan tidak diketahui dari Supabase"}`,C.d);
     }
     setRows([]); setFileName(""); setImporting(false);
   };
@@ -119,14 +120,14 @@ export function ImportExcel({ops, setOps, showToast, upsertBulkToSupa}: any) {
     const ws = XLSX.utils.aoa_to_sheet([header,example]);
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,"Template");
     XLSX.writeFile(wb,"Template_Import_Jadwal.xlsx");
-    showToast("✓ Template Excel diunduh",C.s);
+    showToast("Template Excel diunduh",C.s);
   };
 
   return (
     <div>
       <Card>
-        <SH label="📥 Import Jadwal dari Excel"/>
-        <div style={{background:"#EDE9FE",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#4338CA",lineHeight:1.7,border:"1px solid #C4B5FD"}}>
+        <SH label="Import Jadwal dari Excel"/>
+        <div style={{background:"#EDE9FE",borderRadius:8,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#075985",lineHeight:1.7,border:"1px solid #C4B5FD"}}>
           <b>Cara import:</b><br/>
           1. Unduh template Excel di bawah ini<br/>
           2. Isi data jadwal sesuai format kolom<br/>
@@ -138,7 +139,7 @@ export function ImportExcel({ops, setOps, showToast, upsertBulkToSupa}: any) {
           onClick={()=>fileRef.current?.click()}
           onDragOver={e=>{e.preventDefault();}}
           onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)handleFile(f);}}>
-          <div style={{fontSize:28,marginBottom:6}}>📊</div>
+          <div style={{marginBottom:6,color:"#0369A1"}}><IkGrafik size={32} strokeWidth={1.7}/></div>
           <div style={{fontSize:13,fontWeight:600,color:C.t}}>{fileName||"Klik atau seret file .xlsx / .xls ke sini"}</div>
           <div style={{fontSize:11,color:C.tL,marginTop:4}}>Format: Excel (.xlsx, .xls)</div>
         </div>
@@ -154,7 +155,7 @@ export function ImportExcel({ops, setOps, showToast, upsertBulkToSupa}: any) {
               {rows.length>10&&<div style={{fontSize:11,color:C.tL,marginTop:6,textAlign:"center"}}>...dan {rows.length-10} baris lainnya</div>}
             </div>
             <div style={{display:"flex",gap:10}}>
-              <Btn full onClick={doImport} disabled={importing} style={{flex:2}}>{importing?"⟳ Mengimport...":"✚ Import "+rows.length+" Jadwal"}</Btn>
+              <Btn full onClick={doImport} disabled={importing} style={{flex:2}}>{importing?"Mengimport...":"Import "+rows.length+" Jadwal"}</Btn>
               <Btn full outline color={C.g} onClick={()=>{setRows([]);setFileName("");}} style={{flex:1}}>Batal</Btn>
             </div>
           </div>

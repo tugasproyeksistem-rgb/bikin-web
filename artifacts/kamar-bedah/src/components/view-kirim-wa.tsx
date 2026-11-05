@@ -1,3 +1,4 @@
+/* patch98 */
 /* src/components/view-kirim-wa.tsx
    Tab "Kirim WA" — kirim pengingat H-1 (besok) ke dokter bedah & anestesi
    lewat WhatsApp, dengan draft pesan yang wajib di-preview dulu sebelum
@@ -24,7 +25,7 @@ export function ViewKirimWA({ops,staff,setNotifs,showToast}: ViewKirimWAProps) {
     if(ph) window.open(`https://wa.me/${normalizePhone62(ph)}?text=${encodeURIComponent(msg)}`,"_blank");
     /* FIX AUDIT #24: sama seperti di ViewJadwal — cap 200 entri terbaru. */
     setNotifs((p:any)=>[{id:gId(),type:"wa_direct",label:lbl,patient:name,procedure:"Jadwal H-1",message:msg,sentAt:fNow()},...p].slice(0,200));
-    showToast("✓ WhatsApp dibuka — tekan Kirim di WA","#25D366");
+    showToast("WhatsApp dibuka — tekan Kirim di WA","#25D366");
   };
   const surgeons = [...new Set(tmrwOps.map((o:any)=>o.surgeon))].filter(Boolean);
   const anests   = [...new Set(tmrwOps.map((o:any)=>o.anesthesiologist))].filter(Boolean);

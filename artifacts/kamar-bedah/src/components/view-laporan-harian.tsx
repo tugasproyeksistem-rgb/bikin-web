@@ -1,3 +1,4 @@
+import { Check as IkCek, AlertTriangle as IkPeringatan, Save as IkSimpan, Printer as IkPrinter, ClipboardCopy as IkSalin, Pencil as IkEdit, X as IkX, Eye as IkMata } from "lucide-react"; /* patch95 */
 /* src/components/view-laporan-harian.tsx
    Tab "Laporan Harian OK" — laporan serah terima antar shift. Data jadwal
    diambil dari daftar operasi (ops), isian lain manual. Preview bergaya
@@ -80,7 +81,7 @@ function PilihNama({ value, onChange, daftar, placeholder }: { value: string; on
           <div key={n} onMouseDown={(e) => e.preventDefault()} onClick={() => pilih(n)} onMouseEnter={() => setAktif(i)}
             style={{ padding: "11px 14px", fontSize: 14, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center",
               background: aktif === i ? "#EEF2F7" : "#fff", fontWeight: n === value ? 700 : 500, color: C.t, borderBottom: i < hasil.length - 1 ? "1px solid #F1F5F9" : "none" }}>
-            <span>{n}</span>{n === value && <span style={{ color: C.s }}>✓</span>}
+            <span>{n}</span>{n === value && <span style={{ color: C.s }}><IkCek size={14} strokeWidth={2.8}/></span>}
           </div>
         ))}
       </div>
@@ -248,7 +249,7 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
     setMalamAktif(v);
     if (!v && form.shift === "malam") set({ shift: "siang" });
     const { error } = await SUPA_CLIENT.from("kamar_bedah_config").upsert({ key: "laporan_harian_cfg", value: JSON.stringify({ malamAktif: v }) }, { onConflict: "key" });
-    showToast(error ? "⚠ Pengaturan shift malam gagal disimpan ke server" : (v ? "✓ Shift Malam diaktifkan" : "✓ Shift Malam dinonaktifkan"), error ? C.d : C.s);
+    showToast(error ? "Pengaturan shift malam gagal disimpan ke server" : (v ? "Shift Malam diaktifkan" : "Shift Malam dinonaktifkan"), error ? C.d : C.s);
   };
 
   /* ── turunan dari form & data operasi ── */
@@ -307,7 +308,7 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
 
   const keAtasPreview = () => {
     const err = validasi();
-    if (err) { showToast("⚠ " + err, C.w); return; }
+    if (err) { showToast(err, C.w); return; }
     { setLihatSaja(false); setPratinjau(bangunLaporan()); }
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -319,15 +320,15 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
     const semua = [l, ...laporanList.filter((x) => x.id !== l.id)];
     setLaporanList(semua);
     const res = await upsertOneToSupa("kb_laporan_harian", l);
-    if (!res?.ok) showToast(`⚠ Gagal menyimpan ke server: ${res?.error || "error"} (tersimpan di perangkat ini)`, C.d);
-    else showToast("✓ Laporan harian tersimpan", C.s);
+    if (!res?.ok) showToast(`Gagal menyimpan ke server: ${res?.error || "error"} (tersimpan di perangkat ini)`, C.d);
+    else showToast("Laporan harian tersimpan", C.s);
     try {
       const folder = (dbxCfg?.path || "/kamarbedah/").replace(/[^/]+$/, "");
       const tgl = l.tanggal;
       const buf = await buatWorkbookLaporanLengkap(filterLaporan(semua, "tanggal", tgl), { cytoIds, perawatMap }).xlsx.writeBuffer();
       const d = await dropboxUploadBytes(`${folder}LaporanHarian_${tgl}.xlsx`, buf as unknown as ArrayBuffer);
-      if (!d?.ok) showToast("⚠ Excel ke Dropbox gagal: " + (d?.msg || "error"), C.w);
-    } catch { showToast("⚠ Excel ke Dropbox gagal", C.w); }
+      if (!d?.ok) showToast("Excel ke Dropbox gagal: " + (d?.msg || "error"), C.w);
+    } catch { showToast("Excel ke Dropbox gagal", C.w); }
     AmbilLogMedis("LAPORAN_HARIAN", l.operator, "SIMPAN_LAPORAN_HARIAN",
       `Laporan harian ${l.tanggal} ${SHIFT_LABEL[l.shift]} disimpan`, { id: l.id, shift: l.shift, jumlahOperasi: l.jumlahOperasi });
     if (res?.ok) {
@@ -364,7 +365,7 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
       const cv = await ambilCanvas();
       const a = document.createElement("a");
       a.href = cv.toDataURL("image/jpeg", 0.92); a.download = namaFile("jpg"); a.click();
-      showToast("✓ JPG diunduh", C.s);
+      showToast("JPG diunduh", C.s);
     } catch (e: any) { showToast("Gagal membuat JPG: " + (e?.message || "error"), C.d); }
     setBusy(false);
   };
@@ -392,14 +393,14 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
       const a = document.createElement("a");
       a.href = url; a.download = namaFile("pdf"); a.click();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
-      showToast("✓ PDF diunduh", C.s);
+      showToast("PDF diunduh", C.s);
     } catch (e: any) { showToast("Gagal membuat PDF: " + (e?.message || "error"), C.d); }
     setBusy(false);
   };
 
   const salinTeks = async () => {
     if (!pratinjau) return;
-    try { await navigator.clipboard.writeText(buatTeksLaporan(pratinjau, mask)); showToast("✓ Teks laporan disalin", C.s); }
+    try { await navigator.clipboard.writeText(buatTeksLaporan(pratinjau, mask)); showToast("Teks laporan disalin", C.s); }
     catch { showToast("Gagal menyalin teks", C.w); }
   };
 
@@ -413,7 +414,7 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
       a.href = url; a.download = `LaporanHarianOK_${nilai}.xlsx`; a.click();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
     }).catch((e) => showToast("Gagal membuat Excel: " + ((e as any)?.message || "error"), C.d));
-    showToast(`✓ Excel diunduh (${list.length} laporan)`, C.s);
+    showToast(`Excel diunduh (${list.length} laporan)`, C.s);
   };
 
   const buka = (l: LaporanHarian) => {
@@ -434,7 +435,7 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
     const el = lembarRef.current;
     if (!el) { showToast("Lembar belum siap", C.w); return; }
     downloadElementAsWord(el, namaFile("doc"));
-    showToast("✓ Word diunduh", C.s);
+    showToast("Word diunduh", C.s);
   };
   aksiRef.current = { unduhPdf, unduhWord };
   const itemRiwayat = laporanList.map((l) => ({ id: String(l.id), tanggal: String(l.tanggal), label: SHIFT_LABEL[l.shift], ket: l.jumlahOperasi + " operasi", urut: ["pagi", "siang", "malam"].indexOf(l.shift), data: l }));
@@ -444,7 +445,7 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
       const a = document.createElement("a");
       a.href = url; a.download = nama; a.click();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
-      showToast("✓ Excel diunduh", C.s);
+      showToast("Excel diunduh", C.s);
     }).catch((e) => showToast("Gagal membuat Excel: " + ((e as any)?.message || "error"), C.d));
   };
   const unduhRiwayat = (it: any, fmt: "excel" | "word" | "pdf") => {
@@ -458,9 +459,9 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
   const hapus = async (l: LaporanHarian) => {
     if (!window.confirm(`Hapus laporan ${fmtTgl(l.tanggal)} ${SHIFT_LABEL[l.shift]}?`)) return;
     const res = await deleteFromSupa?.("kb_laporan_harian", l.id);
-    if (res && res.ok === false) { showToast("⚠ Gagal menghapus: " + (res.error || "error"), C.d); return; }
+    if (res && res.ok === false) { showToast("Gagal menghapus: " + (res.error || "error"), C.d); return; }
     setLaporanList((x) => x.filter((r) => r.id !== l.id));
-    showToast("✓ Laporan dihapus", C.s);
+    showToast("Laporan dihapus", C.s);
   };
 
   const ta = { ...iS, minHeight: 60, resize: "vertical", lineHeight: 1.6 } as React.CSSProperties;
@@ -473,16 +474,16 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
         <Card>
           <SH label="Preview Laporan Harian OK" />
           {lihatSaja
-            ? <div style={{ fontSize: 14, fontWeight: 700, color: "#166534", background: "#DCFCE7", borderRadius: 10, padding: "10px 12px", marginBottom: 10 }}>✓ Laporan sudah tersimpan. Gunakan Print, PDF, JPG, atau Salin teks.</div>
-            : <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", background: "#DC2626", borderRadius: 10, padding: "14px 12px", marginBottom: 12, textAlign: "center", lineHeight: 1.4 }}>⚠ HARAP DISIMPAN!<div style={{ fontSize: 14, fontWeight: 600, marginTop: 2 }}>Tekan tombol Simpan sebelum keluar dari halaman ini</div></div>}
+            ? <div style={{ fontSize: 14, fontWeight: 700, color: "#166534", background: "#DCFCE7", borderRadius: 10, padding: "10px 12px", marginBottom: 10 }}><IkCek size={15} strokeWidth={2.8} style={{verticalAlign:"-2px",marginRight:6}}/>Laporan sudah tersimpan. Gunakan Print, PDF, JPG, atau Salin teks.</div>
+            : <div style={{ fontSize: 20, fontWeight: 800, color: "#fff", background: "#DC2626", borderRadius: 10, padding: "14px 12px", marginBottom: 12, textAlign: "center", lineHeight: 1.4 }}><IkPeringatan size={22} strokeWidth={2.6} style={{verticalAlign:"-2px",marginRight:8}}/>HARAP DISIMPAN!<div style={{ fontSize: 14, fontWeight: 600, marginTop: 2 }}>Tekan tombol Simpan sebelum keluar dari halaman ini</div></div>}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {!lihatSaja && <Btn onClick={simpan} disabled={busy}>💾 Simpan</Btn>}
-            <Btn outline onClick={cetak} disabled={busy}>🖨 Print</Btn>
+            {!lihatSaja && <Btn onClick={simpan} disabled={busy}><IkSimpan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Simpan</Btn>}
+            <Btn outline onClick={cetak} disabled={busy}><IkPrinter size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Print</Btn>
             <Btn outline onClick={unduhPdf} disabled={busy}>⬇ PDF</Btn>
             <Btn outline onClick={unduhJpg} disabled={busy}>⬇ JPG</Btn>
-            <Btn outline onClick={salinTeks} disabled={busy}>📋 Salin teks</Btn>
+            <Btn outline onClick={salinTeks} disabled={busy}><IkSalin size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Salin teks</Btn>
             {lihatSaja
-              ? <><Btn outline onClick={() => buka(pratinjau)} disabled={busy}>✎ Edit</Btn><Btn outline onClick={() => setPratinjau(null)} disabled={busy}>✕ Tutup</Btn></>
+              ? <><Btn outline onClick={() => buka(pratinjau)} disabled={busy}><IkEdit size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Edit</Btn><Btn outline onClick={() => setPratinjau(null)} disabled={busy}><IkX size={15} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:5}}/>Tutup</Btn></>
               : <Btn outline onClick={() => setPratinjau(null)} disabled={busy}>← Kembali edit</Btn>}
           </div>
         </Card>
@@ -614,7 +615,7 @@ export function ViewLaporanHarian({ ops, staff, showToast, role, privacyMode, up
         <LF label="Petugas shift lama (nama jelas)"><PilihNama value={form.lama} onChange={(v) => set({ lama: v })} daftar={daftarPerawat} placeholder="Pilih atau ketik nama" /></LF>
         <LF label="Petugas shift baru (nama jelas)"><PilihNama value={form.baru} onChange={(v) => set({ baru: v })} daftar={daftarPerawat} placeholder="Pilih atau ketik nama" /></LF>
         <LF label="Mengetahui / Kepala Kamar Bedah (nama jelas)"><PilihNama value={form.kepala} onChange={(v) => set({ kepala: v })} daftar={daftarPerawat} placeholder="Pilih atau ketik nama" /></LF>
-        <Btn full onClick={keAtasPreview}>👁 Lihat preview laporan</Btn>
+        <Btn full onClick={keAtasPreview}><IkMata size={16} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Lihat preview laporan</Btn>
       </Card>
 
       <RiwayatBulanan judul="Riwayat per bulan" items={itemRiwayat} role={role} sibuk={busy}

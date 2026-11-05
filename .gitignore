@@ -43,3 +43,11 @@ supabase/.temp/
 
 # ── File aneh/sisa (cek dulu sebelum commit — lihat catatan) ─
 package.json.save
+
+# sampah yang tak sengaja ikut commit
+/bikin-web.git/
+/main
+/pnpm
+/tsc
+/vite
+/workspace@0.0.0

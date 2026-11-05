@@ -31,7 +31,7 @@ export async function callDbxProxy(body: Record<string, any>): Promise<{ok:boole
     });
     if(error) return {ok:false, msg:"Proxy error: "+(error.message||"tidak diketahui")};
     if(!data?.ok) return {ok:false, msg:data?.msg||"Gagal — proxy mengembalikan respons tidak sukses"};
-    return {ok:true, data:data.data, msg:data.msg||"✓ Berhasil"};
+    return {ok:true, data:data.data, msg:data.msg||"Berhasil"};
   } catch(e:any){ return {ok:false, msg:"Gagal menghubungi proxy: "+(e?.message||"network error")}; }
 }
 
@@ -67,3 +67,4 @@ export async function dropboxUploadExcel(path: string, wb: any): Promise<{ok:boo
     return dropboxUploadBytes(path, buf);
   } catch(e:any){ return {ok:false, msg:"Gagal menyiapkan file Excel: "+(e?.message||"unknown error")}; }
 }
+/* patch103 */

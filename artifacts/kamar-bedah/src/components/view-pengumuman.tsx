@@ -1,3 +1,4 @@
+import { ClipboardCopy as IkSalin, AlertTriangle as IkPeringatan, Check as IkCek, Smartphone as IkHP } from "lucide-react"; /* patch96 */
 /* src/components/view-pengumuman.tsx
    Tab "Pengumuman" (khusus admin): kirim pesan ke staf lewat WhatsApp (wa.me), satu klik per orang.
    Tidak ada yang disimpan ke server (password hanya ada di layar dan di pesan yang dikirim). */
@@ -9,13 +10,13 @@ import { normalizePhone62 } from "../utils";
 
 const FOOTER = "\n\n🤖 Pesan ini dikirim otomatis, mohon tidak dibalas di chat ini.";
 const TEMPLATE: { k: string; l: string; teks: string }[] = [
-  { k: "password", l: "🔑 Password baru",
+  { k: "password", l: "Password baru",
     teks: "📢 INFO PENTING\n\nHalo {NAMA}! 👋\n\nAda update sistem di aplikasi Kamar Bedah, jadi password untuk masuk sudah diganti ya.\n\n🔑 Password baru: {PASSWORD}\n🌐 Website: {WEBSITE}\n\nMulai sekarang pakai password yang baru. Password lama sudah tidak bisa dipakai.\n\nKalau belum bisa masuk, coba tutup aplikasinya lalu buka lagi, atau tekan Ctrl+Shift+R kalau lewat komputer.\n\nMohon password ini tidak dibagikan ke orang di luar tim kamar bedah ya. Kalau ada kendala, hubungi admin langsung. Terima kasih! 🙏" },
-  { k: "update", l: "🛠 Info update sistem",
+  { k: "update", l: "Info update sistem",
     teks: "📢 INFO UPDATE\n\nHalo {NAMA}! 👋\n\nAplikasi Kamar Bedah baru saja diperbarui, ada beberapa fitur baru dan perbaikan.\n\n🌐 Website: {WEBSITE}\n\nBiar tampilannya ikut terbaru, tutup aplikasinya lalu buka lagi, atau tekan Ctrl+Shift+R kalau lewat komputer. Kalau ada yang aneh, hubungi admin ya. Terima kasih! 🙏" },
-  { k: "beset", l: "📅 Beset dibuka",
+  { k: "beset", l: "Beset dibuka",
     teks: "📢 BESETAN DIBUKA\n\nHalo {NAMA}! 👋\n\nBesetan jadwal perawat sudah dibuka. Yuk segera diisi sebelum ditutup ya.\n\n🌐 Website: {WEBSITE}\n\nBuka tab Beset Jadwal, lalu isi tanggal yang kamu mau. Terima kasih! 🙏" },
-  { k: "kosong", l: "✏️ Tulis sendiri", teks: "Halo {NAMA}! 👋\n\n" },
+  { k: "kosong", l: "Tulis sendiri", teks: "Halo {NAMA}! 👋\n\n" },
 ];
 type Grup = "semua" | "perawat" | "bedah" | "anestesi";
 const GRUP_LABEL: [Grup, string][] = [["perawat", "Perawat"], ["bedah", "Dokter bedah"], ["anestesi", "Dokter anestesi"], ["semua", "Semua"]];
@@ -60,14 +61,14 @@ export function ViewPengumuman({ staff, showToast, role }: any) {
   };
   const antrean = semua.filter((s: any) => dipilih.includes(String(s.id)) && !terkirim.includes(String(s.id)));
   const kirim = (s: any) => {
-    if (butuhPassword && !password.trim()) { showToast("⚠ Isi dulu kolom Password baru", C.w); return; }
-    if (!pesan.trim()) { showToast("⚠ Pesan masih kosong", C.w); return; }
+    if (butuhPassword && !password.trim()) { showToast("Isi dulu kolom Password baru", C.w); return; }
+    if (!pesan.trim()) { showToast("Pesan masih kosong", C.w); return; }
     window.open("https://wa.me/" + normalizePhone62(String(s.phone)) + "?text=" + encodeURIComponent(isi(String(s.name))), "_blank");
     setTerkirim((x) => (x.includes(String(s.id)) ? x : [...x, String(s.id)]));
   };
   const salin = async () => {
-    if (butuhPassword && !password.trim()) { showToast("⚠ Isi dulu kolom Password baru", C.w); return; }
-    try { await navigator.clipboard.writeText(isi("semuanya")); showToast("✓ Teks disalin (untuk grup)", C.s); }
+    if (butuhPassword && !password.trim()) { showToast("Isi dulu kolom Password baru", C.w); return; }
+    try { await navigator.clipboard.writeText(isi("semuanya")); showToast("Teks disalin (untuk grup)", C.s); }
     catch { showToast("Gagal menyalin teks", C.w); }
   };
   const toggle = (id: string) => setDipilih((x) => (x.includes(id) ? x.filter((y) => y !== id) : [...x, id]));
@@ -104,7 +105,7 @@ export function ViewPengumuman({ staff, showToast, role }: any) {
           <div style={{ fontWeight: 700, marginBottom: 4 }}>Pratinjau</div>
           {isi("Nama Penerima")}
         </div>
-        <div style={{ marginTop: 8 }}><Btn sm outline onClick={salin}>📋 Salin teks (untuk grup WA)</Btn></div>
+        <div style={{ marginTop: 8 }}><Btn sm outline onClick={salin}><IkSalin size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Salin teks (untuk grup WA)</Btn></div>
       </Card>
 
       <Card style={{ marginTop: 12 }}>
@@ -121,7 +122,7 @@ export function ViewPengumuman({ staff, showToast, role }: any) {
           <Btn sm outline onClick={() => setDipilih([])}>Kosongkan pilihan</Btn>
           {terkirim.length > 0 && <Btn sm outline onClick={() => setTerkirim([])}>↺ Reset tanda terkirim</Btn>}
         </div>
-        {tanpaNomor > 0 && <div style={{ fontSize: 12, color: C.w, marginBottom: 6 }}>⚠ {tanpaNomor} orang di kelompok ini belum punya nomor WA di tab Staf, jadi tidak tampil.</div>}
+        {tanpaNomor > 0 && <div style={{ fontSize: 12, color: C.w, marginBottom: 6 }}><IkPeringatan size={13} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:5}}/>{tanpaNomor} orang di kelompok ini belum punya nomor WA di tab Staf, jadi tidak tampil.</div>}
         <div style={{ maxHeight: 320, overflowY: "auto" }}>
           {tampil.map((s: any) => {
             const id = String(s.id);
@@ -129,7 +130,7 @@ export function ViewPengumuman({ staff, showToast, role }: any) {
               <label key={id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid " + C.b, fontSize: 14 }}>
                 <input type="checkbox" checked={dipilih.includes(id)} onChange={() => toggle(id)} />
                 <span style={{ flex: 1 }}><b>{s.name}</b></span>
-                {terkirim.includes(id) && <span style={{ color: "#166534", fontWeight: 800 }}>✓ terkirim</span>}
+                {terkirim.includes(id) && <span style={{ color: "#166534", fontWeight: 800 }}><IkCek size={13} strokeWidth={2.8} style={{verticalAlign:"-2px",marginRight:3}}/>terkirim</span>}
               </label>
             );
           })}
@@ -143,11 +144,12 @@ export function ViewPengumuman({ staff, showToast, role }: any) {
         {antrean.length > 0
           ? <button type="button" onClick={() => kirim(antrean[0])}
               style={{ width: "100%", padding: "16px 12px", borderRadius: 12, border: "none", background: "#16A34A", color: "#fff", fontSize: 18, fontWeight: 800, cursor: "pointer", boxShadow: "0 2px 8px rgba(22,163,74,.5)" }}>
-              📲 Kirim ke {String(antrean[0].name)} ({antrean.length} lagi)
+              <IkHP size={16} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Kirim ke {String(antrean[0].name)} ({antrean.length} lagi)
             </button>
-          : <div style={{ fontSize: 14, color: C.tL }}>{dipilih.length ? "✓ Semua penerima yang dipilih sudah dikirimi." : "Pilih penerima dulu di atas."}</div>}
+          : <div style={{ fontSize: 14, color: C.tL }}>{dipilih.length ? <><IkCek size={14} strokeWidth={2.8} style={{verticalAlign:"-2px",marginRight:4}}/>Semua penerima yang dipilih sudah dikirimi.</> : "Pilih penerima dulu di atas."}</div>}
         <div style={{ fontSize: 12, color: C.tL, marginTop: 8 }}>Setiap klik membuka WhatsApp dengan pesan yang sudah terisi. Tekan Kirim di WhatsApp, lalu kembali ke sini dan klik tombol hijau lagi untuk orang berikutnya.</div>
       </Card>
     </div>
   );
 }
+/* patch103 */

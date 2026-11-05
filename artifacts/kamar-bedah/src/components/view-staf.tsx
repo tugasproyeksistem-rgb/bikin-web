@@ -1,3 +1,4 @@
+import { FolderOpen as IkFolder, Check as IkCek, CalendarDays as IkKal, Users as IkStaf } from "lucide-react"; /* patch96 */
 /* src/components/view-staf.tsx
    Tab "Staf" — CRUD data staf (dokter/perawat) + upload data master staf
    dan jadwal siaga bulanan via CSV/Excel. Dipindah dari App.tsx (langkah 6
@@ -41,8 +42,8 @@ export function ViewStaf({staff,setStaff,roster,setRoster,showToast,upsertOneToS
       upsertOneToSupa?.("kb_staf",updated).then((res:{ok:boolean;error?:string})=>{
         if(!res?.ok){
           setStaff((p:any[])=>p.map((s:any)=>s.id===editing.id?editing:s));
-          showToast(`⚠ Gagal menyimpan staf: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
-        } else showToast("✓ Data staf diperbarui & tersinkron",C.s);
+          showToast(`Gagal menyimpan staf: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
+        } else showToast("Data staf diperbarui & tersinkron",C.s);
       });
     } else {
       const newStaf={id:gId(),...form, updated_at: new Date().toISOString()};
@@ -52,13 +53,13 @@ export function ViewStaf({staff,setStaff,roster,setRoster,showToast,upsertOneToS
       );
       upsertOneToSupa?.("kb_staf",newStaf).then((res:{ok:boolean;error?:string})=>{
         if(!res?.ok){
-          showToast(`⚠ Gagal menyimpan staf: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
+          showToast(`Gagal menyimpan staf: ${res?.error||"kesalahan tidak diketahui"}`,C.d);
         } else {
           setStaff((p:any[])=>{
             if(p.some((s:any)=>s.id===newStaf.id)) return p;
             return [...p,newStaf];
           });
-          showToast("✓ Staf berhasil ditambahkan & tersinkron",C.s);
+          showToast("Staf berhasil ditambahkan & tersinkron",C.s);
         }
       });
     }
@@ -66,7 +67,7 @@ export function ViewStaf({staff,setStaff,roster,setRoster,showToast,upsertOneToS
   };
   const dlStaff = () => {
     const csv = `"nama","jabatan","nomor_wa"\n"dr. Nama Bedah Sp.B","surgeon","628112345001"\n"dr. Nama Anestesi Sp.An","anesthesiologist","628112345002"\n"Ns. Nama Instrumen","circulating","628112345003"\n"Ns. Nama P.Anestesi","anesthesia_nurse","628112345004"\n"Ns. Nama Onloop","onloop","628112345005"\n"Ns. Nama Katim","katim","628112345006"`;
-    downloadBlob(csv,"template_staf.csv"); showToast("✓ Template CSV Staf diunduh",C.s);
+    downloadBlob(csv,"template_staf.csv"); showToast("Template CSV Staf diunduh",C.s);
   };
   const dlRoster = () => {
     const wb = XLSX.utils.book_new();
@@ -78,7 +79,7 @@ export function ViewStaf({staff,setStaff,roster,setRoster,showToast,upsertOneToS
     ws["!cols"]=[{wch:12},{wch:28},{wch:28},{wch:28},{wch:28},{wch:28},{wch:22},{wch:22},{wch:22},{wch:22},{wch:22}];
     XLSX.utils.book_append_sheet(wb,ws,"Jadwal Siaga");
     XLSX.writeFile(wb,"template_jadwal_siaga_bulanan.xlsx");
-    showToast("✓ Template Jadwal Siaga diunduh",C.s);
+    showToast("Template Jadwal Siaga diunduh",C.s);
   };
 
   /* readFileRows: PENTING — untuk .xlsx dibaca dengan cellDates:true dan TIDAK
@@ -138,9 +139,9 @@ export function ViewStaf({staff,setStaff,roster,setRoster,showToast,upsertOneToS
           return Array.from(byId.values());
         });
         const note = skippedPhone ? ` (${skippedPhone} nomor WA format tidak valid — tetap tersimpan, cek kembali)` : "";
-        showToast("✓ "+imp.length+" staf berhasil diimport & tersinkron"+note,C.s);
+        showToast(""+imp.length+" staf berhasil diimport & tersinkron"+note,C.s);
       } else {
-        showToast(`⚠ Import staf gagal: ${res?.error||"kesalahan tidak diketahui dari Supabase"}`,C.d);
+        showToast(`Import staf gagal: ${res?.error||"kesalahan tidak diketahui dari Supabase"}`,C.d);
       }
     } catch(e: any){showToast("Error membaca file: "+(e?.message||"format tidak dikenali"),C.d);}
   };
@@ -197,9 +198,9 @@ export function ViewStaf({staff,setStaff,roster,setRoster,showToast,upsertOneToS
         const orphanIds = oldSameDate.filter((x:any)=>!imp.some((n:any)=>n.id===x.id)).map((x:any)=>x.id);
         if(orphanIds.length) Promise.all(orphanIds.map((id:string)=>deleteFromSupa?.("kb_roster", id))).catch(()=>{});
         const note = skippedDate ? ` (${skippedDate} baris dilewati — tanggal tidak terbaca)` : "";
-        showToast("✓ "+imp.length+" jadwal siaga tersimpan & tersinkron ke semua perangkat"+note,C.s);
+        showToast(""+imp.length+" jadwal siaga tersimpan & tersinkron ke semua perangkat"+note,C.s);
       } else {
-        showToast(`⚠ Upload jadwal siaga gagal: ${res?.error||"kesalahan tidak diketahui dari Supabase"}`,C.d);
+        showToast(`Upload jadwal siaga gagal: ${res?.error||"kesalahan tidak diketahui dari Supabase"}`,C.d);
       }
     } catch(e: any){showToast("Error membaca file: "+(e?.message||"format tidak dikenali"),C.d);}
   };
@@ -210,36 +211,36 @@ export function ViewStaf({staff,setStaff,roster,setRoster,showToast,upsertOneToS
       <div style={{position:"relative",zIndex:1}}>
       <Row title="Manajemen Staf & Roster" right={<Btn sm onClick={()=>{setForm({name:"",type:"surgeon",phone:""});setEd(null);setErr({});setShow(true);}}>+ Tambah Staf</Btn>}/>
       <Card style={{background:C.iBg,border:"1px solid #1565C033"}}>
-        <SH label="📋 Upload Data Master Staf" color={C.i}/>
+        <SH label="Upload Data Master Staf" color={C.i}/>
         <div style={{fontSize:12,color:C.tL,marginBottom:10,lineHeight:1.6}}>Format: <b>CSV</b> atau <b>Excel (.xlsx)</b> · Kolom: nama, jabatan, nomor_wa</div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           <input ref={sfRef} type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleStaffFile} style={{display:"none"}}/>
-          <Btn sm outline color={C.i} onClick={()=>sfRef.current&&sfRef.current.click()}>📂 Upload CSV/Excel Staf</Btn>
+          <Btn sm outline color={C.i} onClick={()=>sfRef.current&&sfRef.current.click()}><IkFolder size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Upload CSV/Excel Staf</Btn>
           <Btn sm outline color={C.g} onClick={dlStaff}>⬇ Template</Btn>
         </div>
-        {staff.length>0 && <div style={{marginTop:8,fontSize:12,color:C.i,fontWeight:600}}>✓ {staff.length} staf terdaftar</div>}
+        {staff.length>0 && <div style={{marginTop:8,fontSize:12,color:C.i,fontWeight:600}}><IkCek size={13} strokeWidth={2.8} style={{verticalAlign:"-2px",marginRight:4}}/>{staff.length} staf terdaftar</div>}
       </Card>
       <Card style={{background:"#F3E5F5",border:"2px solid #CE93D8"}}>
-        <SH label="📅 Upload Jadwal Siaga 1 Bulan" color="#7B1FA2"/>
-        <div style={{background:"#EDE7F6",borderRadius:8,padding:"10px 12px",marginBottom:12,fontSize:12,color:"#512DA8",lineHeight:1.7}}>
+        <SH label="Upload Jadwal Siaga 1 Bulan" color="#0369A1"/>
+        <div style={{background:"#EDE7F6",borderRadius:8,padding:"10px 12px",marginBottom:12,fontSize:12,color:"#075985",lineHeight:1.7}}>
           <b>Fungsi:</b> Basis data siaga 1 bulan untuk auto-populate laporan kepala jaga.<br/>
           Kolom wajib: Tanggal (DD/MM/YYYY), Dokter Anestesi Jaga, Dokter Anestesi Cyto, Perawat Siaga 1–3, Pembawa HP
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           <input ref={rsfRef} type="file" accept=".csv,.txt,.xlsx,.xls" onChange={handleRosterFile} style={{display:"none"}}/>
-          <Btn sm color="#7B1FA2" onClick={()=>rsfRef.current&&rsfRef.current.click()}>📂 Upload Jadwal Siaga (CSV/Excel)</Btn>
+          <Btn sm color="#0369A1" onClick={()=>rsfRef.current&&rsfRef.current.click()}><IkFolder size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Upload Jadwal Siaga (CSV/Excel)</Btn>
           <Btn sm outline color={C.g} onClick={dlRoster}>⬇ Template</Btn>
         </div>
         {roster.length>0 && (
           <div style={{marginTop:10,background:"#EDE7F6",borderRadius:8,padding:"10px 12px"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div style={{fontSize:12,color:"#512DA8",fontWeight:700}}>✓ {roster.length} hari jadwal siaga tersimpan</div>
-              <button onClick={()=>setRExp((v:boolean)=>!v)} style={{background:"none",border:"none",color:"#7B1FA2",cursor:"pointer",fontSize:12,fontWeight:600}}>{rExp?"▲ Tutup":"▼ Lihat"}</button>
+              <div style={{fontSize:12,color:"#075985",fontWeight:700}}><IkCek size={13} strokeWidth={2.8} style={{verticalAlign:"-2px",marginRight:4}}/>{roster.length} hari jadwal siaga tersimpan</div>
+              <button onClick={()=>setRExp((v:boolean)=>!v)} style={{background:"none",border:"none",color:"#0369A1",cursor:"pointer",fontSize:12,fontWeight:600}}>{rExp?"▲ Tutup":"▼ Lihat"}</button>
             </div>
-            <div style={{fontSize:11,color:"#7B1FA2",marginTop:4}}>Hari ini: {roster.find((r:any)=>r.date===todayDate())?"✓":"—"} · Besok: {roster.find((r:any)=>r.date===tmrwDate())?"✓":"—"}</div>
+            <div style={{fontSize:11,color:"#0369A1",marginTop:4}}>Hari ini: {roster.find((r:any)=>r.date===todayDate())?"✓":"—"} · Besok: {roster.find((r:any)=>r.date===tmrwDate())?"✓":"—"}</div>
             {rExp && roster.slice(0,5).map((r:any)=>(
-              <div key={r.id} style={{fontSize:11,color:"#7B1FA2",marginTop:6,paddingTop:6,borderTop:"1px solid #D1C4E9"}}>
-                📅 {fD(r.date)} · Jaga: {r.anestJaga||"—"} · Cyto: {r.anestCyto||"—"}<br/>
+              <div key={r.id} style={{fontSize:11,color:"#0369A1",marginTop:6,paddingTop:6,borderTop:"1px solid #D1C4E9"}}>
+                <IkKal size={12} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:4}}/>{fD(r.date)} · Jaga: {r.anestJaga||"—"} · Cyto: {r.anestCyto||"—"}<br/>
                 Perawat: {(r.nurses||[]).join(", ")||"—"} · HP: {r.pembawaHP||"—"}
               </div>
             ))}
@@ -257,7 +258,7 @@ export function ViewStaf({staff,setStaff,roster,setRoster,showToast,upsertOneToS
           <div style={{display:"flex",gap:8}}><Btn full onClick={save}>{editing?"Simpan Perubahan":"Tambah Staf"}</Btn><Btn full outline color={C.g} onClick={()=>{setShow(false);setEd(null);setErr({});}}>Batal</Btn></div>
         </Card>
       )}
-      {staff.length===0 && !show && <Card><div style={{textAlign:"center",padding:24,color:C.tL}}><div style={{fontSize:40,marginBottom:8}}>👥</div><div style={{fontSize:14,fontWeight:600}}>Belum ada data staf</div><div style={{fontSize:12,marginTop:4}}>Tambah manual atau upload CSV</div></div></Card>}
+      {staff.length===0 && !show && <Card><div style={{textAlign:"center",padding:24,color:C.tL}}><div style={{marginBottom:8,color:"#0369A1"}}><IkStaf size={44} strokeWidth={1.7}/></div><div style={{fontSize:14,fontWeight:600}}>Belum ada data staf</div><div style={{fontSize:12,marginTop:4}}>Tambah manual atau upload CSV</div></div></Card>}
       {Object.entries(ST).map(([type,label])=>{
         const list=staff.filter((s:any)=>s.type===type); if(!list.length)return null;
         return (
@@ -271,13 +272,13 @@ export function ViewStaf({staff,setStaff,roster,setRoster,showToast,upsertOneToS
                     <Btn sm outline color={C.p} onClick={()=>{setForm({name:s.name,type:s.type,phone:s.phone});setEd(s);setErr({});setShow(true);}}>Edit</Btn>
                     <Btn sm outline color={C.d} onClick={async()=>{
                       const res = await deleteFromSupa?.("kb_staf",s.id);
-                      if(!res?.ok){ showToast(`⚠ Gagal menghapus staf: ${res?.error||"kesalahan tidak diketahui"}`,C.d); return; }
+                      if(!res?.ok){ showToast(`Gagal menghapus staf: ${res?.error||"kesalahan tidak diketahui"}`,C.d); return; }
                       setStaff((p:any[])=>p.filter((x:any)=>x.id!==s.id));
                       AmbilLogMedis("MANAJEMEN_STAF","Admin","HAPUS_STAF",
                         `Hapus staf: ${s.name||"-"} (${s.type||"-"})`,
                         { deleted: { id: s.id, name: s.name, type: s.type } }
                       );
-                      showToast("✓ Staf dihapus & tersinkron",C.d);
+                      showToast("Staf dihapus & tersinkron",C.d);
                     }}>Hapus</Btn>
                   </div>
                 </div>

@@ -4,20 +4,20 @@
 
 export const C = {
   /* ── Brand Blues (core gradient palette) ── */
-  p:"#7C3AED",   pL:"#A78BFA",  pBg:"#EDE9FE",
+  p:"#0284C7",   pL:"#38BDF8",  pBg:"#E0F2FE",
   /* ── Danger ── */
   d:"#dc2626",   dBg:"#fef2f2", dL:"#fca5a5",
   /* ── Warning ── */
   w:"#d97706",   wBg:"#fffbeb",
   /* ── Info / secondary blue ── */
-  i:"#4F46E5",   iBg:"#F5F3FF",
+  i:"#0369A1",   iBg:"#F0F9FF",
   /* ── Success green ── */
   s:"#16a34a",   sBg:"#f0fdf4",
   /* ── WhatsApp ── */
   wa:"#25D366",  waBg:"#dcfce7",
   /* ── Neutrals ── */
   g:"#475569",   gBg:"#f1f5f9",
-  t:"#0f172a",   tL:"#64748b",
+  t:"#0f172a",   tL:"#334155",
   b:"#e2e8f0",   white:"#ffffff",
   bg:"#f8fafc",  gold:"#C9A961",
   /* ── PENAMBAHAN: aksen "mewah" (navy gelap + emas) untuk permukaan

@@ -1,3 +1,4 @@
+import { AlertTriangle as IkPeringatan, Lock as IkKunci, User as IkUser, Check as IkCek, Clock as IkJam } from "lucide-react"; /* patch101 */
 /* src/components/pin-screen.tsx
    Layar login PIN — mendukung setup PIN pertama kali, lockout percobaan
    gagal (persist ke sessionStorage), dan mode cepat "Input Lembur" tanpa
@@ -180,16 +181,16 @@ export function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime,lemburPegawa
           <div style={{fontSize:12,color:C.tL,marginTop:4}}>Buat PIN Admin dan PIN Perawat baru</div>
         </div>
         <div style={{background:C.wBg,border:`1px solid ${C.w}`,borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:12,color:C.w,fontWeight:600}}>
-          ⚠ Setelah setup, PIN <b>0000</b> tidak bisa digunakan lagi.
+          <IkPeringatan size={14} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:5}}/>Setelah setup, PIN <b>0000</b> tidak bisa digunakan lagi.
         </div>
-        <div style={{fontSize:13,fontWeight:700,color:C.p,marginBottom:8}}>🔐 PIN Admin</div>
+        <div style={{fontSize:13,fontWeight:700,color:C.p,marginBottom:8}}><IkKunci size={14} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:5}}/>PIN Admin</div>
         <LF label="PIN Admin Baru (min. 4 digit)"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="PIN admin baru" value={newAdmin} onChange={e=>setNewAdmin(e.target.value)}/></LF>
         <LF label="Konfirmasi PIN Admin"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="Ulangi PIN admin" value={cfAdmin} onChange={e=>setCfAdmin(e.target.value)}/></LF>
-        <div style={{fontSize:13,fontWeight:700,color:C.g,margin:"12px 0 8px"}}>👤 PIN Perawat</div>
+        <div style={{fontSize:13,fontWeight:700,color:C.g,margin:"12px 0 8px"}}><IkUser size={14} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:5}}/>PIN Perawat</div>
         <LF label="PIN Perawat Baru (min. 4 digit)"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="PIN perawat baru" value={newPerawat} onChange={e=>setNewPerawat(e.target.value)}/></LF>
         <LF label="Konfirmasi PIN Perawat"><input style={iS} type="password" inputMode="numeric" maxLength={6} placeholder="Ulangi PIN perawat" value={cfPerawat} onChange={e=>setCfPerawat(e.target.value)}/></LF>
-        {setupErr && <div style={{fontSize:12,color:C.d,marginBottom:10,fontWeight:600}}>⚠ {setupErr}</div>}
-        <Btn full onClick={doSetup} style={{marginTop:8,padding:"13px",fontSize:15,background:C.p}}>✓ Simpan PIN & Masuk</Btn>
+        {setupErr && <div style={{fontSize:12,color:C.d,marginBottom:10,fontWeight:600}}><IkPeringatan size={13} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:4}}/>{setupErr}</div>}
+        <Btn full onClick={doSetup} style={{marginTop:8,padding:"13px",fontSize:15,background:C.p}}><IkCek size={15} strokeWidth={2.8} style={{verticalAlign:"-2px",marginRight:6}}/>Simpan PIN & Masuk</Btn>
       </div>
     </div>
   );
@@ -237,7 +238,7 @@ export function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime,lemburPegawa
                 padding:"18px 16px",marginBottom:12,cursor:"pointer",fontFamily:"inherit"
               }}
             >
-              <span style={{fontSize:28}}>🔐</span>
+              <span style={{display:"inline-flex"}}><IkKunci size={30} strokeWidth={2}/></span>
               <span>
                 <div style={{fontSize:15,fontWeight:800,color:"#5B21B6"}}>Masuk / Login</div>
                 <div style={{fontSize:11,color:C.tL,marginTop:2}}>Akses penuh — Admin atau Perawat</div>
@@ -269,7 +270,7 @@ export function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime,lemburPegawa
             <div style={{fontSize:11,color:C.tL,textAlign:"center",marginBottom:14}}>Pilih nama kamu terlebih dahulu</div>
             {(lemburPegawai||[]).length===0 ? (
               <div style={{fontSize:12,color:C.d,background:"#FFF3CD",borderRadius:10,padding:"12px 14px",marginBottom:14,textAlign:"center"}}>
-                ⚠ Belum ada data pegawai.<br/>Minta Admin untuk menambahkan data pegawai di tab Staf → Lembur terlebih dahulu.
+                <IkPeringatan size={14} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:5}}/>Belum ada data pegawai.<br/>Minta Admin untuk menambahkan data pegawai di tab Staf → Lembur terlebih dahulu.
               </div>
             ) : (
               <>
@@ -283,7 +284,7 @@ export function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime,lemburPegawa
                     <option key={p.id} value={p.id}>{p.name}{p.nik?` — ${p.nik}`:""}</option>
                   ))}
                 </select>
-                {err && <div style={{fontSize:12,color:C.d,textAlign:"center",marginBottom:10}}>⚠ {err}</div>}
+                {err && <div style={{fontSize:12,color:C.d,textAlign:"center",marginBottom:10}}><IkPeringatan size={13} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:4}}/>{err}</div>}
                 <Btn full onClick={lanjutKePIN} style={{padding:"13px",fontSize:15,marginBottom:8}}>Lanjut →</Btn>
               </>
             )}
@@ -296,22 +297,22 @@ export function PinScreen({onVerify,pinAdmin,pinPerawat,isFirstTime,lemburPegawa
             </button>
             {entryMode==="lembur" && pegawaiDipilih && (
               <div style={{background:"#FFF7E6",border:"1px solid #F2A93B",borderRadius:10,padding:"8px 14px",marginBottom:12,fontSize:13,fontWeight:700,color:"#B8740A",textAlign:"center"}}>
-                👤 {(lemburPegawai||[]).find((p:any)=>p.id===pegawaiDipilih)?.name||pegawaiDipilih}
+                <IkUser size={14} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:5}}/>{(lemburPegawai||[]).find((p:any)=>p.id===pegawaiDipilih)?.name||pegawaiDipilih}
               </div>
             )}
             <div style={{fontSize:13,fontWeight:700,color:entryMode==="lembur"?"#B8740A":C.p,textAlign:"center",marginBottom:6}}>
-              {entryMode==="lembur" ? "⏰ Masukkan PIN" : "🔐 Masukkan PIN Akses"}
+              {entryMode==="lembur" ? <><IkJam size={14} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:5}}/>Masukkan PIN</> : <><IkKunci size={14} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:5}}/>Masukkan PIN Akses</>}
             </div>
             <div style={{fontSize:11,color:C.tL,textAlign:"center",marginBottom:10}}>Gunakan PIN Admin atau PIN Perawat</div>
             <input ref={pinInputRef} style={{...iS,textAlign:"center",fontSize:28,letterSpacing:12,height:56,marginBottom:12,borderRadius:12}} type="password" inputMode="numeric" maxLength={6} placeholder="••••" value={pin} disabled={checking||!!(lockedUntil&&Date.now()<lockedUntil)} onChange={e=>setPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&check()}/>
-            {err && <div style={{fontSize:12,color:C.d,textAlign:"center",marginBottom:10}}>⚠ {err}</div>}
-            <Btn full onClick={check} disabled={checking||!!(lockedUntil&&Date.now()<lockedUntil)} style={{marginBottom:12,padding:"13px",fontSize:15}}>{checking?"Memeriksa...":(lockedUntil&&Date.now()<lockedUntil)?"🔒 Terkunci":"Masuk"}</Btn>
+            {err && <div style={{fontSize:12,color:C.d,textAlign:"center",marginBottom:10}}><IkPeringatan size={13} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:4}}/>{err}</div>}
+            <Btn full onClick={check} disabled={checking||!!(lockedUntil&&Date.now()<lockedUntil)} style={{marginBottom:12,padding:"13px",fontSize:15}}>{checking?"Memeriksa...":(lockedUntil&&Date.now()<lockedUntil)?<><IkKunci size={15} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:6}}/>Terkunci</>:"Masuk"}</Btn>
             <div style={{display:"flex",justifyContent:"center"}}>
               <button onClick={()=>{}} style={{background:"none",border:"none",color:C.tL,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Hubungi Admin jika lupa PIN</button>
             </div>
             <div style={{display:"flex",gap:6,marginTop:12,justifyContent:"center"}}>
-              <span style={{background:C.pBg,color:C.p,fontSize:10,padding:"3px 10px",borderRadius:12,fontWeight:700}}>🔐 Admin</span>
-              <span style={{background:C.gBg,color:C.g,fontSize:10,padding:"3px 10px",borderRadius:12,fontWeight:700}}>👤 Perawat</span>
+              <span style={{background:C.pBg,color:C.p,fontSize:10,padding:"3px 10px",borderRadius:12,fontWeight:700}}><IkKunci size={12} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:4}}/>Admin</span>
+              <span style={{background:C.gBg,color:C.g,fontSize:10,padding:"3px 10px",borderRadius:12,fontWeight:700}}><IkUser size={12} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:4}}/>Perawat</span>
             </div>
           </>
         )}

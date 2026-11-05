@@ -1,3 +1,4 @@
+import { Check as IkCek, Lock as IkGembok, Unlock as IkBuka, Save as IkSimpan, ClipboardCopy as IkSalin, Palette as IkWarna, CalendarDays as IkKal, X as IkX } from "lucide-react"; /* patch96 */
 /* src/components/view-beset-jadwal.tsx
    Tab "Beset Jadwal Perawat". Tabel nomor, nama perawat (dari tab Staf), kolom tanggal 1 bulan.
    Sel diisi tulisan (mis. P), sel berwarna sesuai perawat. Keterangan di bawah.
@@ -42,7 +43,7 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
   const muat = useCallback(async (b: string) => {
     try {
       const r: any = await SUPA_CLIENT.from(TABEL).select("data").order("updated_at", { ascending: false });
-      if (r.error) { showToast("⚠ Gagal memuat beset: " + (r.error.message || "error"), C.d); }
+      if (r.error) { showToast("Gagal memuat beset: " + (r.error.message || "error"), C.d); }
       const semua = ((r.data || []).map((x: any) => x.data).filter(Boolean)) as Beset[];
       setList(semua);
       const ada = semua.find((x) => x.bulan === b);
@@ -186,8 +187,8 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
   const simpanWarnaGlobal = async (baru: Record<string, string>) => {
     setWarnaGlobal(baru);
     const { error } = await SUPA_CLIENT.from("kamar_bedah_config").upsert({ key: "beset_warna", value: JSON.stringify(baru) }, { onConflict: "key" });
-    if (error) showToast("⚠ Gagal menyimpan warna: " + (error.message || "error"), C.d);
-    else showToast("✓ Warna perawat tersimpan", C.s);
+    if (error) showToast("Gagal menyimpan warna: " + (error.message || "error"), C.d);
+    else showToast("Warna perawat tersimpan", C.s);
   };
   const simpanWarna = (id: string, hex: string) => {
     if (role !== "admin") return;
@@ -208,7 +209,7 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
     const urut = lalu.urutan && lalu.urutan.length ? lalu.urutan : (lalu.perawat || []).map((p) => p.id);
     setD((p) => ({ ...p, urutan: urut, hilang: lalu.hilang || [] }));
     struktur.current = true; setAdaUbah(true);
-    showToast("✓ Urutan disalin dari " + labelBulan(kb) + ". Klik Simpan.", C.s);
+    showToast("Urutan disalin dari " + labelBulan(kb) + ". Klik Simpan.", C.s);
   };
   const toggleLibur = (h: number) => {
     if (role !== "admin") return;
@@ -250,25 +251,25 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
       const libur = struktur.current ? (d.libur || []) : (server.libur || []);
       const data: Beset = { ...server, id: d.id, bulan, buka: statusBuka ?? server.buka, sel, ket, warna, perawat: baris, urutan, hilang, libur, waktu, updated_at: nowIso };
       const { error } = await SUPA_CLIENT.from(TABEL).upsert({ id: data.id, data, updated_at: nowIso }, { onConflict: "id" });
-      if (error) showToast("⚠ Gagal menyimpan ke server: " + (error.message || "error"), C.d);
+      if (error) showToast("Gagal menyimpan ke server: " + (error.message || "error"), C.d);
       else {
         ok = true;
         setD(data); dirty.current.clear(); struktur.current = false; setAdaUbah(false);
         setList((x) => [data, ...x.filter((r2) => r2.id !== data.id)]);
-        showToast("✓ Beset jadwal tersimpan", C.s);
+        showToast("Beset jadwal tersimpan", C.s);
       }
-    } catch (e: any) { showToast("⚠ Gagal menyimpan: " + (e?.message || "error"), C.d); }
+    } catch (e: any) { showToast("Gagal menyimpan: " + (e?.message || "error"), C.d); }
     setBusy(false);
     return ok;
   };
 
   const konfirmasiPin = async () => {
     if (!pinMode) return;
-    if (!cekAdmin) { showToast("⚠ Verifikasi password admin belum terpasang", C.d); return; }
+    if (!cekAdmin) { showToast("Verifikasi password admin belum terpasang", C.d); return; }
     setBusy(true);
     let ok = false;
     try { ok = !!(await cekAdmin(pin)); } catch { ok = false; }
-    if (!ok) { showToast("⚠ Password admin salah", C.d); setBusy(false); return; }
+    if (!ok) { showToast("Password admin salah", C.d); setBusy(false); return; }
     const mode = pinMode;
     setPinMode(null); setPin(""); setBusy(false);
     await simpan(mode === "buka");
@@ -277,10 +278,10 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
   const hapus = async (l: Beset) => {
     if (!window.confirm(`Hapus beset ${labelBulan(l.bulan)}?`)) return;
     const { error } = await SUPA_CLIENT.from(TABEL).delete().eq("id", l.id);
-    if (error) { showToast("⚠ Gagal menghapus: " + (error.message || "error"), C.d); return; }
+    if (error) { showToast("Gagal menghapus: " + (error.message || "error"), C.d); return; }
     setList((x) => x.filter((r) => r.id !== l.id));
     if (l.id === d.id) setD(kosong(bulan));
-    showToast("✓ Beset dihapus", C.s);
+    showToast("Beset dihapus", C.s);
   };
 
   const unduhExcel = async () => {
@@ -323,7 +324,7 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
       const a = document.createElement("a");
       a.href = url; a.download = "BesetJadwal_" + bulan + ".xlsx"; a.click();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
-      showToast("✓ Excel diunduh", C.s);
+      showToast("Excel diunduh", C.s);
     } catch (e: any) { showToast("Gagal membuat Excel: " + (e?.message || "error"), C.d); }
   };
   const gantiBulan = (b: string) => {
@@ -351,7 +352,7 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
     a.href = url; a.download = `BesetJadwal_${bulan}.doc`;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 5000);
-    showToast("✓ Word diunduh", C.s);
+    showToast("Word diunduh", C.s);
   };
 
   const thS: React.CSSProperties = { border: "1px solid #111", padding: "6px 4px", fontSize: 15, fontWeight: 700, textAlign: "center", background: "#EEEEEE", fontFamily: FONT };
@@ -368,11 +369,11 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
         </div>
         <div style={{ fontWeight: 700, marginTop: 8 }}>{labelBulan(bulan)}</div>
         {d.buka
-          ? <div style={{ fontSize: 15, fontWeight: 800, color: "#166534", background: "#DCFCE7", borderRadius: 10, padding: "10px 12px", marginTop: 8, textAlign: "center" }}>✓ BESET DIBUKA — perawat bisa mengisi</div>
-          : <div style={{ fontSize: 15, fontWeight: 800, color: "#fff", background: "#DC2626", borderRadius: 10, padding: "10px 12px", marginTop: 8, textAlign: "center" }}>🔒 BESET DITUTUP — tabel tidak bisa diisi</div>}
+          ? <div style={{ fontSize: 15, fontWeight: 800, color: "#166534", background: "#DCFCE7", borderRadius: 10, padding: "10px 12px", marginTop: 8, textAlign: "center" }}><IkCek size={16} strokeWidth={2.8} style={{verticalAlign:"-2px",marginRight:6}}/>BESET DIBUKA — perawat bisa mengisi</div>
+          : <div style={{ fontSize: 15, fontWeight: 800, color: "#fff", background: "#DC2626", borderRadius: 10, padding: "10px 12px", marginTop: 8, textAlign: "center" }}><IkGembok size={16} strokeWidth={2.6} style={{verticalAlign:"-2px",marginRight:6}}/>BESET DITUTUP — tabel tidak bisa diisi</div>}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-          <Btn onClick={() => { setPin(""); setPinMode("buka"); }} disabled={busy || d.buka}>🔓 Beset Dibuka</Btn>
-          <Btn outline color={C.d} onClick={() => { setPin(""); setPinMode("tutup"); }} disabled={busy || !d.buka}>🔒 Beset Ditutup</Btn>
+          <Btn onClick={() => { setPin(""); setPinMode("buka"); }} disabled={busy || d.buka}><IkBuka size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Beset Dibuka</Btn>
+          <Btn outline color={C.d} onClick={() => { setPin(""); setPinMode("tutup"); }} disabled={busy || !d.buka}><IkGembok size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Beset Ditutup</Btn>
         </div>
         {pinMode && (
           <div style={{ marginTop: 10, border: "1px solid " + C.b, borderRadius: 10, padding: 10 }}>
@@ -385,7 +386,7 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
           </div>
         )}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-          <Btn onClick={() => simpan()} disabled={busy || !adaUbah}>💾 Simpan{adaUbah ? " (ada perubahan)" : ""}</Btn>
+          <Btn onClick={() => simpan()} disabled={busy || !adaUbah}><IkSimpan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Simpan{adaUbah ? " (ada perubahan)" : ""}</Btn>
           <Btn outline onClick={unduhExcel} disabled={busy}>⬇ Excel</Btn>
           <Btn outline onClick={unduhWord} disabled={busy}>⬇ Word</Btn>
         </div>
@@ -395,16 +396,16 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
         <SH label="Tabel beset" />
         {role === "admin" && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 8, fontSize: 13 }}>
-            <span>Admin: ubah urutan lewat kotak No, hapus nama dengan ✕, lalu klik Simpan.</span>
-            <Btn sm outline onClick={salinDariBulanLalu}>📋 Salin urutan dari bulan lalu</Btn>
-            <Btn sm outline onClick={() => setWarnaBuka((v) => !v)}>🎨 Atur warna perawat</Btn>
+            <span>Admin: ubah urutan lewat kotak No, hapus nama dengan tombol X, lalu klik Simpan.</span>
+            <Btn sm outline onClick={salinDariBulanLalu}><IkSalin size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Salin urutan dari bulan lalu</Btn>
+            <Btn sm outline onClick={() => setWarnaBuka((v) => !v)}><IkWarna size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Atur warna perawat</Btn>
             {(d.hilang || []).length > 0 && <Btn sm outline onClick={tampilSemua}>↺ Tampilkan perawat yang dihapus</Btn>}
           </div>
         )}
         {!baris.length && <div style={{ color: C.tL }}>Belum ada perawat di tab Staf.</div>}
         {role === "admin" && (
           <div style={{ border: "1px solid " + C.b, borderRadius: 10, padding: 8, marginBottom: 8 }}>
-            <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14 }}>🗓 Pilih tanggal libur (blok satu hari penuh). Ketuk tanggal untuk memilih atau membatalkan, lalu klik Simpan.</div>
+            <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14 }}><IkKal size={16} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Pilih tanggal libur (blok satu hari penuh). Ketuk tanggal untuk memilih atau membatalkan, lalu klik Simpan.</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
               {hari.map((h) => (
                 <button key={h} type="button" onClick={() => toggleLibur(h)}
@@ -416,7 +417,7 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
         )}
         {role === "admin" && warnaBuka && (
           <div style={{ border: "1px solid " + C.b, borderRadius: 10, padding: 8, marginBottom: 8 }}>
-            <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14 }}>🎨 Warna tetap per perawat (berlaku di semua bulan). Warna yang dipakai perawat lain tidak bisa dipilih.</div>
+            <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14 }}><IkWarna size={16} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Warna tetap per perawat (berlaku di semua bulan). Warna yang dipakai perawat lain tidak bisa dipilih.</div>
             {baris.map((b) => (
               <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", padding: "4px 0", borderBottom: "1px solid " + C.b }}>
                 <div style={{ minWidth: 150, fontSize: 14 }}><b>{b.name}</b></div>
@@ -428,7 +429,7 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
                 })}
               </div>
             ))}
-            <div style={{ marginTop: 6 }}><Btn sm outline onClick={kunciSemuaWarna}>🔒 Kunci semua warna saat ini</Btn></div>
+            <div style={{ marginTop: 6 }}><Btn sm outline onClick={kunciSemuaWarna}><IkGembok size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Kunci semua warna saat ini</Btn></div>
           </div>
         )}
         {(d.libur || []).length > 0 && <div style={{ fontSize: 13, marginBottom: 6 }}><span style={{ display: "inline-block", width: 12, height: 12, background: "#FCA5A5", border: "1px solid #111", marginRight: 6 }} />Kolom merah = tanggal libur (tetap bisa diisi untuk beset libur)</div>}
@@ -454,7 +455,7 @@ export function ViewBesetJadwal({ staff, showToast, role, cekAdmin }: any) {
                       : i + 1}
                   </td>
                   <td style={{ ...tdS, whiteSpace: "nowrap", position: "sticky", left: 0, zIndex: 1, background: "#fff", boxShadow: "1px 0 0 #111" }}>
-                    <span style={{ display: "inline-block", width: 12, height: 12, background: warnaMap[b.id], border: "1px solid #111", marginRight: 6 }} />{b.name}{role === "admin" && <button type="button" aria-label="Hapus perawat" onClick={() => hapusPerawat(b)} style={{ border: "none", background: "transparent", color: C.d, fontSize: 16, cursor: "pointer", marginLeft: 6 }}>✕</button>}
+                    <span style={{ display: "inline-block", width: 12, height: 12, background: warnaMap[b.id], border: "1px solid #111", marginRight: 6 }} />{b.name}{role === "admin" && <button type="button" aria-label="Hapus perawat" onClick={() => hapusPerawat(b)} style={{ border: "none", background: "transparent", color: C.d, fontSize: 16, cursor: "pointer", marginLeft: 6 }}><IkX size={14} strokeWidth={2.6} style={{verticalAlign:"-2px"}}/></button>}
                   </td>
                   {hari.map((h) => {
                     const v = d.sel[`${b.id}|${h}`] || "";

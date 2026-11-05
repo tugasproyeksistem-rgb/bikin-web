@@ -8,7 +8,7 @@ import { C } from "../constants";
 import { Card, SH, MiniBar } from "./primitives";
 
 const NAMA_BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
-const WARNA = ["#1F5A52", "#4338CA", "#E65100", "#7B1FA2", "#2E7D32", "#C62828", "#00838F", "#E91E63"];
+const WARNA = ["#1F5A52", "#075985", "#E65100", "#7B1FA2", "#2E7D32", "#C62828", "#00838F", "#E91E63"];
 
 function bulanIni(): string {
   const d = new Date();
@@ -48,7 +48,7 @@ export function StatistikBulanan({ ops, archive }: { ops: any[]; archive?: any[]
   return (
     <>
       <Card>
-        <SH label="📅 Operasi per Bulan" />
+        <SH label="Operasi per Bulan" />
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 12 }}>
           <button type="button" style={tombol} aria-label="Bulan sebelumnya" onClick={() => setBulan(geserBulan(bulan, -1))}>◀</button>
           <div style={{ textAlign: "center" }}>

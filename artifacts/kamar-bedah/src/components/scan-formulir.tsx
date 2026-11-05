@@ -1,3 +1,4 @@
+import { Camera as IkKamera, X as IkX, AlertTriangle as IkPeringatan, Search as IkCari, RefreshCw as IkUlang, Check as IkCek, ClipboardPaste as IkTempel, Sparkles as IkAI, Video as IkVideo, Image as IkGambar } from "lucide-react"; /* patch98 */
 /* src/components/scan-formulir.tsx
    Komponen scan formulir operasi pasien — 4 jalur input (kamera live,
    ambil foto, upload screenshot/galeri, paste teks), semua bermuara ke
@@ -84,13 +85,13 @@ function LiveCameraScanModal({onCapture, onClose}: {onCapture: (file: File) => v
     <div className="kb-modal-backdrop" style={{position:"fixed",inset:0,background:"rgba(15,23,42,.75)",zIndex:9500,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
       <div className="kb-modal-content" style={{background:"#1E1B4B",borderRadius:20,padding:16,width:"100%",maxWidth:480,boxShadow:"0 20px 60px rgba(0,0,0,.5)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <div style={{color:"#fff",fontWeight:800,fontSize:15}}>📷 Scan Live — Formulir Pasien</div>
-          <button onClick={onClose} style={{background:"rgba(255,255,255,.12)",border:"none",borderRadius:8,color:"#fff",padding:"6px 10px",cursor:"pointer",fontSize:16}}>✕</button>
+          <div style={{color:"#fff",fontWeight:800,fontSize:15}}><IkKamera size={17} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Scan Live — Formulir Pasien</div>
+          <button onClick={onClose} style={{background:"rgba(255,255,255,.12)",border:"none",borderRadius:8,color:"#fff",padding:"6px 10px",cursor:"pointer",fontSize:16}}><IkX size={16} strokeWidth={2.6} style={{verticalAlign:"-2px",marginRight:0}}/></button>
         </div>
 
         {status === "error" ? (
           <div style={{background:"#FEF2F2",borderRadius:12,padding:16,textAlign:"center"}}>
-            <div style={{fontSize:13,color:"#B91C1C",fontWeight:600,marginBottom:10}}>⚠ {errMsg}</div>
+            <div style={{fontSize:13,color:"#B91C1C",fontWeight:600,marginBottom:10}}><IkPeringatan size={14} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:5}}/>{errMsg}</div>
             <Btn sm onClick={onClose}>Tutup, pakai cara biasa</Btn>
           </div>
         ) : (
@@ -109,7 +110,7 @@ function LiveCameraScanModal({onCapture, onClose}: {onCapture: (file: File) => v
               Sejajarkan formulir dalam bingkai, pastikan cahaya cukup & tidak buram, lalu tekan Ambil.
             </div>
             <Btn full disabled={status!=="ready"} onClick={handleCapture} style={{background:"linear-gradient(135deg,#E8CE8F,#C9A961)",color:"#1E1B4B",fontWeight:800}}>
-              📸 Ambil Gambar
+              <IkKamera size={16} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Ambil Gambar
             </Btn>
           </>
         )}
@@ -225,7 +226,7 @@ export function ScanFormulir({onResults, showToast}: ScanFormulirProps) {
          (setelah diubah — lihat catatan di interface OcrExtractResult)
          mendeteksi input bukan formulir/instruksi operasi sama sekali. */
       if(res.notAFormError){
-        showToast("📄 Sepertinya isi ini bukan formulir/instruksi operasi — pastikan datanya lengkap & jelas, lalu coba lagi.", C.d);
+        showToast("Sepertinya isi ini bukan formulir/instruksi operasi — pastikan datanya lengkap & jelas, lalu coba lagi.", C.d);
       } else {
         showToast(res.msg || genericFailMsg, C.d);
       }
@@ -234,13 +235,13 @@ export function ScanFormulir({onResults, showToast}: ScanFormulirProps) {
     const dataCapped = res.data.length > MAX_OCR_BATCH ? res.data.slice(0, MAX_OCR_BATCH) : res.data;
     /* FIX AUDIT #39: onResults() SENDIRI yang menampilkan toast akhir yang
        akurat (lihat applyOcrResult & autoSaveOcrBatch) — di sini sengaja
-       TIDAK ada toast "✓ berhasil" generik yang bisa menimpa & menyesatkan. */
+       TIDAK ada toast "berhasil" generik yang bisa menimpa & menyesatkan. */
     onResults(dataCapped);
     AmbilLogMedis("DAFTAR_PASIEN","Perawat","OCR_SCAN_FORMULIR",`${sourceLabel} berhasil — ${dataCapped.length} entri terbaca (Cloudflare Workers AI)`,{jumlahEntri:dataCapped.length, sumber:sourceLabel});
     const totalTerbaca = res.data.length;
     if(totalTerbaca > MAX_OCR_BATCH){
       setTimeout(()=>{
-        showToast(`⚠ Sebelumnya terbaca ${totalTerbaca} entri — hanya ${MAX_OCR_BATCH} pertama yang diproses. Proses ulang per bagian untuk sisanya.`, C.w);
+        showToast(`Sebelumnya terbaca ${totalTerbaca} entri — hanya ${MAX_OCR_BATCH} pertama yang diproses. Proses ulang per bagian untuk sisanya.`, C.w);
       }, 3400);
     }
   },[onResults, showToast]);
@@ -300,7 +301,7 @@ export function ScanFormulir({onResults, showToast}: ScanFormulirProps) {
       <input ref={galleryInputRef} type="file" accept="image/*" style={{display:"none"}} onChange={(ev)=>{ onFilePicked(ev.target.files?.[0]); ev.target.value=""; }}/>
       {previewFile && previewUrl ? (
         <Card style={{marginBottom:10, background:"#FAFBFD"}}>
-          <div style={{fontSize:12,fontWeight:700,color:C.t,marginBottom:8}}>🔍 Periksa foto sebelum dibaca AI</div>
+          <div style={{fontSize:12,fontWeight:700,color:C.t,marginBottom:8}}><IkCari size={14} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:5}}/>Periksa foto sebelum dibaca AI</div>
           <div style={{display:"flex",justifyContent:"center",alignItems:"center",background:"#111",borderRadius:10,overflow:"hidden",marginBottom:10,minHeight:180,maxHeight:320}}>
             <img src={previewUrl} alt="Preview formulir" style={{maxWidth:"100%",maxHeight:320,objectFit:"contain",transform:`rotate(${rotation}deg)`,transition:"transform .2s"}}/>
           </div>
@@ -314,14 +315,14 @@ export function ScanFormulir({onResults, showToast}: ScanFormulirProps) {
             <div style={{fontSize:12,color:C.tL,textAlign:"center",padding:"10px 0",fontWeight:600}}>⏳ {stageLabel || "Memproses…"}</div>
           ) : (
             <div style={{display:"flex",gap:8}}>
-              <Btn outline color={C.g} onClick={clearPreview} style={{flex:1}}>🔄 Ambil Ulang</Btn>
-              <Btn onClick={()=>processConfirmedFile(previewFile, rotation)} style={{flex:2}}>✓ Gunakan Foto Ini, Baca dengan AI</Btn>
+              <Btn outline color={C.g} onClick={clearPreview} style={{flex:1}}><IkUlang size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Ambil Ulang</Btn>
+              <Btn onClick={()=>processConfirmedFile(previewFile, rotation)} style={{flex:2}}><IkCek size={15} strokeWidth={2.8} style={{verticalAlign:"-2px",marginRight:6}}/>Gunakan Foto Ini, Baca dengan AI</Btn>
             </div>
           )}
         </Card>
       ) : showTextPaste ? (
         <Card style={{marginBottom:10, background:"#FAFBFD"}}>
-          <div style={{fontSize:12,fontWeight:700,color:C.t,marginBottom:8}}>📝 Jalur 2: Paste Instruksi/Memo (mis. chat WA dokter)</div>
+          <div style={{fontSize:12,fontWeight:700,color:C.t,marginBottom:8}}><IkTempel size={14} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:5}}/>Jalur 2: Paste Instruksi/Memo (mis. chat WA dokter)</div>
           <textarea
             value={pasteText}
             onChange={(ev)=>setPasteText(ev.target.value.slice(0, MAX_OCR_PASTE_CHARS))}
@@ -335,16 +336,16 @@ export function ScanFormulir({onResults, showToast}: ScanFormulirProps) {
           ) : (
             <div style={{display:"flex",gap:8}}>
               <Btn outline color={C.g} onClick={()=>{setShowTextPaste(false); setPasteText("");}} style={{flex:1}}>Batal</Btn>
-              <Btn onClick={processPastedText} style={{flex:2}}>⚙️ Proses Teks dengan AI</Btn>
+              <Btn onClick={processPastedText} style={{flex:2}}><IkAI size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Proses Teks dengan AI</Btn>
             </div>
           )}
         </Card>
       ) : (
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          <Btn outline disabled={loading} onClick={()=>setShowLiveCamera(true)} style={{background:"linear-gradient(135deg,#E8CE8F22,transparent)",borderColor:"#C9A961"}}>🎥 Scan Live (Kamera)</Btn>
-          <Btn outline disabled={loading} onClick={()=>cameraInputRef.current?.click()}>📷 Ambil Foto</Btn>
-          <Btn outline disabled={loading} onClick={()=>galleryInputRef.current?.click()}>🖼️ Upload Screenshot/Galeri</Btn>
-          <Btn outline disabled={loading} onClick={()=>setShowTextPaste(true)}>📝 Paste Teks Chat/Memo</Btn>
+          <Btn outline disabled={loading} onClick={()=>setShowLiveCamera(true)} style={{background:"linear-gradient(135deg,#E8CE8F22,transparent)",borderColor:"#C9A961"}}><IkVideo size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Scan Live (Kamera)</Btn>
+          <Btn outline disabled={loading} onClick={()=>cameraInputRef.current?.click()}><IkKamera size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Ambil Foto</Btn>
+          <Btn outline disabled={loading} onClick={()=>galleryInputRef.current?.click()}><IkGambar size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Upload Screenshot/Galeri</Btn>
+          <Btn outline disabled={loading} onClick={()=>setShowTextPaste(true)}><IkTempel size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Paste Teks Chat/Memo</Btn>
         </div>
       )}
       {showLiveCamera && (
