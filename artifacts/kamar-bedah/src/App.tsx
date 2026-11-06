@@ -210,7 +210,8 @@ import {
   AnimatedNumber, HomeParallaxBanner, ScrollReveal,
   Row, Bdg, SH, Toggle, MiniBar, ErrorBoundary,
 } from "./components/primitives";
-import { TabIcon, ActionIcon } from "./components/icons";
+import { ActionIcon } from "./components/icons";
+import { MenuGrup } from "./components/menu-grup";
 import { Play as KbIkoPlay, Check as KbIkoCek, CheckCircle2 as KbIkoSelesai, PencilLine as KbIkoDaftar, FileText as KbIkoLaporan, CalendarDays as KbIkoJadwal, CalendarRange as KbIkoRoster } from "lucide-react";
 import { Settings as KbIkoPin, ShieldCheck as KbIkoAdmin, User as KbIkoUser, Lock as KbIkoKunci } from "lucide-react";
 import { HeaderClock } from "./components/header-clock";
@@ -7076,12 +7077,7 @@ export default function App() {
         </div>
         {/* Mobile/tablet tabs — hidden on desktop via CSS */}
         <div className="kb-tabs">
-          {TABS.map(t=>(
-            <button key={t.k} data-tab={t.k} onClick={handleTabClickEvt} className="kb-tab-btn"
-              style={{border:"none",background:tab===t.k?"rgba(14,165,233,.18)":"none",color:tab===t.k?"#0B0F14":"#1F2937",fontWeight:tab===t.k?900:600,cursor:"pointer",borderBottom:tab===t.k?"3px solid #0284C7":"3px solid transparent",borderRadius:"8px 8px 0 0",transition:"all .15s",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
-              <TabIcon k={t.k}/>{t.l}
-            </button>
-          ))}
+          <MenuGrup varian="bar" tabs={TABS} aktif={tab} onKlik={handleTabClickEvt}/>
         </div>
       </div>
 
@@ -7092,25 +7088,8 @@ export default function App() {
         {/* Desktop sidebar — hidden on mobile via CSS */}
         <aside className="kb-sidebar">
           <div style={{fontSize:11,fontWeight:800,color:"#374151",letterSpacing:1,textTransform:"uppercase",padding:"4px 14px 8px",marginBottom:4}}>Menu</div>
-          {TABS.filter(t=>t.k!=="arsip").map(t=>(
-            <button key={t.k} data-tab={t.k} onClick={handleTabClickEvt}
-              className={`kb-sidebar-btn${tab===t.k?" active":""}`}>
-              <span style={{flexShrink:0,display:"flex"}}><TabIcon k={t.k}/></span>
-              <span>{t.l}</span>
-              {t.k==="jadwal" && ops.filter((o:any)=>o.status==="ongoing"&&o.date===toLocalISODate(new Date())).length>0 && (
-                <span style={{marginLeft:"auto",background:"#F44336",color:"#fff",fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{ops.filter((o:any)=>o.status==="ongoing"&&o.date===toLocalISODate(new Date())).length}</span>
-              )}
-            </button>
-          ))}
+          <MenuGrup varian="sidebar" tabs={TABS} aktif={tab} onKlik={handleTabClickEvt} badge={{jadwal: ops.filter((o:any)=>o.status==="ongoing"&&o.date===toLocalISODate(new Date())).length, arsip: notifs.length}}/>
           <div style={{flex:1}}/>
-          {TABS.filter(t=>t.k==="arsip").map(t=>(
-            <button key={t.k} data-tab={t.k} onClick={handleTabClickEvt}
-              className={`kb-sidebar-btn${tab===t.k?" active":""}`}>
-              <span style={{flexShrink:0,display:"flex"}}><TabIcon k={t.k}/></span>
-              <span>{t.l}</span>
-              {notifs.length>0 && <span style={{marginLeft:"auto",background:"#0284C7",color:"#fff",fontSize:9,fontWeight:700,padding:"2px 6px",borderRadius:10}}>{notifs.length}</span>}
-            </button>
-          ))}
           {/* Info footer in sidebar */}
           <div style={{padding:"12px 14px 4px",borderTop:"1px solid rgba(14,116,180,.18)"}}>
             <div style={{fontSize:10,color:"#1F2937",lineHeight:1.8}}>
