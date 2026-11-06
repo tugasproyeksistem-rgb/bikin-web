@@ -17,7 +17,8 @@ type Props = {
 };
 
 const GRUP: Grup[] = [
-  { id: "utama", l: "Utama", s: "Utama", ikon: "home", isi: ["home", "jadwal", "daftar"] },
+  { id: "home", l: "Home", s: "Home", ikon: "home", isi: ["home"] },
+  { id: "utama", l: "Operasi", s: "Operasi", ikon: "jadwal", isi: ["jadwal", "daftar"] },
   { id: "laporan", l: "Laporan", s: "Laporan", ikon: "laporan", isi: ["laporan", "laporan_harian", "jadwal_ok", "beset_jadwal"] },
   { id: "staf", l: "Staf & Komunikasi", s: "Staf", ikon: "staf", isi: ["lembur", "monitoring", "wa", "pengumuman", "staf"] },
   { id: "kelola", l: "Pengelolaan", s: "Kelola", ikon: "arsip", isi: ["roster_gen", "arsip", "statistik"] },
