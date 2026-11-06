@@ -78,7 +78,7 @@ export function MenuGrup({ tabs, aktif, onKlik, varian, badge }: Props) {
   const bukaGrup = (id: string, e: MouseEvent<HTMLButtonElement>) => {
     if (buka === id) { setBuka(null); return; }
     const r = e.currentTarget.getBoundingClientRect();
-    const lebar = 272, tinggi = 240;
+    const lebar = varian === "sidebar" ? 420 : 348, tinggi = 340;
     const vw = window.innerWidth, vh = window.innerHeight;
     if (varian === "bar") setPos({ top: r.bottom + 6, left: Math.max(8, Math.min(r.left, vw - lebar - 8)) });
     else setPos({ top: Math.max(8, Math.min(r.top, vh - tinggi - 8)), left: Math.max(8, Math.min(r.right + 8, vw - lebar - 8)) });
@@ -117,16 +117,16 @@ export function MenuGrup({ tabs, aktif, onKlik, varian, badge }: Props) {
       {gBuka && createPortal(
         <>
           <div onClick={() => setBuka(null)} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9998, background: "rgba(15,23,42,.18)" }} />
-          <div role="menu" style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 9999, background: "#fff", border: "1.5px solid #64748B", borderRadius: 16, padding: 12, boxShadow: "0 12px 32px rgba(15,23,42,.28)", width: "max-content", maxWidth: "calc(100vw - 16px)" }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: "#374151", letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>{gBuka.l}</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, maxWidth: 264 }}>
+          <div role="menu" style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 9999, background: "#fff", border: "1.5px solid #64748B", borderRadius: 20, padding: 16, boxShadow: "0 12px 32px rgba(15,23,42,.28)", width: "max-content", maxWidth: "calc(100vw - 16px)" }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#374151", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>{gBuka.l}</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, maxWidth: varian === "sidebar" ? 380 : 308 }}>
               {gBuka.isi.map((k) => {
                 const on = aktif === k;
                 const b = (badge && badge[k]) || 0;
                 return (
                   <button key={k} type="button" data-tab={k} onClick={(e) => { onKlik(e); setBuka(null); }}
-                    style={{ position: "relative", width: 80, padding: "10px 4px", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, borderRadius: 12, cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: on ? 900 : 700, lineHeight: 1.2, textAlign: "center", color: "#0B0F14", background: on ? "rgba(14,165,233,.18)" : "#fff", border: on ? "1.5px solid #0284C7" : "1.5px solid #CBD5E1" }}>
-                    <Ikon k={k} />
+                    style={{ position: "relative", width: varian === "sidebar" ? 120 : 96, padding: "16px 6px", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, borderRadius: 16, cursor: "pointer", fontFamily: "inherit", fontSize: varian === "sidebar" ? 13 : 12, fontWeight: on ? 900 : 700, lineHeight: 1.2, textAlign: "center", color: "#0B0F14", background: on ? "rgba(14,165,233,.18)" : "#fff", border: on ? "1.5px solid #0284C7" : "1.5px solid #CBD5E1" }}>
+                    <span style={{ display: "flex", transform: "scale(1.6)", margin: "8px 0 6px" }}><Ikon k={k} /></span>
                     <span>{label(k)}</span>
                     {b > 0 && <span style={{ position: "absolute", top: 4, right: 4, background: "#F44336", color: "#fff", fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 10 }}>{b}</span>}
                   </button>
