@@ -12,6 +12,65 @@ import { fNow, todayDate, sanitizeCellForExcel } from "../utils";
 import { Row, Card, SH, MiniBar } from "./primitives";
 import { StatistikBulanan } from "./statistik-bulanan";
 
+import { kelompokTindakan, kelompokDiagnosa } from "../data/kelompok-rekap";
+
+/* Rekap per kelompok utama; ketuk kelompok untuk melihat nama lengkap di dalamnya. */
+function RekapKelompok({ judul, data, totalOps, fnKelompok, satuan }: { judul: string; data: [string, number][]; totalOps: number; fnKelompok: (n: string) => string; satuan: string }) {
+  const [terbuka, setTerbuka] = useState<string | null>(null);
+  const grup: Record<string, { total: number; isi: [string, number][] }> = {};
+  data.forEach(([nama, val]) => {
+    const g = fnKelompok(nama);
+    const o = grup[g] || (grup[g] = { total: 0, isi: [] });
+    o.total += val;
+    o.isi.push([nama, val]);
+  });
+  const daftar = Object.entries(grup).sort((a, b) => {
+    if (a[0] === "Lainnya") return 1;
+    if (b[0] === "Lainnya") return -1;
+    return b[1].total - a[1].total;
+  });
+  return (
+    <Card>
+      <SH label={judul} color="#0284C7"/>
+      <div style={{fontSize:11,color:C.tL,marginBottom:10}}>{daftar.length} kelompok · {data.length} nama {satuan} · {totalOps} operasi · ketuk kelompok untuk melihat rinciannya</div>
+      {daftar.map(([nama, g], i) => {
+        const pct = totalOps > 0 ? Math.round((g.total / totalOps) * 100) : 0;
+        const barColor = ["#0284C7","#0369A1","#38BDF8","#6366F1","#0EA5E9","#2563EB","#7DD3FC","#1D4ED8"][i % 8];
+        const buka = terbuka === nama;
+        return (
+          <div key={nama} style={{marginBottom:8}}>
+            <div role="button" tabIndex={0} onClick={() => setTerbuka(buka ? null : nama)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setTerbuka(buka ? null : nama); }} style={{cursor:"pointer"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                <div style={{fontSize:12,fontWeight:600,color:C.t,flex:1,marginRight:8,display:"flex",alignItems:"center",gap:6,minWidth:0}}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{flexShrink:0,transform:buka?"rotate(90deg)":"none",transition:"transform .15s"}}><path d="m9 6 6 6-6 6"/></svg>
+                  <span style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{nama}</span>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                  <span style={{fontSize:13,fontWeight:800,color:barColor}}>{g.total}</span>
+                  <span style={{fontSize:10,color:C.tL}}>({pct}%)</span>
+                </div>
+              </div>
+              <div style={{background:"#f1f5f9",borderRadius:6,height:8,overflow:"hidden"}}>
+                <div style={{height:"100%",background:barColor,borderRadius:6,width:pct + "%",transition:"width .4s"}}/>
+              </div>
+            </div>
+            {buka && (
+              <div style={{margin:"6px 0 4px 14px",paddingLeft:10,borderLeft:"2px solid #CBD5E1"}}>
+                {g.isi.map(([n, v]) => (
+                  <div key={n} style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:11,color:C.t,padding:"2px 0"}}>
+                    <span style={{flex:1,minWidth:0,overflowWrap:"anywhere"}}>{n}</span>
+                    <span style={{fontWeight:700,flexShrink:0}}>{v}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </Card>
+  );
+}
+
 export function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
   const [range, setRange] = useState<"all"|"30"|"90">("all");
   const [exporting, setExporting] = useState(false);
@@ -262,61 +321,11 @@ export function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
 
 
 
-      {/* ── Rekapitulasi Tindakan ── */}
-      {procedureData.length>0 && (
-        <Card>
-          <SH label="Rekapitulasi Tindakan Medis" color="#0284C7"/>
-          <div style={{fontSize:11,color:C.tL,marginBottom:10}}>Total {procedureData.length} jenis tindakan · {filtered.length} operasi</div>
-          {procedureData.map(([label,val],i)=>{
-            const pct = filtered.length>0 ? Math.round((val/filtered.length)*100) : 0;
-            const barColor = COLORS[i%COLORS.length];
-            return (
-              <div key={label} style={{marginBottom:8}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
-                  <div style={{fontSize:12,fontWeight:600,color:C.t,flex:1,marginRight:8,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                    <span style={{color:C.tL,marginRight:6,fontSize:11}}>#{i+1}</span>{label}
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                    <span style={{fontSize:13,fontWeight:800,color:barColor}}>{val}</span>
-                    <span style={{fontSize:10,color:C.tL}}>({pct}%)</span>
-                  </div>
-                </div>
-                <div style={{background:"#f1f5f9",borderRadius:6,height:8,overflow:"hidden"}}>
-                  <div style={{height:"100%",background:barColor,borderRadius:6,width:`${pct}%`,transition:"width .4s"}}/>
-                </div>
-              </div>
-            );
-          })}
-        </Card>
-      )}
+      {/* ── Rekapitulasi Tindakan (per kelompok) ── */}
+      {procedureData.length>0 && <RekapKelompok judul="Rekapitulasi Tindakan Medis" data={procedureData} totalOps={filtered.length} fnKelompok={kelompokTindakan} satuan="tindakan"/>}
 
-      {/* ── Rekapitulasi Diagnosa ── */}
-      {diagnosisData.length>0 && (
-        <Card>
-          <SH label="Rekapitulasi Diagnosa" color="#0284C7"/>
-          <div style={{fontSize:11,color:C.tL,marginBottom:10}}>Total {diagnosisData.length} jenis diagnosa</div>
-          {diagnosisData.map(([label,val],i)=>{
-            const pct = filtered.length>0 ? Math.round((val/filtered.length)*100) : 0;
-            const barColor = ["#0284C7","#a855f7","#0284C7","#0369A1","#9333ea","#0369A1","#0284C7","#c026d3"][i%8];
-            return (
-              <div key={label} style={{marginBottom:8}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
-                  <div style={{fontSize:12,fontWeight:600,color:C.t,flex:1,marginRight:8,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
-                    <span style={{color:C.tL,marginRight:6,fontSize:11}}>#{i+1}</span>{label}
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                    <span style={{fontSize:13,fontWeight:800,color:barColor}}>{val}</span>
-                    <span style={{fontSize:10,color:C.tL}}>({pct}%)</span>
-                  </div>
-                </div>
-                <div style={{background:"#f5f3ff",borderRadius:6,height:8,overflow:"hidden"}}>
-                  <div style={{height:"100%",background:barColor,borderRadius:6,width:`${pct}%`,transition:"width .4s"}}/>
-                </div>
-              </div>
-            );
-          })}
-        </Card>
-      )}
+      {/* ── Rekapitulasi Diagnosa (per kelompok) ── */}
+      {diagnosisData.length>0 && <RekapKelompok judul="Rekapitulasi Diagnosa" data={diagnosisData} totalOps={filtered.length} fnKelompok={kelompokDiagnosa} satuan="diagnosa"/>}
 
       {/* Per kamar */}
       {roomData.length>0 && (
