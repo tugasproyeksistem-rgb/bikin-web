@@ -70,14 +70,32 @@ export function ViewStatistik({ops, archive}: {ops: any[]; archive: any[]}) {
   const byAnest: Record<string,number> = {};
   filtered.forEach((o:any)=>{ if(o.anesthesiologist) byAnest[o.anesthesiologist]=(byAnest[o.anesthesiologist]||0)+1; });
 
+  // Gabungkan nama yang sama beda huruf besar/kecil (hanya saat menghitung, data asli tidak diubah)
+  const gabungNama = (arr:any[]):Record<string,number> => {
+    const grup: Record<string,{n:number,v:Record<string,number>}> = {};
+    arr.forEach((x:any)=>{
+      const asli = String(x||"").replace(/\s+/g," ").trim();
+      if(!asli) return;
+      const k = asli.toLowerCase();
+      const g = grup[k] || (grup[k] = {n:0,v:{}});
+      g.n++; g.v[asli] = (g.v[asli]||0)+1;
+    });
+    const out: Record<string,number> = {};
+    Object.values(grup).forEach((g)=>{
+      const label = Object.entries(g.v).sort((a,b)=>b[1]-a[1])[0][0];
+      out[label] = (out[label]||0) + g.n;
+    });
+    return out;
+  };
+
   // Agregasi Tindakan (procedure)
   const byProcedure: Record<string,number> = {};
-  filtered.forEach((o:any)=>{ const k=(o.procedure||"").trim(); if(k) byProcedure[k]=(byProcedure[k]||0)+1; });
+  Object.assign(byProcedure, gabungNama(filtered.map((o:any)=>o.procedure)));
   const procedureData = Object.entries(byProcedure).sort((a,b)=>b[1]-a[1]);
 
   // Agregasi Diagnosa
   const byDiagnosis: Record<string,number> = {};
-  filtered.forEach((o:any)=>{ const k=(o.diagnosis||"").trim(); if(k) byDiagnosis[k]=(byDiagnosis[k]||0)+1; });
+  Object.assign(byDiagnosis, gabungNama(filtered.map((o:any)=>o.diagnosis)));
   const diagnosisData = Object.entries(byDiagnosis).sort((a,b)=>b[1]-a[1]);
 
   const exportToExcel = () => {

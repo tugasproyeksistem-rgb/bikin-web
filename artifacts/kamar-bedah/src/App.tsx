@@ -1,5 +1,5 @@
 import { Package as IkBox, Check as IkCek, ClipboardList as IkClip, Cloud as IkCloud, Pencil as IkEdit, FileText as IkFile, BarChart3 as IkGrafik, CalendarDays as IkKal, Camera as IkKamera, Lock as IkKunci, Pin as IkPaku, AlertTriangle as IkPeringatan, MapPin as IkPin, Trash2 as IkSampah, Settings as IkSetelan, Save as IkSimpan, Users as IkStaf, Thermometer as IkSuhu, Plus as IkTambah, Droplets as IkTetes, Download as IkUnduh, User as IkUser, X as IkX, Zap as IkZap } from "lucide-react"; /* patch99 */
-import { KolomSaran } from "./components/kolom-saran";
+import { KolomSaranSimpan } from "./components/kolom-saran-simpan";
 import { DAFTAR_DIAGNOSA, DAFTAR_TINDAKAN } from "./data/daftar-diagnosa-tindakan";
 import { KOLOM_TAMBAHAN_OPS, nilaiTambahanOps } from "./utils/operasi-excel";
 /*
@@ -1200,8 +1200,8 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
           </div>
         </LF>
         {opForm.opType==="cyto" && <LF label="Ruang Asal Pasien"><input style={iStyle("ruangAsal")} placeholder="IGD, ICU, Bangsal..." value={opForm.ruangAsal||""} onChange={ev=>set("ruangAsal",ev.target.value)} onFocus={onFoc("ruangAsal")} onBlur={onBlr} autoComplete="off" spellCheck={false}/></LF>}
-        <LF label="Diagnosa Medis" req err={e.diagnosis}><KolomSaran daftar={DAFTAR_DIAGNOSA} style={iStyle("diagnosis")} placeholder="Cth: Hernia Inguinalis Dextra, Appendicitis Akut" value={opForm.diagnosis} onChange={(v:string)=>set("diagnosis",v)} onFocus={onFoc("diagnosis")} onBlur={onBlr}/></LF>
-        <LF label="Nama Tindakan / Prosedur" req err={e.procedure}><KolomSaran daftar={DAFTAR_TINDAKAN} style={iStyle("procedure")} placeholder="Cth: Hernioraphy Open, Laparoscopic Cholecystectomy" value={opForm.procedure} onChange={(v:string)=>set("procedure",v)} onFocus={onFoc("procedure")} onBlur={onBlr}/></LF>
+        <LF label="Diagnosa Medis" req err={e.diagnosis}><KolomSaranSimpan kunci="daftar_diagnosa_tambahan" daftar={DAFTAR_DIAGNOSA} style={iStyle("diagnosis")} placeholder="Cth: Hernia Inguinalis Dextra, Appendicitis Akut" value={opForm.diagnosis} onChange={(v:string)=>set("diagnosis",v)} onFocus={onFoc("diagnosis")} onBlur={onBlr}/></LF>
+        <LF label="Nama Tindakan / Prosedur" req err={e.procedure}><KolomSaranSimpan kunci="daftar_tindakan_tambahan" daftar={DAFTAR_TINDAKAN} style={iStyle("procedure")} placeholder="Cth: Hernioraphy Open, Laparoscopic Cholecystectomy" value={opForm.procedure} onChange={(v:string)=>set("procedure",v)} onFocus={onFoc("procedure")} onBlur={onBlr}/></LF>
         <div style={{display:"flex",gap:12}}>
           <div style={{flex:1}}><LF label="Tanggal" req><DateTxt style={iStyle("date")} value={opForm.date||""} onChange={(v:string)=>setR("date",v)}/></LF>{e.date&&<div style={{fontSize:11,color:C.d,marginTop:-8,marginBottom:8}}><IkPeringatan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>{e.date}</div>}</div>
           <div style={{flex:1}}><LF label="Jam Mulai" req><input style={iStyle("time")} type="time" value={opForm.time} onChange={(ev:any)=>setR("time",ev.target.value)}/></LF>{e.time&&<div style={{fontSize:11,color:C.d,marginTop:-8,marginBottom:8}}><IkPeringatan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>{e.time}</div>}</div>
