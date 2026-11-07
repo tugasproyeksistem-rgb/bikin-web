@@ -3,7 +3,7 @@
    dari App.tsx, tidak ada perubahan nilai.
    FIX AUDIT #12 (asli): ALL_TABS sebagai module-level constant (stabil
    antar render, bukan didefinisikan ulang tiap render di dalam komponen). */
-/* Tab MUTU kamar bedah aktif otomatis mulai 1 Januari 2027 pukul 00.00 WIB (dibaca saat halaman dimuat). */
+/* Tab MUTU kamar bedah: admin bisa melihat sekarang; perawat otomatis mulai 1 Januari 2027 pukul 00.00 WIB (dibaca saat halaman dimuat). */
 const MUTU_AKTIF = Date.now() >= Date.parse("2027-01-01T00:00:00+07:00");
 export const ALL_TABS: Array<{k:string; l:string; roles:Array<"admin"|"perawat">}> = [
   {k:"home",      l:"Home",       roles:["admin","perawat"]},
@@ -14,7 +14,7 @@ export const ALL_TABS: Array<{k:string; l:string; roles:Array<"admin"|"perawat">
   {k:"beset_jadwal", l:"Beset Jadwal", roles:["admin","perawat"]},
   {k:"pengumuman", l:"Pengumuman", roles:["admin"]},
   {k:"jadwal_ok", l:"Jadwal & Peserta", roles:["admin","perawat"]},
-  ...(MUTU_AKTIF ? [{k:"mutu_ok", l:"Pemantauan Kamar Bedah", roles:["admin","perawat"] as Array<"admin"|"perawat">}] : []),
+  {k:"mutu_ok", l:"Pemantauan Kamar Bedah", roles: MUTU_AKTIF ? ["admin","perawat"] : ["admin"]},
   {k:"wa",        l:"Kirim WA",   roles:["admin","perawat"]},
   {k:"statistik", l:"Statistik",  roles:["admin","perawat"]},
   {k:"staf",      l:"Staf",       roles:["admin"]},
