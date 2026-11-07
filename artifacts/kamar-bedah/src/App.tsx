@@ -231,6 +231,7 @@ import { ViewLaporan } from "./components/view-laporan";
 import { LaporanOKTab, LaporanPilihTab } from "./components/view-laporan-kepala-jaga";
 import { ViewJadwalOK } from "./components/view-jadwal-ok";
 import { ViewBesetJadwal } from "./components/view-beset-jadwal";
+import { ViewMutuOK } from "./components/view-mutu-ok";
 import { BesetBanner } from "./components/beset-banner";
 import { UpdateBanner } from "./components/update-banner";
 import { ViewPengumuman } from "./components/view-pengumuman";
@@ -7002,6 +7003,7 @@ export default function App() {
       {tab==="laporan"    && <LaporanPilihTab roster={roster} ops={ops} staff={staff} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg} tertulis={<ViewLaporan ops={ops} staff={staff} roster={roster} showToast={showToast} role={role} privacyMode={privacyMode}/>}/>}
       {tab==="laporan_harian" && <LaporanOKTab roster={roster} ops={ops} staff={staff} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg}/>}
       {tab==="pengumuman" && <ViewPengumuman staff={staff} showToast={showToast} role={role}/>}
+      {tab==="mutu_ok" && <ViewMutuOK ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} dbxCfg={dbxCfg}/>}
       {tab==="beset_jadwal" && <ViewBesetJadwal staff={staff} showToast={showToast} role={role} cekAdmin={(p:string)=>verifyPin(p,pinAdmin)}/>}
       {tab==="jadwal_ok" && <ViewJadwalOK ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg}/>}
       {tab==="wa"         && <ViewKirimWA ops={ops} staff={staff} setNotifs={setNotifs} showToast={showToast}/>}
