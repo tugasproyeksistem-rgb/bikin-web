@@ -170,9 +170,9 @@ export function ViewMutuOK({ ops, showToast, role, privacyMode, upsertOneToSupa,
                 </div>
               )}
               {susunBaris(g).map((b, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 0", borderTop: i > 0 || g.auto ? "1px dashed #e5e7eb" : "none" }}>
-                  <span style={{ flex: 1, fontSize: 13, color: "#374151" }}>{b.judul}</span>
-                  <div style={{ display: "flex", gap: 8 }}>
+                <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, padding: "6px 0", borderTop: i > 0 || g.auto ? "1px dashed #e5e7eb" : "none" }}>
+                  <span style={{ flex: 1, minWidth: 96, fontSize: 13, color: "#374151" }}>{b.judul}</span>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                     {b.fs.map((fd) => fd.t === "pilih" ? (
                       <label key={fd.k} style={{ display: "flex", flexDirection: "column", alignItems: "center", fontSize: 10, fontWeight: 700, color: "#6b7280", gap: 2 }}>
                         <span>{/(YA|TDK)$/.test(fd.l) ? (fd.l.match(/(YA|TDK)$/) as RegExpMatchArray)[0] : fd.l}</span>
