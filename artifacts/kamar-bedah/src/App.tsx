@@ -232,6 +232,7 @@ import { LaporanOKTab, LaporanPilihTab } from "./components/view-laporan-kepala-
 import { ViewJadwalOK } from "./components/view-jadwal-ok";
 import { ViewBesetJadwal } from "./components/view-beset-jadwal";
 import { ViewMutuOK } from "./components/view-mutu-ok";
+import { implantAktif } from "./constants/fitur-tanggal";
 import { BesetBanner } from "./components/beset-banner";
 import { UpdateBanner } from "./components/update-banner";
 import { ViewPengumuman } from "./components/view-pengumuman";
@@ -1216,11 +1217,23 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
         <div style={{display:"flex",gap:12}}>
           <div style={{flex:1}}><LF label="Usia (tahun)"><input style={iStyle("age")} type="number" min="0" max="150" placeholder="45" value={opForm.age} onChange={(ev:any)=>setR("age",ev.target.value)}/></LF></div>
           <div style={{flex:1}}><LF label="Usia (bulan)"><input style={iStyle("ageMonths")} type="number" min="0" max="11" placeholder="0" value={opForm.ageMonths||""} onChange={(ev:any)=>setR("ageMonths",ev.target.value)}/></LF></div>
-          <div style={{flex:1}}><LF label="No. Rekam Medis"><input style={iStyle("rm")} placeholder="PRT-004891" value={opForm.rm} onChange={(ev:any)=>setR("rm",ev.target.value)} autoComplete="off"/></LF></div>
+          <div style={{flex:1}}><LF label="No. Rekam Medis (Wajib)" req err={e.rm}><input style={iStyle("rm")} placeholder="PRT-004891" value={opForm.rm} onChange={(ev:any)=>setR("rm",ev.target.value)} autoComplete="off"/></LF></div>
         </div>
         <SF label="Golongan Darah" options={BT} value={opForm.bloodType} onChange={(ev:any)=>setR("bloodType",ev.target.value)}/>
         <LF label="Riwayat Alergi"><input style={iStyle("allergy")} placeholder="Nama obat/zat alergi, atau 'Tidak Ada'" value={opForm.allergy} onChange={(ev:any)=>set("allergy",ev.target.value)} onFocus={onFoc("allergy")} onBlur={onBlr} autoComplete="off" spellCheck={false}/></LF>
         <LF label="Kebutuhan Khusus / Catatan"><textarea style={{...iStyle("specialNeeds"),resize:"vertical",minHeight:80,lineHeight:1.7} as React.CSSProperties} placeholder={"Cth:\n• Perlu warming blanket\n• Posisi litotomi\n• Siapkan darah 2 kantong"} value={opForm.specialNeeds||""} onChange={(ev:any)=>set("specialNeeds",ev.target.value)} onFocus={onFoc("specialNeeds")} onBlur={onBlr} spellCheck={false}/></LF>
+        <LF label="Apakah pasien akan menggunakan implant?" req>
+          <div style={{display:"flex",gap:8}}>
+            {[["ya","Ya"],["tidak","Tidak"]].map(([v,l])=>(
+              <button key={v} type="button" disabled={!implantAktif()} onClick={()=>setR("implant",v)} style={{flex:1,padding:"10px 6px",borderRadius:10,border:`2px solid ${(opForm.implant||"tidak")===v&&implantAktif()?C.p:C.b}`,background:(opForm.implant||"tidak")===v&&implantAktif()?`${C.p}14`:"#FAFBFD",color:(opForm.implant||"tidak")===v&&implantAktif()?C.p:C.g,fontSize:13,fontWeight:700,cursor:implantAktif()?"pointer":"not-allowed",opacity:implantAktif()?1:0.55,fontFamily:"inherit"}}>{l}</button>
+            ))}
+          </div>
+          {!implantAktif() && <div style={{fontSize:11,color:C.tL,marginTop:4}}>Pilihan ini mulai dapat digunakan pada 1 Januari 2027.</div>}
+        </LF>
+        {implantAktif() && opForm.implant==="ya" && (<>
+          <LF label="Alamat Pasien" req err={e.alamatPasien}><textarea style={{...iStyle("alamatPasien"),resize:"vertical",minHeight:64,lineHeight:1.6} as React.CSSProperties} placeholder="Alamat lengkap pasien" value={opForm.alamatPasien||""} onChange={(ev:any)=>set("alamatPasien",ev.target.value)} onFocus={onFoc("alamatPasien")} onBlur={onBlr} spellCheck={false}/></LF>
+          <LF label="Nomor HP" req err={e.noHp}><input style={iStyle("noHp")} type="tel" inputMode="tel" placeholder="08xxxxxxxxxx" value={opForm.noHp||""} onChange={(ev:any)=>set("noHp",ev.target.value)} onFocus={onFoc("noHp")} onBlur={onBlr} autoComplete="off"/></LF>
+        </>)}
       </Card>
       <Card>
         <SH label="③ Tim Dokter"/>
@@ -6573,9 +6586,12 @@ export default function App() {
     if(!opForm.date) e.date="Tanggal wajib";
     if(!opForm.time) e.time="Jam wajib";
     if(!opForm.surgeon) e.surgeon="Dokter operator wajib";
+    if(!opForm.rm||!String(opForm.rm).trim()) e.rm="No. RM wajib";
+    if(implantAktif() && opForm.implant==="ya"){ if(!opForm.alamatPasien||!String(opForm.alamatPasien).trim()) e.alamatPasien="Alamat pasien wajib untuk pasien implant"; if(String(opForm.noHp||"").replace(/\D/g,"").length<9) e.noHp="Nomor HP wajib diisi (minimal 9 angka)"; }
     setOpErrors(e);
     if(Object.keys(e).length){showToast("Lengkapi field yang wajib ✱",C.d);return;}
-    const clean={...opForm,opType:(opForm.opType||"elektif") as "elektif"|"semi"|"cyto",patient:sanitize(opForm.patient||""),diagnosis:sanitize(opForm.diagnosis||""),procedure:sanitize(opForm.procedure||""),ruangAsal:sanitize(opForm.ruangAsal||""),allergy:sanitize(opForm.allergy||"Tidak Ada"),specialNeeds:sanitize(opForm.specialNeeds||""),assistantNurse:sanitize(opForm.assistantNurse||""),rrKatim:sanitize(opForm.rrKatim||"")};
+    const pakaiImplant=implantAktif() && opForm.implant==="ya";
+    const clean={...opForm,...(implantAktif()?{implant:pakaiImplant?"ya":"tidak",alamatPasien:pakaiImplant?sanitize(opForm.alamatPasien||""):"",noHp:pakaiImplant?String(opForm.noHp||"").trim():""}:{}),opType:(opForm.opType||"elektif") as "elektif"|"semi"|"cyto",patient:sanitize(opForm.patient||""),diagnosis:sanitize(opForm.diagnosis||""),procedure:sanitize(opForm.procedure||""),ruangAsal:sanitize(opForm.ruangAsal||""),allergy:sanitize(opForm.allergy||"Tidak Ada"),specialNeeds:sanitize(opForm.specialNeeds||""),assistantNurse:sanitize(opForm.assistantNurse||""),rrKatim:sanitize(opForm.rrKatim||"")};
     const dupSameDay=ops.some((o:any)=>o.id!==editingOp?.id&&o.patient&&o.patient.toLowerCase().trim()===clean.patient.toLowerCase().trim()&&o.date===clean.date);
     const dup=ops.some((o:any)=>o.id!==editingOp?.id&&o.patient&&o.patient.toLowerCase().trim()===clean.patient.toLowerCase()&&o.date===clean.date&&o.time===clean.time);
     if(dupSameDay&&!dup){showToast(`Perhatian: Pasien "${clean.patient}" sudah terdaftar pada ${clean.date} (jam berbeda)`,C.w);}

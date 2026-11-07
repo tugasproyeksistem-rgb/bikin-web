@@ -21,6 +21,9 @@ export interface Operation {
   allergy: string;
   bloodType: string;
   ruangAsal?: string;
+  implant?: string;
+  alamatPasien?: string;
+  noHp?: string;
   assistantNurse?: string;
   circulatingNurse?: string;
   anesthesiaNurse?: string;
