@@ -7028,6 +7028,8 @@ export default function App() {
       {tab==="laporan"    && <LaporanPilihTab roster={roster} ops={ops} staff={staff} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg} tertulis={<ViewLaporan ops={ops} staff={staff} roster={roster} showToast={showToast} role={role} privacyMode={privacyMode}/>}/>}
       {tab==="laporan_harian" && <LaporanOKTab roster={roster} ops={ops} staff={staff} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg}/>}
       {tab==="pengumuman" && <ViewPengumuman staff={staff} showToast={showToast} role={role}/>}
+      {tab==="implant_mata" && <ViewImplan kelompok="mata" ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} dbxCfg={dbxCfg}/>}
+      {tab==="implant_hernia" && <ViewImplan kelompok="hernia" ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} dbxCfg={dbxCfg}/>}
       {tab==="implant_tulang" && <ViewImplan kelompok="tulang" ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} dbxCfg={dbxCfg}/>}
       {tab==="mutu_ok" && <ViewMutuOK ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} dbxCfg={dbxCfg}/>}
       {tab==="beset_jadwal" && <ViewBesetJadwal staff={staff} showToast={showToast} role={role} cekAdmin={(p:string)=>verifyPin(p,pinAdmin)}/>}

@@ -20,7 +20,7 @@ const GRUP: Grup[] = [
   { id: "home", l: "Home", s: "Home", ikon: "home", isi: ["home"] },
   { id: "utama", l: "Operasi", s: "Operasi", ikon: "jadwal", isi: ["jadwal", "daftar"] },
   { id: "laporan", l: "Laporan", s: "Laporan", ikon: "laporan", isi: ["laporan", "laporan_harian", "jadwal_ok", "beset_jadwal"] },
-  { id: "mutu", l: "MUTU kamar bedah", s: "Mutu", ikon: "mutu_ok", isi: ["mutu_ok", "implant_tulang"] },
+  { id: "mutu", l: "MUTU kamar bedah", s: "Mutu", ikon: "mutu_ok", isi: ["mutu_ok", "implant_tulang", "implant_mata", "implant_hernia"] },
   { id: "staf", l: "Staf & Komunikasi", s: "Staf", ikon: "staf", isi: ["lembur", "monitoring", "wa", "pengumuman", "staf"] },
   { id: "kelola", l: "Pengelolaan", s: "Kelola", ikon: "arsip", isi: ["roster_gen", "arsip", "statistik"] },
 ];
@@ -35,6 +35,10 @@ function Ikon({ k }: { k: string }) {
       return <svg {...svgP}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16"/></svg>;
     case "jadwal_ok":
       return <svg {...svgP}><path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1 1 2-2M3.5 12l1 1 2-2M3.5 18l1 1 2-2"/></svg>;
+    case "implant_mata":
+      return <svg {...svgP}><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>;
+    case "implant_hernia":
+      return <svg {...svgP}><path d="M4 4h16v16H4zM4 9.3h16M4 14.7h16M9.3 4v16M14.7 4v16"/></svg>;
     case "implant_tulang":
       return <svg {...svgP}><path d="M7 4a2.5 2.5 0 0 0-2 4 2.5 2.5 0 0 0 3.5 3.5L14 17a2.5 2.5 0 0 0 4 2 2.5 2.5 0 0 0 1-4 2.5 2.5 0 0 0-3.5-3.5L10 6A2.5 2.5 0 0 0 7 4Z"/></svg>;
     case "mutu_ok":

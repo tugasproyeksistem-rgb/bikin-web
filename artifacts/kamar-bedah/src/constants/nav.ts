@@ -16,6 +16,8 @@ export const ALL_TABS: Array<{k:string; l:string; roles:Array<"admin"|"perawat">
   {k:"jadwal_ok", l:"Jadwal & Peserta", roles:["admin","perawat"]},
   {k:"mutu_ok", l:"Pemantauan Kamar Bedah", roles: MUTU_AKTIF ? ["admin","perawat"] : ["admin"]},
   {k:"implant_tulang", l:"IMPLANT TULANG", roles: MUTU_AKTIF ? ["admin","perawat"] : ["admin"]},
+  {k:"implant_mata", l:"IMPLANT MATA", roles: MUTU_AKTIF ? ["admin","perawat"] : ["admin"]},
+  {k:"implant_hernia", l:"HERNIA MESH", roles: MUTU_AKTIF ? ["admin","perawat"] : ["admin"]},
   {k:"wa",        l:"Kirim WA",   roles:["admin","perawat"]},
   {k:"statistik", l:"Statistik",  roles:["admin","perawat"]},
   {k:"staf",      l:"Staf",       roles:["admin"]},

@@ -183,8 +183,8 @@ export function ViewImplan({ ops, showToast, role, privacyMode, upsertOneToSupa,
     return (
       <div style={{ padding: 12, borderTop: "1px solid #e5e7eb", background: "#fafafa", display: "grid", gap: 10 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
-          <label style={labelKecil}><span>NO REGISTER (RM: {rmItem(it as any) || "-"})</span>
-            <input value={row?.register ?? ""} onChange={(e) => setBidang(op, "register", e.target.value)} placeholder="Nomor register" style={gayaIsi} /></label>
+          {cfg.pakaiRegister && <label style={labelKecil}><span>NO REGISTER (RM: {rmItem(it as any) || "-"})</span>
+            <input value={row?.register ?? ""} onChange={(e) => setBidang(op, "register", e.target.value)} placeholder="Nomor register" style={gayaIsi} /></label>}
           <label style={labelKecil}><span>TANGGAL LAHIR</span>
             <input type="date" value={row?.tglLahir ?? ""} onChange={(e) => setBidang(op, "tglLahir", e.target.value)} style={gayaIsi} /></label>
           <label style={labelKecil}><span>NO TELP {telpOp ? "(dari data pasien)" : ""}</span>
@@ -212,7 +212,7 @@ export function ViewImplan({ ops, showToast, role, privacyMode, upsertOneToSupa,
           ))}
         </div>
 
-        <label style={labelKecil}><span>KETERANGAN</span>
+        <label style={labelKecil}><span>{cfg.ketLabel}</span>
           <textarea value={row?.ket ?? ""} onChange={(e) => setBidang(op, "ket", e.target.value)} placeholder="Catatan (opsional)" rows={2} style={{ ...gayaIsi, resize: "vertical" }} /></label>
       </div>
     );
@@ -220,7 +220,7 @@ export function ViewImplan({ ops, showToast, role, privacyMode, upsertOneToSupa,
 
   const th: any = { border: "1px solid #9ca3af", padding: "4px 6px", background: "#f3f4f6", fontSize: 11, fontWeight: 800, textAlign: "center", whiteSpace: "nowrap" };
   const td: any = { border: "1px solid #d1d5db", padding: "3px 6px", fontSize: 12, textAlign: "left" };
-  const modelBaris = susunBaris(itemsBulan);
+  const modelBaris = susunBaris(itemsBulan, cfg.pakaiRegister);
 
   return (
     <div style={{ maxWidth: 1040, margin: "0 auto", padding: "4px 2px 40px" }}>
@@ -247,7 +247,7 @@ export function ViewImplan({ ops, showToast, role, privacyMode, upsertOneToSupa,
         </span>
       </div>
 
-      {itemsHari.length === 0 && <div style={{ padding: 24, textAlign: "center", color: "#9ca3af", border: "1px dashed #d1d5db", borderRadius: 12 }}>Tidak ada pasien implant pada tanggal ini. Pasien muncul otomatis setelah didaftarkan di tab Daftar dengan pilihan implant.</div>}
+      {itemsHari.length === 0 && <div style={{ padding: 24, textAlign: "center", color: "#9ca3af", border: "1px dashed #d1d5db", borderRadius: 12 }}>Tidak ada pasien pada tanggal ini. Pasien muncul otomatis setelah didaftarkan di tab Daftar dengan pilihan implant.</div>}
 
       {itemsHari.map((it) => {
         const op = it.op; const id = String(op.id); const terbuka = buka === id;
@@ -305,7 +305,7 @@ export function ViewImplan({ ops, showToast, role, privacyMode, upsertOneToSupa,
             </div>
             <div style={{ overflow: "auto", padding: 10 }}>
               <table style={{ borderCollapse: "collapse", minWidth: "100%" }}>
-                <thead><tr>{["NO", "TGL", "NO RM / REGISTER", "NAMA", "TGL LAHIR", "NO TELP", "ALAMAT", "IMPLANT YANG DIPAKAI", "JUMLAH", "KET"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
+                <thead><tr>{["NO", "TGL", cfg.hdrRm, "NAMA", "TGL LAHIR", "NO TELP", "ALAMAT", cfg.hdrImplan, "JUMLAH", "KET"].map((h) => <th key={h} style={th}>{h}</th>)}</tr></thead>
                 <tbody>
                   {modelBaris.filter((b) => b.jenis !== "kosong").map((b, i) => (
                     <tr key={i}>
