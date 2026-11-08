@@ -20,7 +20,7 @@ const GRUP: Grup[] = [
   { id: "home", l: "Home", s: "Home", ikon: "home", isi: ["home"] },
   { id: "utama", l: "Operasi", s: "Operasi", ikon: "jadwal", isi: ["jadwal", "daftar"] },
   { id: "laporan", l: "Laporan", s: "Laporan", ikon: "laporan", isi: ["laporan", "laporan_harian", "jadwal_ok", "beset_jadwal"] },
-  { id: "mutu", l: "MUTU kamar bedah", s: "Mutu", ikon: "mutu_ok", isi: ["mutu_ok"] },
+  { id: "mutu", l: "MUTU kamar bedah", s: "Mutu", ikon: "mutu_ok", isi: ["mutu_ok", "implant_tulang"] },
   { id: "staf", l: "Staf & Komunikasi", s: "Staf", ikon: "staf", isi: ["lembur", "monitoring", "wa", "pengumuman", "staf"] },
   { id: "kelola", l: "Pengelolaan", s: "Kelola", ikon: "arsip", isi: ["roster_gen", "arsip", "statistik"] },
 ];
@@ -35,6 +35,8 @@ function Ikon({ k }: { k: string }) {
       return <svg {...svgP}><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16"/></svg>;
     case "jadwal_ok":
       return <svg {...svgP}><path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 6 1 1 2-2M3.5 12l1 1 2-2M3.5 18l1 1 2-2"/></svg>;
+    case "implant_tulang":
+      return <svg {...svgP}><path d="M7 4a2.5 2.5 0 0 0-2 4 2.5 2.5 0 0 0 3.5 3.5L14 17a2.5 2.5 0 0 0 4 2 2.5 2.5 0 0 0 1-4 2.5 2.5 0 0 0-3.5-3.5L10 6A2.5 2.5 0 0 0 7 4Z"/></svg>;
     case "mutu_ok":
       return <svg {...svgP}><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="m9 13 2 2 4-4"/></svg>;
     case "pengumuman":

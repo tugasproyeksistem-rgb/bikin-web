@@ -233,6 +233,7 @@ import { ViewJadwalOK } from "./components/view-jadwal-ok";
 import { ViewBesetJadwal } from "./components/view-beset-jadwal";
 import { ViewMutuOK } from "./components/view-mutu-ok";
 import { implantAktif } from "./constants/fitur-tanggal";
+import { ViewImplan } from "./components/view-implan";
 import { BesetBanner } from "./components/beset-banner";
 import { UpdateBanner } from "./components/update-banner";
 import { ViewPengumuman } from "./components/view-pengumuman";
@@ -1233,6 +1234,14 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
         {implantAktif() && opForm.implant==="ya" && (<>
           <LF label="Alamat Pasien" req err={e.alamatPasien}><textarea style={{...iStyle("alamatPasien"),resize:"vertical",minHeight:64,lineHeight:1.6} as React.CSSProperties} placeholder="Alamat lengkap pasien" value={opForm.alamatPasien||""} onChange={(ev:any)=>set("alamatPasien",ev.target.value)} onFocus={onFoc("alamatPasien")} onBlur={onBlr} spellCheck={false}/></LF>
           <LF label="Nomor HP" req err={e.noHp}><input style={iStyle("noHp")} type="tel" inputMode="tel" placeholder="08xxxxxxxxxx" value={opForm.noHp||""} onChange={(ev:any)=>set("noHp",ev.target.value)} onFocus={onFoc("noHp")} onBlur={onBlr} autoComplete="off"/></LF>
+          <LF label="Kelompok Implant" req err={e.kelompokImplant}>
+            <div style={{display:"flex",gap:8}}>
+              {[["tulang","Implant Tulang"],["mata","Mata"],["hernia","Hernia"]].map(([v,l])=>(
+                <button key={v} type="button" onClick={()=>setR("kelompokImplant",v)} style={{flex:1,padding:"10px 6px",borderRadius:10,border:`2px solid ${opForm.kelompokImplant===v?C.p:C.b}`,background:opForm.kelompokImplant===v?`${C.p}14`:"#FAFBFD",color:opForm.kelompokImplant===v?C.p:C.g,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
+              ))}
+            </div>
+            <div style={{fontSize:11,color:C.tL,marginTop:4}}>Data pasien akan masuk ke grup MUTU sesuai kelompok yang dipilih.</div>
+          </LF>
         </>)}
       </Card>
       <Card>
@@ -6587,11 +6596,11 @@ export default function App() {
     if(!opForm.time) e.time="Jam wajib";
     if(!opForm.surgeon) e.surgeon="Dokter operator wajib";
     if(!opForm.rm||!String(opForm.rm).trim()) e.rm="No. RM wajib";
-    if(implantAktif() && opForm.implant==="ya"){ if(!opForm.alamatPasien||!String(opForm.alamatPasien).trim()) e.alamatPasien="Alamat pasien wajib untuk pasien implant"; if(String(opForm.noHp||"").replace(/\D/g,"").length<9) e.noHp="Nomor HP wajib diisi (minimal 9 angka)"; }
+    if(implantAktif() && opForm.implant==="ya"){ if(!opForm.alamatPasien||!String(opForm.alamatPasien).trim()) e.alamatPasien="Alamat pasien wajib untuk pasien implant"; if(String(opForm.noHp||"").replace(/\D/g,"").length<9) e.noHp="Nomor HP wajib diisi (minimal 9 angka)"; if(!opForm.kelompokImplant) e.kelompokImplant="Pilih kelompok implant"; }
     setOpErrors(e);
     if(Object.keys(e).length){showToast("Lengkapi field yang wajib ✱",C.d);return;}
     const pakaiImplant=implantAktif() && opForm.implant==="ya";
-    const clean={...opForm,...(implantAktif()?{implant:pakaiImplant?"ya":"tidak",alamatPasien:pakaiImplant?sanitize(opForm.alamatPasien||""):"",noHp:pakaiImplant?String(opForm.noHp||"").trim():""}:{}),opType:(opForm.opType||"elektif") as "elektif"|"semi"|"cyto",patient:sanitize(opForm.patient||""),diagnosis:sanitize(opForm.diagnosis||""),procedure:sanitize(opForm.procedure||""),ruangAsal:sanitize(opForm.ruangAsal||""),allergy:sanitize(opForm.allergy||"Tidak Ada"),specialNeeds:sanitize(opForm.specialNeeds||""),assistantNurse:sanitize(opForm.assistantNurse||""),rrKatim:sanitize(opForm.rrKatim||"")};
+    const clean={...opForm,...(implantAktif()?{implant:pakaiImplant?"ya":"tidak",alamatPasien:pakaiImplant?sanitize(opForm.alamatPasien||""):"",noHp:pakaiImplant?String(opForm.noHp||"").trim():"",kelompokImplant:pakaiImplant?String(opForm.kelompokImplant||""):""}:{}),opType:(opForm.opType||"elektif") as "elektif"|"semi"|"cyto",patient:sanitize(opForm.patient||""),diagnosis:sanitize(opForm.diagnosis||""),procedure:sanitize(opForm.procedure||""),ruangAsal:sanitize(opForm.ruangAsal||""),allergy:sanitize(opForm.allergy||"Tidak Ada"),specialNeeds:sanitize(opForm.specialNeeds||""),assistantNurse:sanitize(opForm.assistantNurse||""),rrKatim:sanitize(opForm.rrKatim||"")};
     const dupSameDay=ops.some((o:any)=>o.id!==editingOp?.id&&o.patient&&o.patient.toLowerCase().trim()===clean.patient.toLowerCase().trim()&&o.date===clean.date);
     const dup=ops.some((o:any)=>o.id!==editingOp?.id&&o.patient&&o.patient.toLowerCase().trim()===clean.patient.toLowerCase()&&o.date===clean.date&&o.time===clean.time);
     if(dupSameDay&&!dup){showToast(`Perhatian: Pasien "${clean.patient}" sudah terdaftar pada ${clean.date} (jam berbeda)`,C.w);}
@@ -7019,6 +7028,7 @@ export default function App() {
       {tab==="laporan"    && <LaporanPilihTab roster={roster} ops={ops} staff={staff} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg} tertulis={<ViewLaporan ops={ops} staff={staff} roster={roster} showToast={showToast} role={role} privacyMode={privacyMode}/>}/>}
       {tab==="laporan_harian" && <LaporanOKTab roster={roster} ops={ops} staff={staff} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg}/>}
       {tab==="pengumuman" && <ViewPengumuman staff={staff} showToast={showToast} role={role}/>}
+      {tab==="implant_tulang" && <ViewImplan kelompok="tulang" ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} dbxCfg={dbxCfg}/>}
       {tab==="mutu_ok" && <ViewMutuOK ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} dbxCfg={dbxCfg}/>}
       {tab==="beset_jadwal" && <ViewBesetJadwal staff={staff} showToast={showToast} role={role} cekAdmin={(p:string)=>verifyPin(p,pinAdmin)}/>}
       {tab==="jadwal_ok" && <ViewJadwalOK ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg}/>}
