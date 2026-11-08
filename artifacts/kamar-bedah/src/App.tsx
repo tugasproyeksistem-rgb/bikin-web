@@ -212,6 +212,7 @@ import {
 } from "./components/primitives";
 import { ActionIcon } from "./components/icons";
 import { MenuGrup } from "./components/menu-grup";
+import { tabTerkunci } from "./constants/kunci-tab";
 import { Play as KbIkoPlay, Check as KbIkoCek, CheckCircle2 as KbIkoSelesai, PencilLine as KbIkoDaftar, FileText as KbIkoLaporan, CalendarDays as KbIkoJadwal, CalendarRange as KbIkoRoster } from "lucide-react";
 import { Settings as KbIkoPin, ShieldCheck as KbIkoAdmin, User as KbIkoUser, Lock as KbIkoKunci } from "lucide-react";
 import { HeaderClock } from "./components/header-clock";
@@ -235,6 +236,7 @@ import { ViewMutuOK } from "./components/view-mutu-ok";
 import { implantAktif } from "./constants/fitur-tanggal";
 import { ViewImplan } from "./components/view-implan";
 import { BesetBanner } from "./components/beset-banner";
+import { MutuNotif } from "./components/mutu-notif";
 import { UpdateBanner } from "./components/update-banner";
 import { ViewPengumuman } from "./components/view-pengumuman";
 import { HomeRingkas } from "./components/home-ringkas";
@@ -6867,6 +6869,7 @@ export default function App() {
               data dashboard. */}
           <AuroraBackground opacity={0}/>
           <div style={{position:"relative",zIndex:1}}>
+          <MutuNotif role={role} setTab={setTab} showToast={showToast}/>
           <BesetBanner setTab={setTab}/>
 
           <HomeRingkas ops={ops}/>
@@ -7024,14 +7027,16 @@ export default function App() {
         </div>
       )}
       {tab==="jadwal"     && <ViewJadwal ops={ops} setOps={setOps} startEditOp={startEditOp} deleteOp={deleteOp} sendReminder={sendReminder} reqOpId={reqOpId} setReqOpId={setReqOpId} reqText={reqText} setReqText={setReqText} addReq={addReq} delReq={delReq} getPhone={getPhone} setNotifs={setNotifs} showToast={showToast} privacyMode={privacyMode} role={role} upsertOneToSupa={upsertOneToSupa} initialLoading={initialLoading}/>}
+      {tab==="daftar" && <MutuNotif role={role} showToast={showToast}/>}
       {tab==="daftar"     && <ViewDaftar pendingEditOp={pendingEditOp} clearPendingEditOp={()=>setPendingEditOp(null)} saveOpFn={saveOpFn} autoSaveOcrBatch={autoSaveOcrBatch} staff={staff} setTab={setTab} templates={templates} setTemplates={setTemplates} showToast={showToast}/>}
       {tab==="laporan"    && <LaporanPilihTab roster={roster} ops={ops} staff={staff} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg} tertulis={<ViewLaporan ops={ops} staff={staff} roster={roster} showToast={showToast} role={role} privacyMode={privacyMode}/>}/>}
       {tab==="laporan_harian" && <LaporanOKTab roster={roster} ops={ops} staff={staff} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg}/>}
       {tab==="pengumuman" && <ViewPengumuman staff={staff} showToast={showToast} role={role}/>}
-      {tab==="implant_mata" && <ViewImplan kelompok="mata" ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} dbxCfg={dbxCfg}/>}
-      {tab==="implant_hernia" && <ViewImplan kelompok="hernia" ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} dbxCfg={dbxCfg}/>}
-      {tab==="implant_tulang" && <ViewImplan kelompok="tulang" ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} dbxCfg={dbxCfg}/>}
-      {tab==="mutu_ok" && <ViewMutuOK ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} dbxCfg={dbxCfg}/>}
+      {tab==="implant_mata" && !tabTerkunci("implant_mata", role) && <ViewImplan kelompok="mata" ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} dbxCfg={dbxCfg}/>}
+      {tab==="implant_hernia" && !tabTerkunci("implant_hernia", role) && <ViewImplan kelompok="hernia" ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} dbxCfg={dbxCfg}/>}
+      {tab==="implant_tulang" && !tabTerkunci("implant_tulang", role) && <ViewImplan kelompok="tulang" ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} dbxCfg={dbxCfg}/>}
+      {tabTerkunci(tab, role) && <div style={{padding:24,textAlign:"center",color:"#6B7280",border:"1px dashed #D1D5DB",borderRadius:12}}>Fitur ini mulai dapat digunakan pada 1 Januari 2027.</div>}
+      {tab==="mutu_ok" && !tabTerkunci("mutu_ok", role) && <ViewMutuOK ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} dbxCfg={dbxCfg}/>}
       {tab==="beset_jadwal" && <ViewBesetJadwal staff={staff} showToast={showToast} role={role} cekAdmin={(p:string)=>verifyPin(p,pinAdmin)}/>}
       {tab==="jadwal_ok" && <ViewJadwalOK ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg}/>}
       {tab==="wa"         && <ViewKirimWA ops={ops} staff={staff} setNotifs={setNotifs} showToast={showToast}/>}
@@ -7107,7 +7112,7 @@ export default function App() {
         </div>
         {/* Mobile/tablet tabs — hidden on desktop via CSS */}
         <div className="kb-tabs">
-          <MenuGrup varian="bar" tabs={TABS} aktif={tab} onKlik={handleTabClickEvt}/>
+          <MenuGrup varian="bar" tabs={TABS} aktif={tab} onKlik={handleTabClickEvt} terkunci={(k:string)=>tabTerkunci(k, role)}/>
         </div>
       </div>
 
@@ -7118,7 +7123,7 @@ export default function App() {
         {/* Desktop sidebar — hidden on mobile via CSS */}
         <aside className="kb-sidebar">
           <div style={{fontSize:11,fontWeight:800,color:"#374151",letterSpacing:1,textTransform:"uppercase",padding:"4px 14px 8px",marginBottom:4}}>Menu</div>
-          <MenuGrup varian="sidebar" tabs={TABS} aktif={tab} onKlik={handleTabClickEvt} badge={{jadwal: ops.filter((o:any)=>o.status==="ongoing"&&o.date===toLocalISODate(new Date())).length, arsip: notifs.length}}/>
+          <MenuGrup varian="sidebar" tabs={TABS} aktif={tab} onKlik={handleTabClickEvt} terkunci={(k:string)=>tabTerkunci(k, role)} badge={{jadwal: ops.filter((o:any)=>o.status==="ongoing"&&o.date===toLocalISODate(new Date())).length, arsip: notifs.length}}/>
           <div style={{flex:1}}/>
           {/* Info footer in sidebar */}
           <div style={{padding:"12px 14px 4px",borderTop:"1px solid rgba(14,116,180,.18)"}}>

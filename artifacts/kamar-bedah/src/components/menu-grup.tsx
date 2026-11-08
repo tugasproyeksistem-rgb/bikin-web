@@ -14,6 +14,7 @@ type Props = {
   onKlik: (e: MouseEvent<HTMLButtonElement>) => void;
   varian: "sidebar" | "bar";
   badge?: Record<string, number>;
+  terkunci?: (k: string) => boolean;
 };
 
 const GRUP: Grup[] = [
@@ -56,7 +57,7 @@ const Panah = ({ turun }: { turun: boolean }) => (
   </svg>
 );
 
-export function MenuGrup({ tabs, aktif, onKlik, varian, badge }: Props) {
+export function MenuGrup({ tabs, aktif, onKlik, varian, badge, terkunci }: Props) {
   const [buka, setBuka] = useState<string | null>(null);
   const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
 
@@ -125,6 +126,7 @@ export function MenuGrup({ tabs, aktif, onKlik, varian, badge }: Props) {
       })}
       {gBuka && createPortal(
         <>
+          <style>{`.kb-menu-kunci{opacity:.45;filter:grayscale(1);cursor:not-allowed !important}`}</style>
           <div onClick={() => setBuka(null)} style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9998, background: "rgba(15,23,42,.18)" }} />
           <div role="menu" style={{ position: "fixed", top: pos.top, left: pos.left, zIndex: 9999, background: "#fff", border: "1.5px solid #64748B", borderRadius: 20, padding: 16, boxShadow: "0 12px 32px rgba(15,23,42,.28)", width: "max-content", maxWidth: "calc(100vw - 16px)" }}>
             <div style={{ fontSize: 13, fontWeight: 800, color: "#374151", letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>{gBuka.l}</div>
@@ -133,10 +135,11 @@ export function MenuGrup({ tabs, aktif, onKlik, varian, badge }: Props) {
                 const on = aktif === k;
                 const b = (badge && badge[k]) || 0;
                 return (
-                  <button key={k} type="button" data-tab={k} onClick={(e) => { onKlik(e); setBuka(null); }}
+                  <button key={k} type="button" data-tab={k} disabled={!!(terkunci && terkunci(k))} className={terkunci && terkunci(k) ? "kb-menu-kunci" : undefined} title={terkunci && terkunci(k) ? "Mulai dapat digunakan 1 Januari 2027" : undefined} onClick={(e) => { onKlik(e); setBuka(null); }}
                     style={{ position: "relative", width: varian === "sidebar" ? 120 : 96, padding: "16px 6px", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, borderRadius: 16, cursor: "pointer", fontFamily: "inherit", fontSize: varian === "sidebar" ? 13 : 12, fontWeight: on ? 900 : 700, lineHeight: 1.2, textAlign: "center", color: "#0B0F14", background: on ? "rgba(14,165,233,.18)" : "#fff", border: on ? "1.5px solid #0284C7" : "1.5px solid #CBD5E1" }}>
                     <span style={{ display: "flex", transform: "scale(1.6)", margin: "8px 0 6px" }}><Ikon k={k} /></span>
                     <span>{label(k)}</span>
+                    {terkunci && terkunci(k) && <span style={{ fontSize: 9, fontWeight: 700, color: "#B45309" }}>Mulai 1 Jan 2027</span>}
                     {b > 0 && <span style={{ position: "absolute", top: 4, right: 4, background: "#F44336", color: "#fff", fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 10 }}>{b}</span>}
                   </button>
                 );

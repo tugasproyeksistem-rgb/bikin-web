@@ -4,7 +4,7 @@
    FIX AUDIT #12 (asli): ALL_TABS sebagai module-level constant (stabil
    antar render, bukan didefinisikan ulang tiap render di dalam komponen). */
 /* Tab MUTU kamar bedah: admin bisa melihat sekarang; perawat otomatis mulai 1 Januari 2027 pukul 00.00 WIB (dibaca saat halaman dimuat). */
-const MUTU_AKTIF = Date.now() >= Date.parse("2027-01-01T00:00:00+07:00");
+export const MUTU_AKTIF = Date.now() >= Date.parse("2027-01-01T00:00:00+07:00");
 export const ALL_TABS: Array<{k:string; l:string; roles:Array<"admin"|"perawat">}> = [
   {k:"home",      l:"Home",       roles:["admin","perawat"]},
   {k:"jadwal",    l:"Jadwal",     roles:["admin","perawat"]},
@@ -14,10 +14,10 @@ export const ALL_TABS: Array<{k:string; l:string; roles:Array<"admin"|"perawat">
   {k:"beset_jadwal", l:"Beset Jadwal", roles:["admin","perawat"]},
   {k:"pengumuman", l:"Pengumuman", roles:["admin"]},
   {k:"jadwal_ok", l:"Jadwal & Peserta", roles:["admin","perawat"]},
-  {k:"mutu_ok", l:"Pemantauan Kamar Bedah", roles: MUTU_AKTIF ? ["admin","perawat"] : ["admin"]},
-  {k:"implant_tulang", l:"IMPLANT TULANG", roles: MUTU_AKTIF ? ["admin","perawat"] : ["admin"]},
-  {k:"implant_mata", l:"IMPLANT MATA", roles: MUTU_AKTIF ? ["admin","perawat"] : ["admin"]},
-  {k:"implant_hernia", l:"HERNIA MESH", roles: MUTU_AKTIF ? ["admin","perawat"] : ["admin"]},
+  {k:"mutu_ok", l:"Pemantauan Kamar Bedah", roles:["admin","perawat"]},
+  {k:"implant_tulang", l:"IMPLANT TULANG", roles:["admin","perawat"]},
+  {k:"implant_mata", l:"IMPLANT MATA", roles:["admin","perawat"]},
+  {k:"implant_hernia", l:"HERNIA MESH", roles:["admin","perawat"]},
   {k:"wa",        l:"Kirim WA",   roles:["admin","perawat"]},
   {k:"statistik", l:"Statistik",  roles:["admin","perawat"]},
   {k:"staf",      l:"Staf",       roles:["admin"]},
