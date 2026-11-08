@@ -628,13 +628,13 @@ async function ambilDataTabelBaru(): Promise<Record<string, any[]>> {
       return (r.data || []).map((x: any) => x.data).filter(Boolean);
     } catch { return null; }
   };
-  const [laporanHarian, jadwalOk, jadwalPerawat, laporanKepalaJaga, besetJadwal, mutuOk] = await Promise.all([
-    baca("kb_laporan_harian"), baca("kb_jadwal_ok"), baca("kb_jadwal_perawat"), baca("kb_laporan_kepala_jaga"), baca("kb_beset_jadwal"), baca("kb_mutu_ok"),
+  const [laporanHarian, jadwalOk, jadwalPerawat, laporanKepalaJaga, besetJadwal, mutuOk, implanOk] = await Promise.all([
+    baca("kb_laporan_harian"), baca("kb_jadwal_ok"), baca("kb_jadwal_perawat"), baca("kb_laporan_kepala_jaga"), baca("kb_beset_jadwal"), baca("kb_mutu_ok"), baca("kb_implan_ok"),
   ]);
   const hasil: Record<string, any[]> = {};
   if (laporanHarian) hasil.laporanHarian = laporanHarian;
   if (jadwalOk) hasil.jadwalOk = jadwalOk;
-  if (jadwalPerawat) hasil.jadwalPerawat = jadwalPerawat; if (laporanKepalaJaga) hasil.laporanKepalaJaga = laporanKepalaJaga; if (besetJadwal) hasil.besetJadwal = besetJadwal; if (mutuOk) hasil.mutuOk = mutuOk;
+  if (jadwalPerawat) hasil.jadwalPerawat = jadwalPerawat; if (laporanKepalaJaga) hasil.laporanKepalaJaga = laporanKepalaJaga; if (besetJadwal) hasil.besetJadwal = besetJadwal; if (mutuOk) hasil.mutuOk = mutuOk; if (implanOk) hasil.implanOk = implanOk;
   return hasil;
 }
 
@@ -6176,7 +6176,7 @@ export default function App() {
     /* Pulihkan Laporan Harian OK, Jadwal & Peserta, Jadwal Perawat dari backup Supabase terakhir.
      Hanya menambahkan baris yang HILANG; baris yang sudah ada tidak pernah ditimpa. */
   const handleSupaRestoreTabelBaru = useCallback(async () => {
-    if(!window.confirm("Pulihkan Laporan Harian OK, Laporan Kepala Jaga, Beset Jadwal, Pemantauan Mutu, Jadwal & Peserta, dan Jadwal Perawat dari backup Supabase terakhir?\nHanya data yang hilang yang dikembalikan. Data yang sudah ada tidak ditimpa.")) return;
+    if(!window.confirm("Pulihkan Laporan Harian OK, Laporan Kepala Jaga, Beset Jadwal, Pemantauan Mutu, Data Implant, Jadwal & Peserta, dan Jadwal Perawat dari backup Supabase terakhir?\nHanya data yang hilang yang dikembalikan. Data yang sudah ada tidak ditimpa.")) return;
     setSupaBU(true); setSupaStatus(null);
     const res = await supabaseRestore(supaCfg, SUPA_CLIENT);
     setSupaStatus({ok:res.ok, msg:res.msg});
@@ -6184,7 +6184,7 @@ export default function App() {
     const peta: [string,string,string][] = [
       ["laporanHarian","kb_laporan_harian","Laporan"],
       ["jadwalOk","kb_jadwal_ok","Jadwal"],
-      ["jadwalPerawat","kb_jadwal_perawat","Jadwal perawat"], ["laporanKepalaJaga","kb_laporan_kepala_jaga","Laporan kepala jaga"], ["besetJadwal","kb_beset_jadwal","Beset jadwal"], ["mutuOk","kb_mutu_ok","Pemantauan mutu"],
+      ["jadwalPerawat","kb_jadwal_perawat","Jadwal perawat"], ["laporanKepalaJaga","kb_laporan_kepala_jaga","Laporan kepala jaga"], ["besetJadwal","kb_beset_jadwal","Beset jadwal"], ["mutuOk","kb_mutu_ok","Pemantauan mutu"], ["implanOk","kb_implan_ok","Data implant"],
     ];
     const ringkas: string[] = [];
     for(const [field, tabel, label] of peta){
@@ -6201,7 +6201,7 @@ export default function App() {
       if(gagalBaca){ ringkas.push(`${label}: gagal membaca tabel, dilewati`); continue; }
       const hilang = baris.filter((b:any)=>b && b.id && !ada.has(String(b.id)));
       if(!hilang.length){ ringkas.push(`${label}: 0 dikembalikan`); continue; }
-      const w:any = (tabel === "kb_laporan_kepala_jaga" || tabel === "kb_beset_jadwal" || tabel === "kb_mutu_ok") ? await (async()=>{ try { const ts=new Date().toISOString(); const {error}=await SUPA_CLIENT.from(tabel).upsert(hilang.map((r:any)=>({id:String(r.id), data:r, updated_at:r.updated_at||ts})),{onConflict:"id"}); return error?{ok:false,error:error.message}:{ok:true}; } catch(e:any){ return {ok:false,error:e?.message||"error"}; } })() : await upsertBulkToSupa(tabel, hilang);
+      const w:any = (tabel === "kb_laporan_kepala_jaga" || tabel === "kb_beset_jadwal" || tabel === "kb_mutu_ok" || tabel === "kb_implan_ok") ? await (async()=>{ try { const ts=new Date().toISOString(); const {error}=await SUPA_CLIENT.from(tabel).upsert(hilang.map((r:any)=>({id:String(r.id), data:r, updated_at:r.updated_at||ts})),{onConflict:"id"}); return error?{ok:false,error:error.message}:{ok:true}; } catch(e:any){ return {ok:false,error:e?.message||"error"}; } })() : await upsertBulkToSupa(tabel, hilang);
       ringkas.push(w.ok ? `${label}: ${hilang.length} dikembalikan` : `${label}: gagal (${w.error})`);
     }
     showToast(""+ringkas.join(" • "), "#3ECF8E");
