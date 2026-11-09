@@ -180,13 +180,15 @@ export function ViewImplan({ ops, showToast, role, privacyMode, upsertOneToSupa,
   const kotakIsian = (it: ImplanItem) => {
     const op = it.op; const row = it.row;
     const telpOp = String(op.noHp ?? "").trim(); const alamatOp = String(op.alamatPasien ?? "").trim();
+    const lahirOp = String(op.tglLahir ?? "").trim();
     return (
       <div style={{ padding: 12, borderTop: "1px solid #e5e7eb", background: "#fafafa", display: "grid", gap: 10 }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
           {cfg.pakaiRegister && <label style={labelKecil}><span>NO REGISTER (RM: {rmItem(it as any) || "-"})</span>
             <input value={row?.register ?? ""} onChange={(e) => setBidang(op, "register", e.target.value)} placeholder="Nomor register" style={gayaIsi} /></label>}
-          <label style={labelKecil}><span>TANGGAL LAHIR</span>
-            <input type="date" value={row?.tglLahir ?? ""} onChange={(e) => setBidang(op, "tglLahir", e.target.value)} style={gayaIsi} /></label>
+          <label style={labelKecil}><span>TANGGAL LAHIR {lahirOp ? "(dari data pasien)" : ""}</span>
+            {lahirOp ? <div style={{ ...gayaIsi, background: "#f3f4f6", color: KEL }}>{fmtLahir(lahirOp)}</div>
+              : <input type="date" value={row?.tglLahir ?? ""} onChange={(e) => setBidang(op, "tglLahir", e.target.value)} style={gayaIsi} />}</label>
           <label style={labelKecil}><span>NO TELP {telpOp ? "(dari data pasien)" : ""}</span>
             {telpOp ? <div style={{ ...gayaIsi, background: "#f3f4f6", color: KEL }}>{telpOp}</div>
               : <input type="tel" inputMode="tel" value={row?.noTelp ?? ""} onChange={(e) => setBidang(op, "noTelp", e.target.value)} placeholder="08xxxxxxxxxx" style={gayaIsi} />}</label>

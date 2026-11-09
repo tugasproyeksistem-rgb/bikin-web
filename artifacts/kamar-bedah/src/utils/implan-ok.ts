@@ -54,6 +54,8 @@ export function gabungImplan(ops: any[], list: ImplanRow[], kelompok: Kelompok):
 /* nomor telepon & alamat: dari data pasien kalau sudah tersimpan, kalau belum dari isian manual perawat */
 export const telpItem = (it: ImplanItem): string => String(it.op?.noHp ?? "").trim() || String(it.row?.noTelp ?? "").trim();
 export const alamatItem = (it: ImplanItem): string => String(it.op?.alamatPasien ?? "").trim() || String(it.row?.alamat ?? "").trim();
+/* tanggal lahir: dari data pasien (tab Daftar) kalau ada, kalau belum dari isian manual perawat */
+export const lahirItem = (it: ImplanItem): string => String(it.op?.tglLahir ?? "").trim() || String(it.row?.tglLahir ?? "").trim();
 
 export interface BarisModel {
   jenis: "pasien" | "lanjut" | "kosong";
@@ -68,7 +70,7 @@ export function susunBaris(items: ImplanItem[], pakaiRegister = true): BarisMode
     const rmReg = [rmItem(it as any), pakaiRegister ? String(r?.register || "").trim() : ""].filter((x) => x !== "").join(" ");
     out.push({
       jenis: "pasien", no: i + 1, tgl: parseInt(it.tanggal.slice(8, 10), 10), rmReg, nama: String(it.op?.patient ?? "").trim(),
-      lahir: String(r?.tglLahir || ""), telp: telpItem(it), alamat: alamatItem(it),
+      lahir: lahirItem(it), telp: telpItem(it), alamat: alamatItem(it),
       impl: list[0] ? list[0].nama : "", jml: list[0] ? list[0].jumlah : null, ket: String(r?.ket || "").trim(),
     });
     list.slice(1).forEach((x) => out.push({ jenis: "lanjut", impl: x.nama, jml: x.jumlah }));

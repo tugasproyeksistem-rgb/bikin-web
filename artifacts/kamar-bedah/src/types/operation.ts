@@ -25,6 +25,7 @@ export interface Operation {
   alamatPasien?: string;
   noHp?: string;
   kelompokImplant?: string;
+  tglLahir?: string;
   assistantNurse?: string;
   circulatingNurse?: string;
   anesthesiaNurse?: string;

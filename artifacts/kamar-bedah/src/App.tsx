@@ -234,6 +234,7 @@ import { ViewJadwalOK } from "./components/view-jadwal-ok";
 import { ViewBesetJadwal } from "./components/view-beset-jadwal";
 import { ViewMutuOK } from "./components/view-mutu-ok";
 import { implantAktif } from "./constants/fitur-tanggal";
+import { umurDariLahir } from "./utils/umur";
 import { ViewImplan } from "./components/view-implan";
 import { BesetBanner } from "./components/beset-banner";
 import { MutuNotif } from "./components/mutu-notif";
@@ -1209,7 +1210,7 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
         <LF label="Diagnosa Medis" req err={e.diagnosis}><KolomSaranSimpan kunci="daftar_diagnosa_tambahan" daftar={DAFTAR_DIAGNOSA} style={iStyle("diagnosis")} placeholder="Cth: Hernia Inguinalis Dextra, Appendicitis Akut" value={opForm.diagnosis} onChange={(v:string)=>set("diagnosis",v)} onFocus={onFoc("diagnosis")} onBlur={onBlr}/></LF>
         <LF label="Nama Tindakan / Prosedur" req err={e.procedure}><KolomSaranSimpan kunci="daftar_tindakan_tambahan" daftar={DAFTAR_TINDAKAN} style={iStyle("procedure")} placeholder="Cth: Hernioraphy Open, Laparoscopic Cholecystectomy" value={opForm.procedure} onChange={(v:string)=>set("procedure",v)} onFocus={onFoc("procedure")} onBlur={onBlr}/></LF>
         <div style={{display:"flex",gap:12}}>
-          <div style={{flex:1}}><LF label="Tanggal" req><DateTxt style={iStyle("date")} value={opForm.date||""} onChange={(v:string)=>setR("date",v)}/></LF>{e.date&&<div style={{fontSize:11,color:C.d,marginTop:-8,marginBottom:8}}><IkPeringatan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>{e.date}</div>}</div>
+          <div style={{flex:1}}><LF label="Tanggal" req><DateTxt style={iStyle("date")} value={opForm.date||""} onChange={(v:string)=>{ setR("date",v); const u=umurDariLahir(opForm.tglLahir, v); if(u){ setR("age",String(u.tahun)); setR("ageMonths",String(u.bulan)); } }}/></LF>{e.date&&<div style={{fontSize:11,color:C.d,marginTop:-8,marginBottom:8}}><IkPeringatan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>{e.date}</div>}</div>
           <div style={{flex:1}}><LF label="Jam Mulai" req><input style={iStyle("time")} type="time" value={opForm.time} onChange={(ev:any)=>setR("time",ev.target.value)}/></LF>{e.time&&<div style={{fontSize:11,color:C.d,marginTop:-8,marginBottom:8}}><IkPeringatan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>{e.time}</div>}</div>
         </div>
         <SF label="Kamar Operasi" options={ROOMS} value={opForm.room} onChange={(ev:any)=>setR("room",ev.target.value)}/>
@@ -1217,6 +1218,8 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
       <Card>
         <SH label="② Data Pasien"/>
         <LF label="Nama Lengkap Pasien" req err={e.patient}><input style={iStyle("patient")} placeholder="Nama sesuai rekam medis (Tn./Ny./An.)" value={opForm.patient} onChange={(ev:any)=>set("patient",ev.target.value)} onFocus={onFoc("patient")} onBlur={onBlr} autoComplete="off" spellCheck={false}/></LF>
+        <LF label="Tanggal Lahir"><DateTxt style={iStyle("tglLahir")} value={opForm.tglLahir||""} onChange={(v:string)=>{ setR("tglLahir",v); const u=umurDariLahir(v, opForm.date); if(u){ setR("age",String(u.tahun)); setR("ageMonths",String(u.bulan)); } }}/>
+          <div style={{fontSize:11,color:C.tL,marginTop:3}}>Usia di bawah terisi otomatis. Tanggal lahir hanya tampil di grup MUTU.</div></LF>
         <div style={{display:"flex",gap:12}}>
           <div style={{flex:1}}><LF label="Usia (tahun)"><input style={iStyle("age")} type="number" min="0" max="150" placeholder="45" value={opForm.age} onChange={(ev:any)=>setR("age",ev.target.value)}/></LF></div>
           <div style={{flex:1}}><LF label="Usia (bulan)"><input style={iStyle("ageMonths")} type="number" min="0" max="11" placeholder="0" value={opForm.ageMonths||""} onChange={(ev:any)=>setR("ageMonths",ev.target.value)}/></LF></div>
@@ -1234,8 +1237,6 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
           {!implantAktif() && <div style={{fontSize:11,color:C.tL,marginTop:4}}>Pilihan ini mulai dapat digunakan pada 1 Januari 2027.</div>}
         </LF>
         {implantAktif() && opForm.implant==="ya" && (<>
-          <LF label="Alamat Pasien" req err={e.alamatPasien}><textarea style={{...iStyle("alamatPasien"),resize:"vertical",minHeight:64,lineHeight:1.6} as React.CSSProperties} placeholder="Alamat lengkap pasien" value={opForm.alamatPasien||""} onChange={(ev:any)=>set("alamatPasien",ev.target.value)} onFocus={onFoc("alamatPasien")} onBlur={onBlr} spellCheck={false}/></LF>
-          <LF label="Nomor HP" req err={e.noHp}><input style={iStyle("noHp")} type="tel" inputMode="tel" placeholder="08xxxxxxxxxx" value={opForm.noHp||""} onChange={(ev:any)=>set("noHp",ev.target.value)} onFocus={onFoc("noHp")} onBlur={onBlr} autoComplete="off"/></LF>
           <LF label="Kelompok Implant" req err={e.kelompokImplant}>
             <div style={{display:"flex",gap:8}}>
               {[["tulang","Implant Tulang"],["mata","Mata"],["hernia","Hernia"]].map(([v,l])=>(
@@ -6598,11 +6599,11 @@ export default function App() {
     if(!opForm.time) e.time="Jam wajib";
     if(!opForm.surgeon) e.surgeon="Dokter operator wajib";
     if(!opForm.rm||!String(opForm.rm).trim()) e.rm="No. RM wajib";
-    if(implantAktif() && opForm.implant==="ya"){ if(!opForm.alamatPasien||!String(opForm.alamatPasien).trim()) e.alamatPasien="Alamat pasien wajib untuk pasien implant"; if(String(opForm.noHp||"").replace(/\D/g,"").length<9) e.noHp="Nomor HP wajib diisi (minimal 9 angka)"; if(!opForm.kelompokImplant) e.kelompokImplant="Pilih kelompok implant"; }
+    if(implantAktif() && opForm.implant==="ya"){ if(!opForm.kelompokImplant) e.kelompokImplant="Pilih kelompok implant"; }
     setOpErrors(e);
     if(Object.keys(e).length){showToast("Lengkapi field yang wajib ✱",C.d);return;}
     const pakaiImplant=implantAktif() && opForm.implant==="ya";
-    const clean={...opForm,...(implantAktif()?{implant:pakaiImplant?"ya":"tidak",alamatPasien:pakaiImplant?sanitize(opForm.alamatPasien||""):"",noHp:pakaiImplant?String(opForm.noHp||"").trim():"",kelompokImplant:pakaiImplant?String(opForm.kelompokImplant||""):""}:{}),opType:(opForm.opType||"elektif") as "elektif"|"semi"|"cyto",patient:sanitize(opForm.patient||""),diagnosis:sanitize(opForm.diagnosis||""),procedure:sanitize(opForm.procedure||""),ruangAsal:sanitize(opForm.ruangAsal||""),allergy:sanitize(opForm.allergy||"Tidak Ada"),specialNeeds:sanitize(opForm.specialNeeds||""),assistantNurse:sanitize(opForm.assistantNurse||""),rrKatim:sanitize(opForm.rrKatim||"")};
+    const clean={...opForm,...(implantAktif()?{implant:pakaiImplant?"ya":"tidak",kelompokImplant:pakaiImplant?String(opForm.kelompokImplant||""):""}:{}),opType:(opForm.opType||"elektif") as "elektif"|"semi"|"cyto",patient:sanitize(opForm.patient||""),diagnosis:sanitize(opForm.diagnosis||""),procedure:sanitize(opForm.procedure||""),ruangAsal:sanitize(opForm.ruangAsal||""),allergy:sanitize(opForm.allergy||"Tidak Ada"),specialNeeds:sanitize(opForm.specialNeeds||""),assistantNurse:sanitize(opForm.assistantNurse||""),rrKatim:sanitize(opForm.rrKatim||"")};
     const dupSameDay=ops.some((o:any)=>o.id!==editingOp?.id&&o.patient&&o.patient.toLowerCase().trim()===clean.patient.toLowerCase().trim()&&o.date===clean.date);
     const dup=ops.some((o:any)=>o.id!==editingOp?.id&&o.patient&&o.patient.toLowerCase().trim()===clean.patient.toLowerCase()&&o.date===clean.date&&o.time===clean.time);
     if(dupSameDay&&!dup){showToast(`Perhatian: Pasien "${clean.patient}" sudah terdaftar pada ${clean.date} (jam berbeda)`,C.w);}
