@@ -12,7 +12,7 @@ import { workbookKeBlob } from "../utils/jadwal-ok";
 import { NAMA_BULAN, rmItem } from "../utils/mutu-ok";
 import type { KodeImplan } from "../constants/kode-implant";
 import type { ImplanRow, ImplanItem, Kelompok, ItemImplan } from "../utils/implan-ok";
-import { KONFIG_IMPLAN, adaIsiImplan, baruImplan, buatWorkbookImplan, fmtLahir, gabungImplan, idImplan, labelKatalog, susunBaris } from "../utils/implan-ok";
+import { KONFIG_IMPLAN, adaIsiImplan, alamatItem, baruImplan, buatWorkbookImplan, fmtLahir, gabungImplan, idImplan, labelKatalog, susunBaris, telpItem } from "../utils/implan-ok";
 
 const KEL = "#374151";
 const fmtIso = (s: string): string => (s && s.length >= 10 ? `${s.slice(8, 10)}-${s.slice(5, 7)}-${s.slice(0, 4)}` : s);
@@ -261,6 +261,7 @@ export function ViewImplan({ ops, showToast, role, privacyMode, upsertOneToSupa,
                 <span style={{ width: 26, height: 26, borderRadius: 999, background: sudah ? "#16a34a" : "#e5e7eb", color: sudah ? "#fff" : "#374151", fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{noDi(it)}</span>
                 <span style={{ flex: 1, minWidth: 0, fontWeight: 700, fontSize: 15, color: sudah ? "#166534" : "inherit", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{namaPasien(it)}</span>
                 {sudah && <span style={{ fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: "#16a34a", color: "#fff", flexShrink: 0 }}>{jml} implant</span>}
+                {it.tanggal === hariIni && (!alamatItem(it) || !telpItem(it)) && <span style={{ fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: "#F59E0B", color: "#431407", flexShrink: 0 }}>Isi alamat/HP</span>}
                 <span style={{ fontSize: 13, fontWeight: 700, color: "#4f46e5", flexShrink: 0 }}>{terbuka ? "Tutup" : adaData ? "Edit" : "Isi"}</span>
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", marginTop: 6, paddingLeft: 36, fontSize: 12, color: "#6b7280" }}>

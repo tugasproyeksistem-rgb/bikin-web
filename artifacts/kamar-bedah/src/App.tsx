@@ -217,7 +217,6 @@ import { Play as KbIkoPlay, Check as KbIkoCek, CheckCircle2 as KbIkoSelesai, Pen
 import { Settings as KbIkoPin, ShieldCheck as KbIkoAdmin, User as KbIkoUser, Lock as KbIkoKunci } from "lucide-react";
 import { HeaderClock } from "./components/header-clock";
 import { InstallPrompt } from "./components/install-prompt";
-import { FloatingAssistant } from "./components/floating-assistant";
 import { PinScreen } from "./components/pin-screen";
 import { DateTxt } from "./components/date-txt";
 import { ScanFormulir } from "./components/scan-formulir";
@@ -238,6 +237,7 @@ import { umurDariLahir } from "./utils/umur";
 import { ViewImplan } from "./components/view-implan";
 import { BesetBanner } from "./components/beset-banner";
 import { MutuNotif } from "./components/mutu-notif";
+import { ImplanPengingat } from "./components/implan-pengingat";
 import { UpdateBanner } from "./components/update-banner";
 import { ViewPengumuman } from "./components/view-pengumuman";
 import { HomeRingkas } from "./components/home-ringkas";
@@ -1046,9 +1046,9 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
         next.anesthesiologist = matched || rawName;
         filled.add("anesthesiologist"); originalVals.anesthesiologist = next.anesthesiologist;
       }
-      if(r.allergy)         { next.allergy = capOcrText(r.allergy, 120); filled.add("allergy"); originalVals.allergy = next.allergy; }
+      if(false && r.allergy)         { next.allergy = capOcrText(r.allergy, 120); filled.add("allergy"); originalVals.allergy = next.allergy; }
       // FIX BUG: "Golongan Darah" juga dropdown dengan opsi tetap (BT).
-      if(v.bloodType)       { next.bloodType = v.bloodType; filled.add("bloodType"); originalVals.bloodType = v.bloodType; }
+      if(false && v.bloodType)       { next.bloodType = v.bloodType; filled.add("bloodType"); originalVals.bloodType = v.bloodType; }
       if(safe.cautionNote){
         /* Cegah catatan dobel kalau perawat scan ulang formulir yang sama
            (mis. foto pertama buram lalu difoto ulang) — tanpa guard ini,
@@ -1225,8 +1225,6 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
           <div style={{flex:1}}><LF label="Usia (bulan)"><input style={iStyle("ageMonths")} type="number" min="0" max="11" placeholder="0" value={opForm.ageMonths||""} onChange={(ev:any)=>setR("ageMonths",ev.target.value)}/></LF></div>
           <div style={{flex:1}}><LF label="No. Rekam Medis (Wajib)" req err={e.rm}><input style={iStyle("rm")} placeholder="PRT-004891" value={opForm.rm} onChange={(ev:any)=>setR("rm",ev.target.value)} autoComplete="off"/></LF></div>
         </div>
-        <SF label="Golongan Darah" options={BT} value={opForm.bloodType} onChange={(ev:any)=>setR("bloodType",ev.target.value)}/>
-        <LF label="Riwayat Alergi"><input style={iStyle("allergy")} placeholder="Nama obat/zat alergi, atau 'Tidak Ada'" value={opForm.allergy} onChange={(ev:any)=>set("allergy",ev.target.value)} onFocus={onFoc("allergy")} onBlur={onBlr} autoComplete="off" spellCheck={false}/></LF>
         <LF label="Kebutuhan Khusus / Catatan"><textarea style={{...iStyle("specialNeeds"),resize:"vertical",minHeight:80,lineHeight:1.7} as React.CSSProperties} placeholder={"Cth:\n• Perlu warming blanket\n• Posisi litotomi\n• Siapkan darah 2 kantong"} value={opForm.specialNeeds||""} onChange={(ev:any)=>set("specialNeeds",ev.target.value)} onFocus={onFoc("specialNeeds")} onBlur={onBlr} spellCheck={false}/></LF>
         <LF label="Apakah pasien akan menggunakan implant?" req>
           <div style={{display:"flex",gap:8}}>
@@ -1245,6 +1243,10 @@ function ViewDaftar({pendingEditOp,clearPendingEditOp,saveOpFn,autoSaveOcrBatch,
             </div>
             <div style={{fontSize:11,color:C.tL,marginTop:4}}>Data pasien akan masuk ke grup MUTU sesuai kelompok yang dipilih.</div>
           </LF>
+          {opForm.kelompokImplant && (<>
+            <LF label="Alamat Pasien (boleh diisi nanti)"><textarea style={{...iStyle("alamatPasien"),resize:"vertical",minHeight:64,lineHeight:1.6} as React.CSSProperties} placeholder="Boleh dikosongkan; diingatkan lagi pada hari operasi" value={opForm.alamatPasien||""} onChange={(ev:any)=>set("alamatPasien",ev.target.value)} onFocus={onFoc("alamatPasien")} onBlur={onBlr} spellCheck={false}/></LF>
+            <LF label="Nomor HP (boleh diisi nanti)"><input style={iStyle("noHp")} type="tel" inputMode="tel" placeholder="08xxxxxxxxxx" value={opForm.noHp||""} onChange={(ev:any)=>set("noHp",ev.target.value)} onFocus={onFoc("noHp")} onBlur={onBlr} autoComplete="off"/></LF>
+          </>)}
         </>)}
       </Card>
       <Card>
@@ -6459,8 +6461,8 @@ export default function App() {
         })(),
         procedure: sanitize(capOcrText(r.procedure || "")),
         diagnosis: sanitize(capOcrText(r.diagnosis || "")),
-        allergy: sanitize(capOcrText(r.allergy || "Tidak Ada", 120)),
-        bloodType: v.bloodType,
+        allergy: "", /* patch134 */
+        bloodType: "", /* patch134 */
         specialNeeds: notesCombined,
         reminders: [],
         requests: [],
@@ -6603,7 +6605,7 @@ export default function App() {
     setOpErrors(e);
     if(Object.keys(e).length){showToast("Lengkapi field yang wajib ✱",C.d);return;}
     const pakaiImplant=implantAktif() && opForm.implant==="ya";
-    const clean={...opForm,...(implantAktif()?{implant:pakaiImplant?"ya":"tidak",kelompokImplant:pakaiImplant?String(opForm.kelompokImplant||""):""}:{}),opType:(opForm.opType||"elektif") as "elektif"|"semi"|"cyto",patient:sanitize(opForm.patient||""),diagnosis:sanitize(opForm.diagnosis||""),procedure:sanitize(opForm.procedure||""),ruangAsal:sanitize(opForm.ruangAsal||""),allergy:sanitize(opForm.allergy||"Tidak Ada"),specialNeeds:sanitize(opForm.specialNeeds||""),assistantNurse:sanitize(opForm.assistantNurse||""),rrKatim:sanitize(opForm.rrKatim||"")};
+    const clean={...opForm,...(implantAktif()?{implant:pakaiImplant?"ya":"tidak",kelompokImplant:pakaiImplant?String(opForm.kelompokImplant||""):""}:{}),opType:(opForm.opType||"elektif") as "elektif"|"semi"|"cyto",patient:sanitize(opForm.patient||""),diagnosis:sanitize(opForm.diagnosis||""),procedure:sanitize(opForm.procedure||""),ruangAsal:sanitize(opForm.ruangAsal||""),allergy:sanitize(opForm.allergy||""),specialNeeds:sanitize(opForm.specialNeeds||""),assistantNurse:sanitize(opForm.assistantNurse||""),rrKatim:sanitize(opForm.rrKatim||"")};
     const dupSameDay=ops.some((o:any)=>o.id!==editingOp?.id&&o.patient&&o.patient.toLowerCase().trim()===clean.patient.toLowerCase().trim()&&o.date===clean.date);
     const dup=ops.some((o:any)=>o.id!==editingOp?.id&&o.patient&&o.patient.toLowerCase().trim()===clean.patient.toLowerCase()&&o.date===clean.date&&o.time===clean.time);
     if(dupSameDay&&!dup){showToast(`Perhatian: Pasien "${clean.patient}" sudah terdaftar pada ${clean.date} (jam berbeda)`,C.w);}
@@ -6870,6 +6872,7 @@ export default function App() {
               data dashboard. */}
           <AuroraBackground opacity={0}/>
           <div style={{position:"relative",zIndex:1}}>
+          <ImplanPengingat ops={ops} setTab={setTab} privacyMode={privacyMode}/>
           <MutuNotif role={role} setTab={setTab} showToast={showToast}/>
           <BesetBanner setTab={setTab}/>
 
@@ -7192,8 +7195,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Asisten Virtual — bubble melayang, global di semua tab setelah login */}
-      <FloatingAssistant autoSaveOcrBatch={autoSaveOcrBatch} showToast={showToast}/>
     </div>
   );
 }

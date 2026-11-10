@@ -86,7 +86,7 @@ export function ImportExcel({ops, setOps, showToast, upsertBulkToSupa}: any) {
         patient: r.patient, diagnosis: r.diagnosis||"", procedure: r.procedure,
         surgeon: r.surgeon||"", anesthesiologist: r.anesthesiologist||"",
         room: r.room||ROOMS[0], age: r.age||"", rm: r.rm||"",
-        bloodType: r.bloodType||"Tidak Diketahui", allergy: r.allergy||"Tidak Ada",
+        bloodType: r.bloodType||"", allergy: r.allergy||"",
         circulatingNurse: r.circulatingNurse||"", anesthesiaNurse: r.anesthesiaNurse||"",
         onloopNurse: r.onloopNurse||"", rrKatim: r.rrKatim||"",
       };

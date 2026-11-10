@@ -342,9 +342,6 @@ export function ScanFormulir({onResults, showToast}: ScanFormulirProps) {
         </Card>
       ) : (
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          <Btn outline disabled={loading} onClick={()=>setShowLiveCamera(true)} style={{background:"linear-gradient(135deg,#E8CE8F22,transparent)",borderColor:"#C9A961"}}><IkVideo size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Scan Live (Kamera)</Btn>
-          <Btn outline disabled={loading} onClick={()=>cameraInputRef.current?.click()}><IkKamera size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Ambil Foto</Btn>
-          <Btn outline disabled={loading} onClick={()=>galleryInputRef.current?.click()}><IkGambar size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Upload Screenshot/Galeri</Btn>
           <Btn outline disabled={loading} onClick={()=>setShowTextPaste(true)}><IkTempel size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Paste Teks Chat/Memo</Btn>
         </div>
       )}
