@@ -547,40 +547,6 @@ export function ViewLaporanKepalaJaga({ ops, roster, staff, showToast, role, pri
           <Btn outline onClick={salinTeks} disabled={busy}><IkSalin size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Salin teks</Btn>
           <Btn outline onClick={unduhExcel} disabled={busy}>⬇ Excel</Btn>
           <Btn outline onClick={unduhWord} disabled={busy}>⬇ Word</Btn>
-          <button type="button" onClick={() => setWaBuka((v) => !v)} disabled={busy}
-            style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "#16A34A", color: "#fff", fontSize: 15, fontWeight: 800, cursor: "pointer", boxShadow: "0 2px 8px rgba(22,163,74,.5)" }}><IkHP size={16} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>KIRIM WA</button>
-          {waBuka && (
-            <div style={{ flexBasis: "100%", border: "2px solid #16A34A", borderRadius: 10, padding: 10, background: "#F0FDF4" }}>
-              <div style={{ fontWeight: 800, marginBottom: 6 }}>Pilih penerima laporan ({fmtTgl(tampil.tanggal)})</div>
-              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>Kirim dalam bentuk:</div>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
-                {([["teks", "Teks"], ["jpg", "JPG"], ["pdf", "PDF"], ["word", "Word"], ["excel", "Excel"]] as const).map(([k2, l]) => (
-                  <button key={k2} type="button" onClick={() => setWaFormat(k2)}
-                    style={{ padding: "8px 12px", borderRadius: 10, border: "2px solid #16A34A", background: waFormat === k2 ? "#16A34A" : "#fff", color: waFormat === k2 ? "#fff" : "#166534", fontSize: 14, fontWeight: 800, cursor: "pointer" }}>{l}</button>
-                ))}
-              </div>
-              {waFormat !== "teks" && (
-                <div style={{ marginBottom: 8 }}>
-                  <Btn onClick={bagikanFile} disabled={busy}><IkBagi size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Bagikan file {waFormat.toUpperCase()} langsung ke WhatsApp (HP)</Btn>
-                  <div style={{ fontSize: 12, color: C.tL, marginTop: 4 }}>Di HP: pilih WhatsApp lalu penerima atau grup. Tombol Kirim per nama: file diunduh, chat WhatsApp terbuka, lalu Anda tinggal melampirkan file yang baru diunduh.</div>
-                </div>
-              )}
-              <input style={iS} value={waCari} onChange={(e) => setWaCari(e.target.value)} placeholder="Cari nama..." />
-              <div style={{ maxHeight: 260, overflowY: "auto", marginTop: 8 }}>
-                {daftarWa().map((s: any) => (
-                  <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: "1px solid " + C.b }}>
-                    <div style={{ fontSize: 14 }}><b>{s.name}</b><div style={{ fontSize: 12, color: C.tL }}>{labelStaf(s)}</div></div>
-                    <button type="button" onClick={() => kirimWaPilihan(s)}
-                      style={{ padding: "8px 14px", borderRadius: 10, border: "none", background: waTerkirim.includes(String(s.id)) ? "#15803D" : "#16A34A", color: "#fff", fontSize: 13, fontWeight: 800, cursor: "pointer" }}>
-                      {waTerkirim.includes(String(s.id)) ? <><IkCek size={13} strokeWidth={2.8} style={{verticalAlign:"-2px",marginRight:3}}/>Kirim lagi</> : "Kirim"}
-                    </button>
-                  </div>
-                ))}
-                {!daftarWa().length && <div style={{ fontSize: 13, color: C.tL, padding: "6px 0" }}>Tidak ada staf bernomor WA yang cocok.</div>}
-              </div>
-              <div style={{ marginTop: 8 }}><Btn sm outline onClick={() => kirimWaPilihan(null)}>Pilih kontak / grup di WhatsApp</Btn></div>
-            </div>
-          )}
           {lihat && <Btn outline onClick={() => setLihat(null)} disabled={busy}><IkX size={15} strokeWidth={2.4} style={{verticalAlign:"-2px",marginRight:5}}/>Tutup</Btn>}
         </div>
       </Card>
@@ -614,14 +580,26 @@ export function LaporanOKTab(props: any) {
    supaya isian yang belum disimpan tidak hilang saat berpindah. */
 export function LaporanPilihTab(props: any) {
   const { tertulis, ...sisa } = props;
-  const [v, setV] = useState<"tulis" | "kj">("tulis");
-  const isi = { display: "inline-flex", alignItems: "center", gap: 6 } as const;
+  const [v, setV] = useState<"tulis" | "kj" | null>(null);
+  const kartu = { display: "flex", alignItems: "center", gap: 16, width: "100%", minHeight: 110, padding: "20px 22px", borderRadius: 18, border: "none", color: "#fff", cursor: "pointer", textAlign: "left", fontFamily: "inherit" } as const;
   return (
     <div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-        <Btn onClick={() => setV("tulis")} outline={v !== "tulis"}><span style={isi}><IkonTulis size={16} strokeWidth={2} />Laporan Tertulis</span></Btn>
-        <Btn onClick={() => setV("kj")} outline={v !== "kj"}><span style={isi}><IkonGambar size={16} strokeWidth={2} />Laporan Kepala Jaga (Gambar / Dokumen)</span></Btn>
-      </div>
+      {v === null ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 14 }}>
+          <button type="button" onClick={() => setV("tulis")} style={{ ...kartu, background: "linear-gradient(135deg,#0EA5E9,#0369A1)", boxShadow: "0 6px 18px rgba(3,105,161,0.30)" }}>
+            <IkonTulis size={38} strokeWidth={2.2} />
+            <span style={{ fontSize: 21, fontWeight: 900, lineHeight: 1.25 }}>Laporan Tertulis</span>
+          </button>
+          <button type="button" onClick={() => setV("kj")} style={{ ...kartu, background: "linear-gradient(135deg,#F97316,#C2410C)", boxShadow: "0 6px 18px rgba(194,65,12,0.30)" }}>
+            <IkonGambar size={38} strokeWidth={2.2} />
+            <span style={{ fontSize: 21, fontWeight: 900, lineHeight: 1.25 }}>Laporan Kepala Jaga (Gambar / Dokumen)</span>
+          </button>
+        </div>
+      ) : (
+        <div style={{ marginBottom: 10 }}>
+          <Btn outline onClick={() => setV(null)}>{"\u2190"} Ganti pilihan</Btn>
+        </div>
+      )}
       <div style={{ display: v === "tulis" ? "block" : "none" }}>{tertulis}</div>
       <div style={{ display: v === "kj" ? "block" : "none" }}><ViewLaporanKepalaJaga {...sisa} /></div>
     </div>
