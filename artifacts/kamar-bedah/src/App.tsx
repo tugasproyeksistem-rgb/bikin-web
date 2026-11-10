@@ -238,6 +238,7 @@ import { ViewImplan } from "./components/view-implan";
 import { BesetBanner } from "./components/beset-banner";
 import { MutuNotif } from "./components/mutu-notif";
 import { ImplanPengingat } from "./components/implan-pengingat";
+import { MonitoringPengingat } from "./components/monitoring-pengingat";
 import { UpdateBanner } from "./components/update-banner";
 import { ViewPengumuman } from "./components/view-pengumuman";
 import { HomeRingkas } from "./components/home-ringkas";
@@ -6873,6 +6874,7 @@ export default function App() {
           <AuroraBackground opacity={0}/>
           <div style={{position:"relative",zIndex:1}}>
           <ImplanPengingat ops={ops} setTab={setTab} privacyMode={privacyMode}/>
+          <MonitoringPengingat entries={monitoringEntries} setTab={setTab}/>
           <MutuNotif role={role} setTab={setTab} showToast={showToast}/>
           <BesetBanner setTab={setTab}/>
 
