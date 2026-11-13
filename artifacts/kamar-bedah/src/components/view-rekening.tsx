@@ -199,15 +199,30 @@ const label: CSSProperties = { fontSize: 12, fontWeight: 700, color: KEL, margin
 function Seksi(props: { judul: string; rows: Baris[]; ubah: (r: Baris[]) => void; master?: Baris[]; simpan?: (r: Baris) => void; simpanPilihan?: (r: Baris) => void }) {
   const { rows, ubah, master, simpan, simpanPilihan } = props;
   const set = (i: number, patch: Partial<Baris>) => ubah(rows.map((r, k) => (k === i ? { ...r, ...patch } : r)));
+  const dmId = "dm-" + props.judul.replace(/[^a-zA-Z0-9]/g, "");
+  /* nama cocok dengan item master: ganti baris dengan item itu (jumlah yang sudah diisi tetap) */
+  const gantiNama = (i: number, nama: string) => {
+    const m = master ? master.find((x) => norm(x.n) === norm(nama)) : undefined;
+    const lama = rows[i];
+    if (m && lama && norm(lama.n) !== norm(nama)) set(i, { n: m.n, u: m.u, t: m.t, o: m.o, p: m.t === "pilih" ? "" : m.p, x: m.x });
+    else set(i, { n: nama });
+  };
   return (
     <div style={{ marginTop: 14 }}>
       <div style={{ fontWeight: 800, color: KEL, fontSize: 14, marginBottom: 8 }}>{props.judul}</div>
+      {master && <datalist id={dmId}>{master.map((m) => <option key={m.id} value={m.n} />)}</datalist>}
       {rows.map((r, i) => {
         const belumAda = !!master && r.n.trim() !== "" && !master.some((m) => norm(m.n) === norm(r.n));
         const pilihanBaru = r.t === "pilih" && !!r.p && !(r.o || []).includes(r.p);
         return (
           <div key={r.id} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
-            <input value={r.n} placeholder="Nama" onChange={(ev) => set(i, { n: ev.target.value })} style={{ ...inp, flex: "2 1 150px" }} />
+            <input value={r.n} list={dmId} placeholder="Nama" autoComplete="off" onChange={(ev) => gantiNama(i, ev.target.value)} style={{ ...inp, flex: "2 1 150px" }} />
+            {master && master.length > 0 && (
+              <select value="" aria-label="Ganti dari daftar" title="Ganti dengan item dari daftar" onChange={(ev) => { if (ev.target.value) gantiNama(i, ev.target.value); }} style={{ ...inp, flex: "0 0 46px", padding: "6px 4px" }}>
+                <option value="">▾</option>
+                {master.map((m) => <option key={m.id} value={m.n}>{m.n}</option>)}
+              </select>
+            )}
             {r.t === "yt" ? (
               <select value={r.v} onChange={(ev) => set(i, { v: ev.target.value })} style={{ ...inp, flex: "1 1 90px" }}>
                 <option value="">-</option><option value="ya">Ya</option><option value="tidak">Tidak</option>
@@ -225,7 +240,7 @@ function Seksi(props: { judul: string; rows: Baris[]; ubah: (r: Baris[]) => void
             {pilihanBaru && simpanPilihan && (
               <button type="button" style={tbl("#4f46e5")} onClick={() => { const baru = { ...r, o: [...(r.o || []), r.p || ""] }; set(i, { o: baru.o }); simpanPilihan(baru); }}>+ pilihan</button>
             )}
-            {belumAda && simpan && <button type="button" style={tbl("#059669")} onClick={() => simpan(r)}>Simpan ke daftar</button>}
+            {belumAda && simpan && <button type="button" style={tbl("#059669")} onClick={() => simpan(r)}>Simpan ke master</button>}
             <button type="button" aria-label={"Hapus " + (r.n || "baris")} title="Hapus dari pasien ini" style={tbl("#dc2626")} onClick={() => ubah(rows.filter((_, k) => k !== i))}>✕</button>
           </div>
         );
@@ -273,7 +288,8 @@ const FIELD_ATAS: Array<[string, string]> = [
   ["jamA", "Lama anaesthesi: dari jam"], ["jamB", "sampai jam"], ["diagnosa", "Diagnosa pre op"], ["postOp", "Diagnosa post op"], ["pembedahan", "Pembedahan (nama tindakan / prosedur)"],
 ];
 
-export function ViewRekening({ ops, showToast, privacyMode, upsertOneToSupa }: any) {
+export function ViewRekening({ ops, showToast, privacyMode, upsertOneToSupa, role }: any) {
+  const admin = role === "admin";
   const [tanggal, setTanggal] = useState<string>(hariIni());
   const [semua, setSemua] = useState(false);
   const [q, setQ] = useState("");
@@ -367,18 +383,28 @@ export function ViewRekening({ ops, showToast, privacyMode, upsertOneToSupa }: a
     else showToast("Gagal menyimpan daftar: " + (res?.error || "error"), C.d);
   };
   const simpanKeDaftar = (sec: Sek, r: Baris) => {
+    if (!admin) return;
     const m = masterRef.current;
     if (m[sec].some((x) => norm(x.n) === norm(r.n))) return;
     const baru: Master = { ...m, [sec]: [...m[sec], { ...r, v: "", p: r.t === "pilih" ? "" : r.p, id: idBaru() }] };
     void simpanMaster(baru, "Ditambahkan ke daftar");
   };
   const simpanPilihan = (sec: Sek, r: Baris) => {
+    if (!admin) return;
     const m = masterRef.current;
     const baru: Master = { ...m, [sec]: m[sec].map((x) => (norm(x.n) === norm(r.n) ? { ...x, o: Array.from(new Set([...(x.o || []), ...(r.o || [])])) } : x)) };
     void simpanMaster(baru, "Pilihan ditambahkan");
   };
 
   /* ───── Print, Word, Excel ───── */
+  /* admin: susunan obat, cairan/alat, dan lain-lain di formulir ini jadi master untuk pasien baru */
+  const simpanFormulirJadiMaster = () => {
+    if (!admin || !rek) return;
+    if (!window.confirm("Jadikan susunan obat, cairan/alat, dan lain-lain pada formulir ini sebagai master? Pasien baru akan memakai susunan ini. Rekening pasien yang sudah tersimpan tidak berubah.")) return;
+    const isi = (a: Baris[]): Baris[] => salin(a.filter((r) => r.n.trim() !== ""));
+    void simpanMaster({ ...masterRef.current, anest: isi(rek.anest), tengah: isi(rek.tengah), lain: isi(rek.lain) }, "Master formulir disimpan");
+  };
+
   const cetak = () => {
     if (!rek || !op) return;
     const k = cariKertas(kertas);
@@ -473,6 +499,7 @@ export function ViewRekening({ ops, showToast, privacyMode, upsertOneToSupa }: a
             <button type="button" style={tbl("#4f46e5")} onClick={cetak}>Print</button>
             <button type="button" style={tbl("#2563eb")} onClick={unduhWord}>Word</button>
             <button type="button" style={tbl("#059669")} onClick={unduhExcel}>Excel</button>
+            {admin && <button type="button" style={tbl("#b45309")} title="Jadikan susunan formulir ini master untuk pasien baru" onClick={simpanFormulirJadiMaster}>Simpan sebagai master formulir</button>}
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: 10 }}>
@@ -496,9 +523,9 @@ export function ViewRekening({ ops, showToast, privacyMode, upsertOneToSupa }: a
             </div>
           </div>
 
-          <Seksi judul="Obat-obat Anaesthesi" rows={rek.anest} ubah={(r) => ubahRek({ anest: r })} master={master.anest} simpan={(r) => simpanKeDaftar("anest", r)} />
-          <Seksi judul="Cairan, set, dan alat" rows={rek.tengah} ubah={(r) => ubahRek({ tengah: r })} master={master.tengah} simpan={(r) => simpanKeDaftar("tengah", r)} simpanPilihan={(r) => simpanPilihan("tengah", r)} />
-          <Seksi judul="Lain-lain" rows={rek.lain} ubah={(r) => ubahRek({ lain: r })} master={master.lain} simpan={(r) => simpanKeDaftar("lain", r)} />
+          <Seksi judul="Obat-obat Anaesthesi" rows={rek.anest} ubah={(r) => ubahRek({ anest: r })} master={master.anest} simpan={admin ? (r) => simpanKeDaftar("anest", r) : undefined} />
+          <Seksi judul="Cairan, set, dan alat" rows={rek.tengah} ubah={(r) => ubahRek({ tengah: r })} master={master.tengah} simpan={admin ? (r) => simpanKeDaftar("tengah", r) : undefined} simpanPilihan={admin ? (r) => simpanPilihan("tengah", r) : undefined} />
+          <Seksi judul="Lain-lain" rows={rek.lain} ubah={(r) => ubahRek({ lain: r })} master={master.lain} simpan={admin ? (r) => simpanKeDaftar("lain", r) : undefined} />
 
           <div style={{ marginTop: 14 }}>
             <div style={{ fontWeight: 800, color: KEL, fontSize: 14, marginBottom: 8 }}>Implant</div>
