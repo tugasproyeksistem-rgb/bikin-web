@@ -9,6 +9,7 @@ export const ALL_TABS: Array<{k:string; l:string; roles:Array<"admin"|"perawat">
   {k:"home",      l:"Home",       roles:["admin","perawat"]},
   {k:"jadwal",    l:"Jadwal",     roles:["admin","perawat"]},
   {k:"daftar",    l:"Daftar",     roles:["admin","perawat"]},
+  {k:"rekening", l:"Rekening", roles:["admin","perawat"]},
   {k:"laporan",   l:"Laporan Kepala Jaga",    roles:["admin","perawat"]},
   {k:"laporan_harian", l:"Laporan Harian OK", roles:["admin","perawat"]},
   {k:"beset_jadwal", l:"Beset Jadwal", roles:["admin","perawat"]},

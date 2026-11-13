@@ -235,6 +235,7 @@ import { ViewMutuOK } from "./components/view-mutu-ok";
 import { implantAktif } from "./constants/fitur-tanggal";
 import { umurDariLahir } from "./utils/umur";
 import { ViewImplan } from "./components/view-implan";
+import { ViewRekening } from "./components/view-rekening";
 import { BesetBanner } from "./components/beset-banner";
 import { MutuNotif } from "./components/mutu-notif";
 import { ImplanPengingat } from "./components/implan-pengingat";
@@ -7043,6 +7044,7 @@ export default function App() {
       {tab==="implant_tulang" && !tabTerkunci("implant_tulang", role) && <ViewImplan kelompok="tulang" ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} dbxCfg={dbxCfg}/>}
       {tabTerkunci(tab, role) && <div style={{padding:24,textAlign:"center",color:"#6B7280",border:"1px dashed #D1D5DB",borderRadius:12}}>Fitur ini mulai dapat digunakan pada 1 Januari 2027.</div>}
       {tab==="mutu_ok" && !tabTerkunci("mutu_ok", role) && <ViewMutuOK ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} dbxCfg={dbxCfg}/>}
+      {tab==="rekening" && <ViewRekening ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa}/>}
       {tab==="beset_jadwal" && <ViewBesetJadwal staff={staff} showToast={showToast} role={role} cekAdmin={(p:string)=>verifyPin(p,pinAdmin)}/>}
       {tab==="jadwal_ok" && <ViewJadwalOK ops={ops} showToast={showToast} role={role} privacyMode={privacyMode} upsertOneToSupa={upsertOneToSupa} deleteFromSupa={deleteFromSupa} dbxCfg={dbxCfg}/>}
       {tab==="wa"         && <ViewKirimWA ops={ops} staff={staff} setNotifs={setNotifs} showToast={showToast}/>}
