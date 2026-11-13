@@ -1618,7 +1618,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
        penuh — lihat catatan pada writeLemburKeyAppend). */
     const ok = editRow
       ? await writeLemburKey({...recNow, entries: entriesNow.map((e:any)=>e.id===editRow?{...e,...cleanForm}:e)})
-      : await writeLemburKeyAppend(recNow, {id:gId(),...cleanForm,no:entriesNow.length+1});
+      : await writeLemburKeyAppend(recNow, {id:gId(),dibuatPada:new Date().toISOString(),...cleanForm,no:entriesNow.length+1});
     isSubmittingAbsenRef.current = false;
     if(ok){ setEditRow(null); setRowForm({}); showToast("Baris disimpan & tersinkron",C.s); }
   };
@@ -2149,6 +2149,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     setC(sumRow,5,"Total Didapat:",true,false); setC(sumRow,6,fmtJamX(totalMinsKerjaX),true,false);
     setC(sumRow+1,5,"Total Diambil:",true,false); setC(sumRow+1,6,fmtJamX(totalMinsAmbilX),true,false);
     setC(sumRow+2,5,"Saldo Bulan Ini:",true,false); setC(sumRow+2,6,fmtJamX(saldoMinsX),true,false);
+    { const tabX = tabunganMenitPeg(peg); setC(sumRow+3,5,"Tabungan Lembur:",true,false); setC(sumRow+3,6,tabX===null?"Belum diisi":fmtJamX(tabX),true,false); }
     /* Signatures */
     const sigRow=sumRow+4;
     setC(sigRow,0,"",false,false);
@@ -2183,6 +2184,21 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     ? Object.keys(lemburData).filter(k=>k.startsWith(selPeg+"_")).map(k=>k.replace(selPeg+"_","")).sort().reverse()
     : [];
 
+  /* Tabungan Lembur: isian manual (tabunganMenit, sejak tabunganSejak) dikurangi pengambilan yang dicatat sesudahnya.
+     Kembalian null = belum diisi. Satuan menit. */
+  const tabunganMenitPeg = (pg: any): number | null => {
+    if (!pg || typeof pg.tabunganMenit !== "number" || !pg.tabunganSejak) return null;
+    let dipakai = 0;
+    Object.keys(lemburData).forEach((k) => {
+      if (!k.startsWith(pg.id + "_")) return;
+      ((lemburData[k]?.entries) || []).forEach((e: any) => {
+        if (e.jenisEntri === "ambil" && e.dibuatPada && e.dibuatPada > pg.tabunganSejak) dipakai += Math.round((Number(e.jumlahJamAmbil) || 0) * 60);
+      });
+    });
+    return pg.tabunganMenit - dipakai;
+  };
+  const fmtTab = (m: number | null, kosong = "—") => m === null ? kosong : `${m < 0 ? "-" : ""}${Math.floor(Math.abs(m) / 60)}j ${Math.abs(m) % 60}m`;
+
   /* Rekap: compute per-employee summary for rekapYM */
   const rekapRows = lemburPegawai.map((p:any)=>{
     const k=`${p.id}_${rekapYM}`;
@@ -2201,7 +2217,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
       return s + Math.round(jam*60);
     },0);
     const totalMins = totalMinsKerja - totalMinsAmbil; // saldo bersih
-    return {id:p.id, name:p.name, nik:p.nik||"—", jumlahHari:ents.length, totalMins, totalMinsKerja, totalMinsAmbil, entries:ents, kepRuang:rec2.kepRuang||"", kepBidang:rec2.kepBidang||""};
+    return {id:p.id, name:p.name, nik:p.nik||"—", jumlahHari:ents.length, totalMins, totalMinsKerja, totalMinsAmbil, entries:ents, kepRuang:rec2.kepRuang||"", kepBidang:rec2.kepBidang||"", tabungan:tabunganMenitPeg(p)};
   });
 
   const downloadRekapExcel = () => {
@@ -2218,11 +2234,11 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     setC(2,0,`Bulan: ${ymLabel(rekapYM)}`,false,true);
     setC(3,0,"",false,false);
     /* Header row */
-    const TH=["No","Nama Pegawai","NIK / NIP","Jumlah Hari Lembur","Jam Didapat","Jam Diambil","Saldo Bersih","Keterangan"];
+    const TH=["No","Nama Pegawai","NIK / NIP","Jumlah Hari Lembur","Jam Didapat","Jam Diambil","Saldo Bersih","Tabungan Lembur","Keterangan"];
     TH.forEach((h,i)=>setC(4,i,h,true,true,true,"16685F",11));
     /* Data rows */
     const merges=[
-      merge(0,0,0,7),merge(1,0,1,7),merge(2,0,2,7),merge(3,0,3,7),
+      merge(0,0,0,8),merge(1,0,1,8),merge(2,0,2,8),merge(3,0,3,8),
     ];
     const fmtJamExcel = (mins:number) => `${mins<0?"-":""}${Math.floor(Math.abs(mins)/60)} jam ${Math.abs(mins)%60} menit`;
     rekapRows.forEach((r:any,i:number)=>{
@@ -2235,7 +2251,8 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
       setC(row,4,r.totalMinsKerja>0?fmtJamExcel(r.totalMinsKerja):"—",false,true,true,bg);
       setC(row,5,r.totalMinsAmbil>0?fmtJamExcel(r.totalMinsAmbil):"—",false,true,true,bg);
       setC(row,6,fmtJamExcel(r.totalMins),false,true,true,bg);
-      setC(row,7,r.kepRuang?`Kep. Ruang: ${r.kepRuang}`:"",false,false,true,bg);
+      setC(row,7,r.tabungan===null?"Belum diisi":fmtJamExcel(r.tabungan),false,true,true,bg);
+      setC(row,8,r.kepRuang?`Kep. Ruang: ${r.kepRuang}`:"",false,false,true,bg);
     });
     /* Footer total */
     const footRow=5+rekapRows.length;
@@ -2251,10 +2268,11 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     setC(footRow,4,fmtJamExcel(grandMinsKerja),true,true,true,"E0F2F1");
     setC(footRow,5,fmtJamExcel(grandMinsAmbil),true,true,true,"E0F2F1");
     setC(footRow,6,fmtJamExcel(grandMins),true,true,true,"E0F2F1");
-    setC(footRow,7,"",false,false,true,"E0F2F1");
+    setC(footRow,7,fmtJamExcel(rekapRows.reduce((s:number,r:any)=>s+(r.tabungan||0),0)),true,true,true,"E0F2F1");
+    setC(footRow,8,"",false,false,true,"E0F2F1");
     ws["!merges"]=merges;
-    ws["!cols"]=[{wch:4},{wch:28},{wch:18},{wch:18},{wch:18},{wch:18},{wch:18},{wch:28}];
-    ws["!ref"]=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:footRow,c:7}});
+    ws["!cols"]=[{wch:4},{wch:28},{wch:18},{wch:18},{wch:18},{wch:18},{wch:18},{wch:20},{wch:28}];
+    ws["!ref"]=XLSX.utils.encode_range({s:{r:0,c:0},e:{r:footRow,c:8}});
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,"Rekap Lembur");
     /* Detail sheets per employee */
@@ -2467,6 +2485,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                   <div><span style={{color:"rgba(255,255,255,.6)"}}>NIK/NIP: </span><b>{peg.nik||"—"}</b></div>
                   <div><span style={{color:"rgba(255,255,255,.6)"}}>Bulan: </span><b>{ymLabel(selYM)}</b></div>
                   <div><span style={{color:"rgba(255,255,255,.6)"}}>Total: </span><b>{entries.length} baris</b></div>
+                  <div style={{gridColumn:"1 / -1"}}><span style={{color:"rgba(255,255,255,.6)"}}>Tabungan Lembur: </span><b>{fmtTab(tabunganMenitPeg(peg),"Belum diisi")}</b></div>
                 </div>
               </div>
 
@@ -2513,10 +2532,16 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                         <LF label="Jam Absen Masuk (opsional, bisa diisi nanti)">
                           <input style={iS} type="time" value={rowForm.jamMasuk||""} onChange={e=>setRowForm((p:any)=>({...p,jamMasuk:e.target.value}))}/>
                         </LF>
+                        <LF label="Tanggal Keluar Lembur">
+                          <DateTxt style={iS} value={rowForm.tanggalAkhir||""} onChange={(v:string)=>setRowForm((p:any)=>({...p,tanggalAkhir:v}))}/>
+                        </LF>
+                        <LF label="Jam Keluar Lembur">
+                          <input style={iS} type="time" value={rowForm.jamKeluar||""} onChange={e=>setRowForm((p:any)=>({...p,jamKeluar:e.target.value}))}/>
+                        </LF>
                         {/* UPDATE LEMBUR GPS+SELFIE: input manual "Jam Absen Keluar" digantikan tombol
                             otomatisasi terintegrasi (kamera+GPS) demi mencegah manipulasi waktu.
                             Field rowForm.jamKeluar tetap sama, hanya cara pengisiannya yang berubah. */}
-                        <div style={{gridColumn:"1 / -1",border:`1px dashed ${rowForm.jamKeluar?C.s:"#cbd5e1"}`,padding:14,borderRadius:10,background:rowForm.jamKeluar?C.sBg:"#f8fafc",marginTop:6}}>
+                        <div style={{gridColumn:"1 / -1",border:`1px dashed ${(rowForm.fotoKeluarUrl||rowForm.lokasiKeluar)?C.s:"#cbd5e1"}`,padding:14,borderRadius:10,background:(rowForm.fotoKeluarUrl||rowForm.lokasiKeluar)?C.sBg:"#f8fafc",marginTop:6}}>
                           <div style={{fontWeight:700,fontSize:12,marginBottom:8,color:C.s}}>
                             <IkKamera size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>VERIFIKASI SELESAI LEMBUR (GPS &amp; ANTI-MANIPULASI WAKTU)
                           </div>
@@ -2532,7 +2557,12 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                               />
                             )}
                           </div>
-                          {rowForm.jamKeluar && (
+                          {rowForm.jamKeluar && !(rowForm.fotoKeluarUrl||rowForm.lokasiKeluar) && (
+                            <div style={{fontSize:12,color:"#92400e",fontWeight:600,lineHeight:"1.4"}}>
+                              Jam keluar diisi manual (tanpa verifikasi selfie &amp; GPS)
+                            </div>
+                          )}
+                          {rowForm.jamKeluar && (rowForm.fotoKeluarUrl||rowForm.lokasiKeluar) && (
                             <div style={{fontSize:12,color:C.s,fontWeight:600,lineHeight:"1.4"}}>
                               <IkCek size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Waktu Terkunci Pada Tanggal: {rowForm.tanggalAkhir?fDMY(rowForm.tanggalAkhir):"—"} | Jam: {rowForm.jamKeluar}<br/>
                               <IkPin size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>Koordinat Lokasi: {rowForm.lokasiKeluar||"—"}
@@ -2544,15 +2574,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                           {showManualKeluar && (
                             <div style={{marginTop:10,paddingTop:10,borderTop:`1px dashed ${C.w}`}}>
                               <div style={{fontSize:11,color:"#92400e",background:"#FEF3C7",borderRadius:8,padding:"6px 10px",marginBottom:8,fontWeight:600}}>
-                                <IkPeringatan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>GPS/Kamera tidak aktif — isi jam keluar secara manual:
-                              </div>
-                              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                                <LF label="Tanggal Akhir Lembur">
-                                  <DateTxt style={iS} value={rowForm.tanggalAkhir||""} onChange={(v:string)=>setRowForm((p:any)=>({...p,tanggalAkhir:v}))}/>
-                                </LF>
-                                <LF label="Jam Absen Keluar">
-                                  <input style={iS} type="time" value={rowForm.jamKeluar||""} onChange={e=>setRowForm((p:any)=>({...p,jamKeluar:e.target.value}))}/>
-                                </LF>
+                                <IkPeringatan size={15} strokeWidth={2.2} style={{verticalAlign:"-2px",marginRight:6}}/>GPS/Kamera tidak aktif — isi Tanggal dan Jam Keluar Lembur secara manual pada kotak di atas.
                               </div>
                             </div>
                           )}
@@ -2571,6 +2593,13 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                             onChange={e=>setRowForm((p:any)=>({...p,jumlahJamAmbil:e.target.value}))}
                           />
                         </LF>
+                        {(()=>{
+                          const sisa = tabunganMenitPeg(peg);
+                          if(sisa===null) return null;
+                          const minta = Math.round((Number(rowForm.jumlahJamAmbil)||0)*60);
+                          const lebih = !editRow && minta>sisa;
+                          return <div style={{fontSize:11,marginTop:4,color:lebih?C.d:C.tL}}>Tabungan lembur saat ini: {fmtTab(sisa)}{lebih?" — jumlah yang diambil melebihi tabungan":""}</div>;
+                        })()}
                       </div>
                     )}
                     <LF label="Keperluan Lembur">
@@ -2819,7 +2848,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                   <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:500}}>
                     <thead>
                       <tr style={{background:"#E0F2F1"}}>
-                        {["No","Nama Pegawai","NIK / NIP","Hari Lembur","Total Jam","Detail"].map(h=>(
+                        {["No","Nama Pegawai","NIK / NIP","Hari Lembur","Total Jam","Tabungan Lembur","Detail"].map(h=>(
                           <th key={h} style={{padding:"9px 12px",textAlign:"left",color:"#16685F",fontWeight:700,borderBottom:"2px solid #16685F",whiteSpace:"nowrap"}}>{h}</th>
                         ))}
                       </tr>
@@ -2838,6 +2867,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                                 : <span style={{color:C.tL}}>—</span>}
                             </td>
                             <td style={{padding:"9px 12px",textAlign:"center",fontWeight:700,color:r.totalMins>0?"#075985":C.tL}}>{jam}</td>
+                            <td style={{padding:"9px 12px",textAlign:"center",fontWeight:700,color:r.tabungan!==null&&r.tabungan<0?C.d:"#16685F"}}>{fmtTab(r.tabungan)}</td>
                             <td style={{padding:"9px 12px"}}>
                               <button onClick={()=>{setSelPeg(r.id);setSelYM(rekapYM);setSub("catat" as any);}} style={{background:C.pBg,border:`1px solid ${C.p}33`,borderRadius:8,color:C.p,padding:"4px 10px",cursor:"pointer",fontSize:11,fontWeight:600,whiteSpace:"nowrap"}}>
                                 {r.jumlahHari>0?"Lihat":"Input"} →
@@ -2916,6 +2946,15 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                     <div>
                       <div style={{fontSize:14,fontWeight:700,color:C.t}}>{p.name}</div>
                       <div style={{fontSize:12,color:C.tL,marginTop:2}}>NIK/NIP: {p.nik||"—"} · {totalBulan} bulan tercatat</div>
+                      <TabunganInput saldo={tabunganMenitPeg(p)} onSimpan={async (menit:number)=>{
+                        const upd = {...p, tabunganMenit:menit, tabunganSejak:new Date().toISOString()};
+                        showToast("Menyimpan...",C.p);
+                        const res = await upsertOneToSupa?.("kb_lembur_pegawai", upd);
+                        if(!res?.ok){ showToast(`Gagal menyimpan tabungan: ${res?.error||"kesalahan tidak diketahui"}`,C.d); return false; }
+                        setLemburPegawai((prev:any[])=>prev.map((x:any)=>x.id===p.id?upd:x));
+                        showToast("Tabungan lembur tersimpan & tersinkron",C.s);
+                        return true;
+                      }}/>
                     </div>
                     <div style={{display:"flex",gap:6}}>
                       <button onClick={()=>{setSelPeg(p.id);setSub("catat");}} style={{background:C.pBg,border:`1px solid ${C.p}33`,borderRadius:8,color:C.p,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:600}}>Lihat Lembur</button>
@@ -2946,6 +2985,53 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
 
 /* ─── MONITORING SUHU & KELEMBABAN (Multi-Room) ─────────────────────── */
 // MonitoringEntry & MonitoringCfg sekarang diimpor dari ./types (lihat import type di atas)
+/* Isian Tabungan Lembur per pegawai: diisi manual; saldo berkurang otomatis oleh entri Pengambilan Lembur */
+function TabunganInput(props: { saldo: number | null; onSimpan: (menit: number) => Promise<boolean> }) {
+  const [buka, setBuka] = useState(false);
+  const [j, setJ] = useState("");
+  const [m, setM] = useState("");
+  const [err, setErr] = useState("");
+  const kotak: React.CSSProperties = { width: 64, padding: "6px 8px", borderRadius: 8, border: `1px solid ${C.b}`, fontSize: 13 };
+  const tombol: React.CSSProperties = { background: C.pBg, border: `1px solid ${C.p}33`, borderRadius: 8, color: C.p, padding: "4px 10px", cursor: "pointer", fontSize: 11, fontWeight: 600 };
+  const s = props.saldo;
+  const teks = s === null ? "Belum diisi" : `${s < 0 ? "-" : ""}${Math.floor(Math.abs(s) / 60)} jam ${Math.abs(s) % 60} menit`;
+  const mulai = () => {
+    setJ(s !== null && s >= 0 ? String(Math.floor(s / 60)) : "");
+    setM(s !== null && s >= 0 ? String(s % 60) : "");
+    setErr("");
+    setBuka(true);
+  };
+  const simpan = async () => {
+    const jam = j.trim() === "" ? 0 : Number(j);
+    const mnt = m.trim() === "" ? 0 : Number(m);
+    if (!Number.isFinite(jam) || !Number.isFinite(mnt) || jam < 0 || mnt < 0 || mnt >= 60) { setErr("Isi jam (0 atau lebih) dan menit (0-59) dengan benar"); return; }
+    if (jam === 0 && mnt === 0 && !window.confirm("Tabungan diisi 0 jam 0 menit. Lanjutkan?")) return;
+    const ok = await props.onSimpan(Math.floor(jam) * 60 + Math.floor(mnt));
+    if (ok) { setBuka(false); setErr(""); }
+  };
+  return (
+    <div style={{ marginTop: 6, fontSize: 12 }}>
+      <span style={{ color: C.tL }}>Tabungan Lembur: </span>
+      <b style={{ color: s !== null && s < 0 ? C.d : "#16685F" }}>{teks}</b>
+      {!buka && <button type="button" onClick={mulai} style={{ ...tombol, marginLeft: 8 }}>{s === null ? "Isi" : "Ubah"}</button>}
+      {buka && (
+        <div style={{ marginTop: 6 }}>
+          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+            <input type="number" min={0} style={kotak} placeholder="jam" value={j} onChange={(e) => setJ(e.target.value)} />
+            <span>jam</span>
+            <input type="number" min={0} max={59} style={kotak} placeholder="menit" value={m} onChange={(e) => setM(e.target.value)} />
+            <span>menit</span>
+            <button type="button" onClick={simpan} style={tombol}>Simpan</button>
+            <button type="button" onClick={() => { setBuka(false); setErr(""); }} style={{ ...tombol, background: "#fff" }}>Batal</button>
+          </div>
+          {err && <div style={{ color: C.d, fontSize: 11, marginTop: 4 }}>{err}</div>}
+          <div style={{ fontSize: 11, color: C.tL, marginTop: 4 }}>Angka ini menjadi saldo awal. Pengambilan lembur yang dicatat sesudah disimpan akan mengurangi saldo otomatis.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const defaultMonCfg: MonitoringCfg = { suhuMin:19, suhuMax:24, rhMin:45, rhMax:65, lokasiRuang:"Kamar Bedah", kepalaKamarBedah:"" };
 // MON_JAMS dan MON_ROOMS sekarang diimpor dari ./constants (lihat import di atas)
 /* monId: id deterministik berbasis (ruang,tanggal,jam) — bukan random — sehingga
