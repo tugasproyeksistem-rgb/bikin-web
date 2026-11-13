@@ -184,7 +184,7 @@ export const htmlLembar = (f: Record<string, string>, rek: Rek): string => {
     "<table style=\"width:100%;border-collapse:collapse;" + kotak + "border-top:0\"><tr>" +
     "<td style=\"width:36%;vertical-align:top;padding:2px 4px;border-right:1px solid #000\">" + judul("Obat-obat Anaesthesi :") + kolomBaris(rek.anest, 4) + judul("Lain - Lain :") + kolomBaris(rek.lain, 3) + "</td>" +
     "<td style=\"width:32%;vertical-align:top;padding:2px 4px;border-right:1px solid #000\">" + kolomBaris(rek.tengah, 4) + "</td>" +
-    "<td style=\"width:32%;vertical-align:top;padding:2px 4px\">" + judul("Implant :") + kolomBaris(rek.implant.map(kePrint), 3) + judul("Benang :") + kolomBaris(rek.benang, 3) + judul("Lain lain :") + barisKosongSaja(6) + "</td></tr></table>";
+    "<td style=\"width:32%;vertical-align:top;padding:2px 4px\">" + judul("Implant :") + kolomBaris(rek.implant.map(kePrint), 10) + judul("Benang :") + kolomBaris(rek.benang, 10) + judul("Lain lain :") + barisKosongSaja(6) + "</td></tr></table>";
   return "<div style=\"font-family:Arial,Helvetica,sans-serif;color:#000\">" + atas + baris1 + kotakPasien + kotakOperator + kotakDiagnosa + kotakBedah + tiga + "</div>";
 };
 
@@ -200,6 +200,16 @@ function Seksi(props: { judul: string; rows: Baris[]; ubah: (r: Baris[]) => void
   const { rows, ubah, master, simpan, simpanPilihan } = props;
   const set = (i: number, patch: Partial<Baris>) => ubah(rows.map((r, k) => (k === i ? { ...r, ...patch } : r)));
   const dmId = "dm-" + props.judul.replace(/[^a-zA-Z0-9]/g, "");
+  const [dari, setDari] = useState<number | null>(null);
+  const [ke, setKe] = useState<number | null>(null);
+  /* pindahkan baris a ke posisi b */
+  const pindah = (a: number, b: number) => {
+    if (a === b || a < 0 || b < 0 || a >= rows.length || b >= rows.length) return;
+    const x = rows.slice();
+    const [it] = x.splice(a, 1);
+    x.splice(b, 0, it);
+    ubah(x);
+  };
   /* nama cocok dengan item master: ganti baris dengan item itu (jumlah yang sudah diisi tetap) */
   const gantiNama = (i: number, nama: string) => {
     const m = master ? master.find((x) => norm(x.n) === norm(nama)) : undefined;
@@ -215,7 +225,18 @@ function Seksi(props: { judul: string; rows: Baris[]; ubah: (r: Baris[]) => void
         const belumAda = !!master && r.n.trim() !== "" && !master.some((m) => norm(m.n) === norm(r.n));
         const pilihanBaru = r.t === "pilih" && !!r.p && !(r.o || []).includes(r.p);
         return (
-          <div key={r.id} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
+          <div key={r.id}
+            onDragOver={(ev) => { if (dari !== null) { ev.preventDefault(); if (ke !== i) setKe(i); } }}
+            onDrop={(ev) => { ev.preventDefault(); if (dari !== null) pindah(dari, i); setDari(null); setKe(null); }}
+            style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6, flexWrap: "wrap", opacity: dari === i ? 0.45 : 1, boxShadow: ke === i && dari !== null && dari !== i ? (dari > i ? "0 -3px 0 #4f46e5" : "0 3px 0 #4f46e5") : "none" }}>
+            <div style={{ display: "flex", gap: 2, alignItems: "center" }}>
+              <span draggable title="Tarik untuk memindahkan baris" aria-label="Tarik untuk memindahkan baris"
+                onDragStart={(ev) => { ev.dataTransfer.effectAllowed = "move"; ev.dataTransfer.setData("text/plain", String(i)); const baris = ev.currentTarget.parentElement?.parentElement; if (baris) ev.dataTransfer.setDragImage(baris, 12, 12); setDari(i); }}
+                onDragEnd={() => { setDari(null); setKe(null); }}
+                style={{ cursor: "grab", userSelect: "none", fontSize: 18, lineHeight: 1, padding: "4px 6px", color: "#6b7280" }}>≡</span>
+              <button type="button" aria-label="Naikkan baris" title="Naikkan" disabled={i === 0} style={{ ...tbl("#6b7280"), padding: "4px 7px", opacity: i === 0 ? 0.35 : 1 }} onClick={() => pindah(i, i - 1)}>▲</button>
+              <button type="button" aria-label="Turunkan baris" title="Turunkan" disabled={i === rows.length - 1} style={{ ...tbl("#6b7280"), padding: "4px 7px", opacity: i === rows.length - 1 ? 0.35 : 1 }} onClick={() => pindah(i, i + 1)}>▼</button>
+            </div>
             <input value={r.n} list={dmId} placeholder="Nama" autoComplete="off" onChange={(ev) => gantiNama(i, ev.target.value)} style={{ ...inp, flex: "2 1 150px" }} />
             {master && master.length > 0 && (
               <select value="" aria-label="Ganti dari daftar" title="Ganti dengan item dari daftar" onChange={(ev) => { if (ev.target.value) gantiNama(i, ev.target.value); }} style={{ ...inp, flex: "0 0 46px", padding: "6px 4px" }}>
