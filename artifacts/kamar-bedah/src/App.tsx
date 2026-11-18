@@ -2024,6 +2024,28 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     }
   };
 
+  /* Mode sederhana: "Ambil Jam Lembur" -> simpan entri Pengambilan Lembur (jenisEntri "ambil"), sama seperti form lengkap.
+     jam = jumlah jam desimal (mis. 1.5). Kembalian true kalau tersimpan. */
+  const handleAmbilLembur = async (jam: number, keperluan: string): Promise<boolean> => {
+    if (isSubmittingAbsenRef.current) return false;
+    if (!key) { showToast("Data pegawai belum siap, coba lagi sesaat.", C.w); return false; }
+    if (!(jam > 0)) { showToast("Jumlah jam diambil wajib diisi (lebih dari 0)", C.d); return false; }
+    isSubmittingAbsenRef.current = true;
+    const tgl = toLocalISODate(new Date());
+    const entriesNow: any[] = (lemburData[key!]?.entries) || entries;
+    const entryBaru = {
+      id: gId(), dibuatPada: new Date().toISOString(), no: entriesNow.length + 1,
+      jenisEntri: "ambil", tanggalAwal: tgl, tanggalAkhir: tgl,
+      jamMasuk: "", jamKeluar: "", lokasiKeluar: "", fotoKeluarUrl: "",
+      jumlahJamAmbil: String(jam), keperluanLembur: keperluan, keterangan: "", ttd: ""
+    };
+    showToast("Menyimpan pengambilan lembur...", C.p);
+    const ok = await writeLemburKeyAppend(lemburData[key!] || rec, entryBaru);
+    isSubmittingAbsenRef.current = false;
+    if (ok) showToast(`Pengambilan lembur ${jam} jam tercatat`, C.s);
+    return !!ok;
+  };
+
   const delEntry = async (id:string) => {
     /* FIX BUG #8: baca rec/entries terbaru dari lemburData[key], bukan
        closure lama, sebelum menghapus & menulis ulang. */
@@ -2198,6 +2220,17 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     return pg.tabunganMenit - dipakai;
   };
   const fmtTab = (m: number | null, kosong = "—") => m === null ? kosong : `${m < 0 ? "-" : ""}${Math.floor(Math.abs(m) / 60)}j ${Math.abs(m) % 60}m`;
+
+  /* simpan Tabungan Lembur seorang pegawai (isian manual); dipakai kartu Data Pegawai dan halaman Pencatatan */
+  const simpanTabungan = async (pg: any, menit: number): Promise<boolean> => {
+    const upd = { ...pg, tabunganMenit: menit, tabunganSejak: new Date().toISOString() };
+    showToast("Menyimpan...", C.p);
+    const res = await upsertOneToSupa?.("kb_lembur_pegawai", upd);
+    if (!res?.ok) { showToast(`Gagal menyimpan tabungan: ${res?.error || "kesalahan tidak diketahui"}`, C.d); return false; }
+    setLemburPegawai((prev: any[]) => prev.map((x: any) => (x.id === pg.id ? upd : x)));
+    showToast("Tabungan lembur tersimpan & tersinkron", C.s);
+    return true;
+  };
 
   /* Rekap: compute per-employee summary for rekapYM */
   const rekapRows = lemburPegawai.map((p:any)=>{
@@ -2423,6 +2456,9 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
             Pulang
           </button>
         </div>
+        <div style={{width:"100%",maxWidth:420,padding:"0 16px",marginTop:20,boxSizing:"border-box"}}>
+          <QuickAmbilLembur saldo={tabunganMenitPeg(peg)} disabled={isLoadingSelfie || !key} onSimpan={handleAmbilLembur}/>
+        </div>
         <button
           type="button"
           onClick={()=>{stopActiveSelfieStream();setIsLoadingSelfie(false);setQuickLemburMode(false);}}
@@ -2485,9 +2521,10 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                   <div><span style={{color:"rgba(255,255,255,.6)"}}>NIK/NIP: </span><b>{peg.nik||"—"}</b></div>
                   <div><span style={{color:"rgba(255,255,255,.6)"}}>Bulan: </span><b>{ymLabel(selYM)}</b></div>
                   <div><span style={{color:"rgba(255,255,255,.6)"}}>Total: </span><b>{entries.length} baris</b></div>
-                  <div style={{gridColumn:"1 / -1"}}><span style={{color:"rgba(255,255,255,.6)"}}>Tabungan Lembur: </span><b>{fmtTab(tabunganMenitPeg(peg),"Belum diisi")}</b></div>
                 </div>
               </div>
+
+              <div style={{marginBottom:14}}><TabunganInput saldo={tabunganMenitPeg(peg)} onSimpan={(menit:number)=>simpanTabungan(peg,menit)}/></div>
 
               {/* Actions — UPDATE: disederhanakan jadi 1 tombol utama besar +
                   2 aksi sekunder kecil di bawahnya agar UI tidak crowded.
@@ -2946,15 +2983,6 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                     <div>
                       <div style={{fontSize:14,fontWeight:700,color:C.t}}>{p.name}</div>
                       <div style={{fontSize:12,color:C.tL,marginTop:2}}>NIK/NIP: {p.nik||"—"} · {totalBulan} bulan tercatat</div>
-                      <TabunganInput saldo={tabunganMenitPeg(p)} onSimpan={async (menit:number)=>{
-                        const upd = {...p, tabunganMenit:menit, tabunganSejak:new Date().toISOString()};
-                        showToast("Menyimpan...",C.p);
-                        const res = await upsertOneToSupa?.("kb_lembur_pegawai", upd);
-                        if(!res?.ok){ showToast(`Gagal menyimpan tabungan: ${res?.error||"kesalahan tidak diketahui"}`,C.d); return false; }
-                        setLemburPegawai((prev:any[])=>prev.map((x:any)=>x.id===p.id?upd:x));
-                        showToast("Tabungan lembur tersimpan & tersinkron",C.s);
-                        return true;
-                      }}/>
                     </div>
                     <div style={{display:"flex",gap:6}}>
                       <button onClick={()=>{setSelPeg(p.id);setSub("catat");}} style={{background:C.pBg,border:`1px solid ${C.p}33`,borderRadius:8,color:C.p,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:600}}>Lihat Lembur</button>
@@ -2973,6 +3001,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                       }} style={{background:C.dBg,border:`1px solid ${C.dL}`,borderRadius:8,color:C.d,padding:"5px 10px",cursor:"pointer",fontSize:12}}><IkSampah size={16} strokeWidth={2.4} style={{verticalAlign:"-2px"}}/></button>
                     </div>
                   </div>
+                  <div style={{marginTop:12}}><TabunganInput saldo={tabunganMenitPeg(p)} onSimpan={(menit:number)=>simpanTabungan(p,menit)}/></div>
                 </Card>
               );
             })
@@ -2985,16 +3014,18 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
 
 /* ─── MONITORING SUHU & KELEMBABAN (Multi-Room) ─────────────────────── */
 // MonitoringEntry & MonitoringCfg sekarang diimpor dari ./types (lihat import type di atas)
-/* Isian Tabungan Lembur per pegawai: diisi manual; saldo berkurang otomatis oleh entri Pengambilan Lembur */
+/* Kotak Tabungan Lembur per pegawai: besar dan jelas; diisi manual, saldo berkurang otomatis oleh entri Pengambilan Lembur */
 function TabunganInput(props: { saldo: number | null; onSimpan: (menit: number) => Promise<boolean> }) {
   const [buka, setBuka] = useState(false);
   const [j, setJ] = useState("");
   const [m, setM] = useState("");
   const [err, setErr] = useState("");
-  const kotak: React.CSSProperties = { width: 64, padding: "6px 8px", borderRadius: 8, border: `1px solid ${C.b}`, fontSize: 13 };
-  const tombol: React.CSSProperties = { background: C.pBg, border: `1px solid ${C.p}33`, borderRadius: 8, color: C.p, padding: "4px 10px", cursor: "pointer", fontSize: 11, fontWeight: 600 };
   const s = props.saldo;
-  const teks = s === null ? "Belum diisi" : `${s < 0 ? "-" : ""}${Math.floor(Math.abs(s) / 60)} jam ${Math.abs(s) % 60} menit`;
+  const minus = s !== null && s < 0;
+  const warna = s === null ? "#64748B" : minus ? "#B91C1C" : "#16685F";
+  const latar = s === null ? "#F8FAFC" : minus ? "#FEF2F2" : "#ECFDF5";
+  const garis = s === null ? "#CBD5E1" : minus ? "#FCA5A5" : "#6EE7B7";
+  const kotak: React.CSSProperties = { width: 96, padding: "10px 12px", borderRadius: 10, border: "2px solid #94A3B8", fontSize: 20, fontWeight: 700, textAlign: "center", background: "#fff" };
   const mulai = () => {
     setJ(s !== null && s >= 0 ? String(Math.floor(s / 60)) : "");
     setM(s !== null && s >= 0 ? String(s % 60) : "");
@@ -3010,22 +3041,90 @@ function TabunganInput(props: { saldo: number | null; onSimpan: (menit: number) 
     if (ok) { setBuka(false); setErr(""); }
   };
   return (
-    <div style={{ marginTop: 6, fontSize: 12 }}>
-      <span style={{ color: C.tL }}>Tabungan Lembur: </span>
-      <b style={{ color: s !== null && s < 0 ? C.d : "#16685F" }}>{teks}</b>
-      {!buka && <button type="button" onClick={mulai} style={{ ...tombol, marginLeft: 8 }}>{s === null ? "Isi" : "Ubah"}</button>}
+    <div style={{ border: `2px solid ${garis}`, background: latar, borderRadius: 14, padding: "14px 16px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 1, color: "#475569" }}>TABUNGAN LEMBUR</div>
+          {s === null ? (
+            <div style={{ fontSize: 22, fontWeight: 800, color: warna, marginTop: 2 }}>Belum diisi</div>
+          ) : (
+            <div style={{ fontSize: 30, fontWeight: 800, color: warna, marginTop: 2, lineHeight: 1.1 }}>
+              {minus ? "-" : ""}{Math.floor(Math.abs(s) / 60)}<span style={{ fontSize: 15, fontWeight: 700 }}> jam </span>{Math.abs(s) % 60}<span style={{ fontSize: 15, fontWeight: 700 }}> menit</span>
+            </div>
+          )}
+        </div>
+        {!buka && <button type="button" onClick={mulai} style={{ background: "#0086C9", border: "none", borderRadius: 10, color: "#fff", padding: "10px 20px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>{s === null ? "Isi Tabungan" : "Ubah Tabungan"}</button>}
+      </div>
+      {!buka && <div style={{ fontSize: 11, color: "#64748B", marginTop: 6 }}>Berkurang otomatis setiap ada Pengambilan Lembur.</div>}
       {buka && (
-        <div style={{ marginTop: 6 }}>
-          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-            <input type="number" min={0} style={kotak} placeholder="jam" value={j} onChange={(e) => setJ(e.target.value)} />
-            <span>jam</span>
-            <input type="number" min={0} max={59} style={kotak} placeholder="menit" value={m} onChange={(e) => setM(e.target.value)} />
-            <span>menit</span>
-            <button type="button" onClick={simpan} style={tombol}>Simpan</button>
-            <button type="button" onClick={() => { setBuka(false); setErr(""); }} style={{ ...tombol, background: "#fff" }}>Batal</button>
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed #94A3B8" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: "#334155", marginBottom: 8 }}>Masukkan tabungan lembur saat ini</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input type="number" inputMode="numeric" min={0} style={kotak} placeholder="0" value={j} onChange={(e) => setJ(e.target.value)} />
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#334155" }}>jam</span>
+            <input type="number" inputMode="numeric" min={0} max={59} style={kotak} placeholder="0" value={m} onChange={(e) => setM(e.target.value)} />
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#334155" }}>menit</span>
           </div>
-          {err && <div style={{ color: C.d, fontSize: 11, marginTop: 4 }}>{err}</div>}
-          <div style={{ fontSize: 11, color: C.tL, marginTop: 4 }}>Angka ini menjadi saldo awal. Pengambilan lembur yang dicatat sesudah disimpan akan mengurangi saldo otomatis.</div>
+          {err && <div style={{ color: "#B91C1C", fontSize: 12, marginTop: 8 }}>{err}</div>}
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <button type="button" onClick={simpan} style={{ flex: 1, background: "#16685F", border: "none", borderRadius: 10, color: "#fff", padding: "12px 16px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>Simpan Tabungan</button>
+            <button type="button" onClick={() => { setBuka(false); setErr(""); }} style={{ background: "#fff", border: "2px solid #CBD5E1", borderRadius: 10, color: "#475569", padding: "12px 16px", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>Batal</button>
+          </div>
+          <div style={{ fontSize: 11, color: "#64748B", marginTop: 8 }}>Angka ini menjadi saldo awal. Pengambilan lembur yang dicatat sesudah disimpan akan mengurangi saldo otomatis.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Layar Masuk/Pulang: tombol "Ambil Jam Lembur" + isian jam/menit. Disimpan sebagai entri Pengambilan Lembur. */
+function QuickAmbilLembur(props: { saldo: number | null; disabled?: boolean; onSimpan: (jam: number, keperluan: string) => Promise<boolean> }) {
+  const [buka, setBuka] = useState(false);
+  const [j, setJ] = useState("");
+  const [m, setM] = useState("");
+  const [kep, setKep] = useState("");
+  const [err, setErr] = useState("");
+  const [proses, setProses] = useState(false);
+  const s = props.saldo;
+  const jam = j.trim() === "" ? 0 : Number(j);
+  const mnt = m.trim() === "" ? 0 : Number(m);
+  const valid = Number.isFinite(jam) && Number.isFinite(mnt) && jam >= 0 && mnt >= 0 && mnt < 60;
+  const minta = valid ? Math.floor(jam) * 60 + Math.floor(mnt) : 0;
+  const lebih = s !== null && minta > s;
+  const kotak: React.CSSProperties = { width: 88, padding: "12px", borderRadius: 12, border: "2px solid #94A3B8", fontSize: 22, fontWeight: 700, textAlign: "center", background: "#fff" };
+  const teksSaldo = s === null ? "Belum diisi" : `${s < 0 ? "-" : ""}${Math.floor(Math.abs(s) / 60)} jam ${Math.abs(s) % 60} menit`;
+  const simpan = async () => {
+    if (!valid || minta <= 0) { setErr("Isi jam dan/atau menit yang diambil (menit 0-59)"); return; }
+    if (lebih && !window.confirm("Jumlah yang diambil melebihi tabungan lembur. Tetap simpan?")) return;
+    setProses(true);
+    const ok = await props.onSimpan(Math.round((minta / 60) * 10000) / 10000, kep.trim());
+    setProses(false);
+    if (ok) { setBuka(false); setJ(""); setM(""); setKep(""); setErr(""); }
+  };
+  return (
+    <div style={{ width: "100%" }}>
+      <div style={{ textAlign: "center", fontSize: 13, color: C.tL, marginBottom: 8 }}>
+        Tabungan lembur: <b style={{ color: s !== null && s < 0 ? "#B91C1C" : "#16685F", fontSize: 16 }}>{teksSaldo}</b>
+      </div>
+      {!buka ? (
+        <button type="button" disabled={props.disabled} onClick={() => { setBuka(true); setErr(""); }} style={{ width: "100%", padding: "16px", background: "#fff", color: C.p, border: `2px solid ${C.p}`, borderRadius: 16, fontSize: 18, fontWeight: 800, cursor: props.disabled ? "default" : "pointer", opacity: props.disabled ? 0.6 : 1 }}>Ambil Jam Lembur</button>
+      ) : (
+        <div style={{ border: `2px solid ${C.p}`, borderRadius: 16, padding: 16, background: "#fff" }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: C.b, marginBottom: 4, textAlign: "center" }}>Ambil Jam Lembur</div>
+          <div style={{ fontSize: 11, color: C.tL, marginBottom: 10, textAlign: "center" }}>Tercatat untuk hari ini</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}>
+            <input type="number" inputMode="numeric" min={0} style={kotak} placeholder="0" value={j} onChange={(e) => setJ(e.target.value)} />
+            <span style={{ fontSize: 15, fontWeight: 700 }}>jam</span>
+            <input type="number" inputMode="numeric" min={0} max={59} style={kotak} placeholder="0" value={m} onChange={(e) => setM(e.target.value)} />
+            <span style={{ fontSize: 15, fontWeight: 700 }}>menit</span>
+          </div>
+          <input type="text" placeholder="Keperluan (boleh dikosongkan), mis: pulang awal" value={kep} onChange={(e) => setKep(e.target.value)} style={{ width: "100%", boxSizing: "border-box", marginTop: 12, padding: "12px", borderRadius: 12, border: "2px solid #CBD5E1", fontSize: 14 }} />
+          {lebih && <div style={{ color: "#B91C1C", fontSize: 12, marginTop: 8, textAlign: "center" }}>Jumlah yang diambil melebihi tabungan lembur.</div>}
+          {err && <div style={{ color: "#B91C1C", fontSize: 12, marginTop: 8, textAlign: "center" }}>{err}</div>}
+          <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+            <button type="button" disabled={proses} onClick={simpan} style={{ flex: 1, background: C.p, border: "none", borderRadius: 12, color: "#fff", padding: "14px 16px", cursor: proses ? "default" : "pointer", fontSize: 15, fontWeight: 800, opacity: proses ? 0.6 : 1 }}>{proses ? "Menyimpan..." : "Simpan Pengambilan"}</button>
+            <button type="button" disabled={proses} onClick={() => { setBuka(false); setErr(""); }} style={{ background: "#fff", border: "2px solid #CBD5E1", borderRadius: 12, color: "#475569", padding: "14px 16px", cursor: "pointer", fontSize: 15, fontWeight: 700 }}>Batal</button>
+          </div>
         </div>
       )}
     </div>
