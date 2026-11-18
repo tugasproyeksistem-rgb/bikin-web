@@ -2025,24 +2025,28 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
   };
 
   /* Mode sederhana: "Ambil Jam Lembur" -> simpan entri Pengambilan Lembur (jenisEntri "ambil"), sama seperti form lengkap.
-     jam = jumlah jam desimal (mis. 1.5). Kembalian true kalau tersimpan. */
-  const handleAmbilLembur = async (jam: number, keperluan: string): Promise<boolean> => {
+     jam = jumlah jam desimal (mis. 1.5). waktu = tanggal (ISO) + jam (HH:MM) yang diisi manual; kosong = otomatis (sekarang).
+     Kembalian true kalau tersimpan. */
+  const handleAmbilLembur = async (jam: number, keperluan: string, waktu?: { tanggal: string; jam: string }): Promise<boolean> => {
     if (isSubmittingAbsenRef.current) return false;
     if (!key) { showToast("Data pegawai belum siap, coba lagi sesaat.", C.w); return false; }
     if (!(jam > 0)) { showToast("Jumlah jam diambil wajib diisi (lebih dari 0)", C.d); return false; }
+    if (waktu && !waktu.tanggal) { showToast("Tanggal pengambilan wajib diisi", C.d); return false; }
     isSubmittingAbsenRef.current = true;
-    const tgl = toLocalISODate(new Date());
+    const sekarang = new Date();
+    const tgl = waktu ? waktu.tanggal : toLocalISODate(sekarang);
+    const jamP = waktu ? (waktu.jam || "") : sekarang.toTimeString().slice(0, 5);
     const entriesNow: any[] = (lemburData[key!]?.entries) || entries;
     const entryBaru = {
       id: gId(), dibuatPada: new Date().toISOString(), no: entriesNow.length + 1,
-      jenisEntri: "ambil", tanggalAwal: tgl, tanggalAkhir: tgl,
+      jenisEntri: "ambil", tanggalAwal: tgl, tanggalAkhir: tgl, jamPengambilan: jamP,
       jamMasuk: "", jamKeluar: "", lokasiKeluar: "", fotoKeluarUrl: "",
       jumlahJamAmbil: String(jam), keperluanLembur: keperluan, keterangan: "", ttd: ""
     };
     showToast("Menyimpan pengambilan lembur...", C.p);
     const ok = await writeLemburKeyAppend(lemburData[key!] || rec, entryBaru);
     isSubmittingAbsenRef.current = false;
-    if (ok) showToast(`Pengambilan lembur ${jam} jam tercatat`, C.s);
+    if (ok) showToast(`Pengambilan lembur ${jam} jam tercatat (${tgl.split("-").reverse().join("-")}${jamP ? " pukul " + jamP : ""})`, C.s);
     return !!ok;
   };
 
@@ -2143,7 +2147,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
     entries.forEach((e:any,i:number)=>{
       const r=8+i;
       const isAmbil = e.jenisEntri==="ambil";
-      const masukCol  = isAmbil ? "—" : e.jamMasuk;
+      const masukCol  = isAmbil ? (e.jamPengambilan||"—") : e.jamMasuk;
       const keluarCol = isAmbil ? "—" : e.jamKeluar;
       const kepCol    = isAmbil ? `[PENGAMBILAN -${Number(e.jumlahJamAmbil)||0} jam] ${e.keperluanLembur||""}`.trim() : e.keperluanLembur;
       /* Data lama (sebelum sistem selfie ada) otomatis terisi strip (—) — aman, tidak error */
@@ -2323,7 +2327,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
       r.entries.forEach((e:any,i:number)=>{
         const row=2+i; const bg=i%2===0?"F0FFF8":undefined;
         const isAmbil = e.jenisEntri==="ambil";
-        const masukCol  = isAmbil ? "—" : (e.jamMasuk||"");
+        const masukCol  = isAmbil ? (e.jamPengambilan||"—") : (e.jamMasuk||"");
         const keluarCol = isAmbil ? "—" : (e.jamKeluar||"");
         const kepCol    = isAmbil ? `[PENGAMBILAN -${Number(e.jumlahJamAmbil)||0} jam] ${e.keperluanLembur||""}`.trim() : (e.keperluanLembur||"");
         /* FIX AUDIT #41: pakai i+1 (index array), bukan e.no statis yang bisa bentrok */
@@ -2399,7 +2403,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
           const rows = ents.map((e:any,i:number)=>{
             const isAmbil = e.jenisEntri==="ambil";
             const kep = isAmbil ? `[PENGAMBILAN -${Number(e.jumlahJamAmbil)||0} jam] ${e.keperluanLembur||""}`.trim() : (e.keperluanLembur||"");
-            return [i+1,e.tanggalAwal||"",e.tanggalAkhir||"",isAmbil?"—":(e.jamMasuk||""),isAmbil?"—":(e.jamKeluar||""),kep,e.keterangan||"",e.ttd||""];
+            return [i+1,e.tanggalAwal||"",e.tanggalAkhir||"",isAmbil?(e.jamPengambilan||"—"):(e.jamMasuk||""),isAmbil?"—":(e.jamKeluar||""),kep,e.keterangan||"",e.ttd||""];
           });
           rows.push(["","","","","","Total Didapat",fmtJamDbx(totalMinsKerja),""]);
           rows.push(["","","","","","Total Diambil",fmtJamDbx(totalMinsAmbil),""]);
@@ -2457,7 +2461,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
           </button>
         </div>
         <div style={{width:"100%",maxWidth:420,padding:"0 16px",marginTop:20,boxSizing:"border-box"}}>
-          <QuickAmbilLembur saldo={tabunganMenitPeg(peg)} disabled={isLoadingSelfie || !key} onSimpan={handleAmbilLembur}/>
+          <QuickAmbilLembur saldo={tabunganMenitPeg(peg)} bulan={selYM} disabled={isLoadingSelfie || !key} onSimpan={handleAmbilLembur}/>
         </div>
         <button
           type="button"
@@ -2560,9 +2564,14 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                       <DateTxt style={iS} value={rowForm.tanggalAwal||""} onChange={(v:string)=>setRowForm((p:any)=>({...p,tanggalAwal:v}))}/>
                     </LF>
                     {(rowForm.jenisEntri||"kerja")==="ambil" && (
-                      <LF label="Tanggal Akhir Lembur">
-                        <DateTxt style={iS} value={rowForm.tanggalAkhir||""} onChange={(v:string)=>setRowForm((p:any)=>({...p,tanggalAkhir:v}))}/>
-                      </LF>
+                      <>
+                        <LF label="Tanggal Akhir Lembur">
+                          <DateTxt style={iS} value={rowForm.tanggalAkhir||""} onChange={(v:string)=>setRowForm((p:any)=>({...p,tanggalAkhir:v}))}/>
+                        </LF>
+                        <LF label="Jam Pengambilan (opsional)">
+                          <input style={iS} type="time" value={rowForm.jamPengambilan||""} onChange={e=>setRowForm((p:any)=>({...p,jamPengambilan:e.target.value}))}/>
+                        </LF>
+                      </>
                     )}
                     {(rowForm.jenisEntri||"kerja")==="kerja" ? (
                       <>
@@ -2703,7 +2712,7 @@ function ViewLembur({lemburPegawai, setLemburPegawai, lemburData, setLemburData,
                               <td style={{padding:"8px 10px",textAlign:"center",fontWeight:700,color:C.p}}>{i+1}</td>
                               <td style={{padding:"8px 10px",fontWeight:600,color:C.t}}>{fDMY(e.tanggalAwal||e.jadwalDinas)||"—"}</td>
                               <td style={{padding:"8px 10px",fontWeight:600,color:C.t}}>{e.tanggalAkhir?fDMY(e.tanggalAkhir):"—"}</td>
-                              <td style={{padding:"8px 10px",color:"#075985",fontWeight:600}}>{isAmbil?"—":(e.jamMasuk||"—")}</td>
+                              <td style={{padding:"8px 10px",color:"#075985",fontWeight:600}}>{isAmbil?(e.jamPengambilan||"—"):(e.jamMasuk||"—")}</td>
                               <td style={{padding:"8px 10px",color:"#B71C1C",fontWeight:600}}>{isAmbil?"—":(e.jamKeluar||"—")}</td>
                               <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>
                                 {isAmbil ? (
@@ -3077,29 +3086,46 @@ function TabunganInput(props: { saldo: number | null; onSimpan: (menit: number) 
   );
 }
 
-/* Layar Masuk/Pulang: tombol "Ambil Jam Lembur" + isian jam/menit. Disimpan sebagai entri Pengambilan Lembur. */
-function QuickAmbilLembur(props: { saldo: number | null; disabled?: boolean; onSimpan: (jam: number, keperluan: string) => Promise<boolean> }) {
+/* Layar Masuk/Pulang: tombol "Ambil Jam Lembur" + isian jam/menit + tanggal & jam (otomatis atau manual).
+   Disimpan sebagai entri Pengambilan Lembur. bulan = periode lembur yang sedang dibuka (YYYY-MM), membatasi tanggal manual. */
+function QuickAmbilLembur(props: { saldo: number | null; bulan?: string; disabled?: boolean; onSimpan: (jam: number, keperluan: string, waktu?: { tanggal: string; jam: string }) => Promise<boolean> }) {
+  const dua = (n: number) => String(n).padStart(2, "0");
+  const isoHariIni = () => { const n = new Date(); return n.getFullYear() + "-" + dua(n.getMonth() + 1) + "-" + dua(n.getDate()); };
+  const jamSekarang = () => { const n = new Date(); return dua(n.getHours()) + ":" + dua(n.getMinutes()); };
   const [buka, setBuka] = useState(false);
   const [j, setJ] = useState("");
   const [m, setM] = useState("");
   const [kep, setKep] = useState("");
   const [err, setErr] = useState("");
   const [proses, setProses] = useState(false);
+  const [manual, setManual] = useState(false);
+  const [tgl, setTgl] = useState("");
+  const [wkt, setWkt] = useState("");
   const s = props.saldo;
   const jam = j.trim() === "" ? 0 : Number(j);
   const mnt = m.trim() === "" ? 0 : Number(m);
   const valid = Number.isFinite(jam) && Number.isFinite(mnt) && jam >= 0 && mnt >= 0 && mnt < 60;
   const minta = valid ? Math.floor(jam) * 60 + Math.floor(mnt) : 0;
   const lebih = s !== null && minta > s;
+  const batasSah = !!props.bulan && /^\d{4}-\d{2}$/.test(props.bulan);
+  const minTgl = batasSah ? props.bulan + "-01" : undefined;
+  const maxTgl = batasSah ? props.bulan + "-" + dua(new Date(Number(props.bulan!.slice(0, 4)), Number(props.bulan!.slice(5, 7)), 0).getDate()) : undefined;
   const kotak: React.CSSProperties = { width: 88, padding: "12px", borderRadius: 12, border: "2px solid #94A3B8", fontSize: 22, fontWeight: 700, textAlign: "center", background: "#fff" };
+  const kotakWkt: React.CSSProperties = { padding: "12px", borderRadius: 12, border: "2px solid #94A3B8", fontSize: 16, fontWeight: 600, background: "#fff", fontFamily: "inherit" };
+  const pilihan = (aktif: boolean): React.CSSProperties => ({ flex: 1, padding: "10px 8px", borderRadius: 10, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: aktif ? "2px solid " + C.p : "2px solid #CBD5E1", background: aktif ? "#E0F2FE" : "#fff", color: aktif ? "#075985" : "#64748B" });
   const teksSaldo = s === null ? "Belum diisi" : `${s < 0 ? "-" : ""}${Math.floor(Math.abs(s) / 60)} jam ${Math.abs(s) % 60} menit`;
+  const mulai = () => { setBuka(true); setErr(""); setManual(false); setTgl(isoHariIni()); setWkt(jamSekarang()); };
   const simpan = async () => {
     if (!valid || minta <= 0) { setErr("Isi jam dan/atau menit yang diambil (menit 0-59)"); return; }
+    if (manual) {
+      if (!tgl) { setErr("Isi tanggal pengambilan"); return; }
+      if (batasSah && (tgl < minTgl! || tgl > maxTgl!)) { setErr("Tanggal harus di bulan " + props.bulan!.slice(5, 7) + "-" + props.bulan!.slice(0, 4) + ". Untuk bulan lain, buka tampilan lengkap."); return; }
+    }
     if (lebih && !window.confirm("Jumlah yang diambil melebihi tabungan lembur. Tetap simpan?")) return;
     setProses(true);
-    const ok = await props.onSimpan(Math.round((minta / 60) * 10000) / 10000, kep.trim());
+    const ok = await props.onSimpan(Math.round((minta / 60) * 10000) / 10000, kep.trim(), manual ? { tanggal: tgl, jam: wkt } : undefined);
     setProses(false);
-    if (ok) { setBuka(false); setJ(""); setM(""); setKep(""); setErr(""); }
+    if (ok) { setBuka(false); setJ(""); setM(""); setKep(""); setErr(""); setManual(false); }
   };
   return (
     <div style={{ width: "100%" }}>
@@ -3107,17 +3133,29 @@ function QuickAmbilLembur(props: { saldo: number | null; disabled?: boolean; onS
         Tabungan lembur: <b style={{ color: s !== null && s < 0 ? "#B91C1C" : "#16685F", fontSize: 16 }}>{teksSaldo}</b>
       </div>
       {!buka ? (
-        <button type="button" disabled={props.disabled} onClick={() => { setBuka(true); setErr(""); }} style={{ width: "100%", padding: "16px", background: "#fff", color: C.p, border: `2px solid ${C.p}`, borderRadius: 16, fontSize: 18, fontWeight: 800, cursor: props.disabled ? "default" : "pointer", opacity: props.disabled ? 0.6 : 1 }}>Ambil Jam Lembur</button>
+        <button type="button" disabled={props.disabled} onClick={mulai} style={{ width: "100%", padding: "16px", background: "#fff", color: C.p, border: `2px solid ${C.p}`, borderRadius: 16, fontSize: 18, fontWeight: 800, cursor: props.disabled ? "default" : "pointer", opacity: props.disabled ? 0.6 : 1 }}>Ambil Jam Lembur</button>
       ) : (
         <div style={{ border: `2px solid ${C.p}`, borderRadius: 16, padding: 16, background: "#fff" }}>
-          <div style={{ fontSize: 15, fontWeight: 800, color: C.b, marginBottom: 4, textAlign: "center" }}>Ambil Jam Lembur</div>
-          <div style={{ fontSize: 11, color: C.tL, marginBottom: 10, textAlign: "center" }}>Tercatat untuk hari ini</div>
+          <div style={{ fontSize: 15, fontWeight: 800, color: C.b, marginBottom: 10, textAlign: "center" }}>Ambil Jam Lembur</div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}>
             <input type="number" inputMode="numeric" min={0} style={kotak} placeholder="0" value={j} onChange={(e) => setJ(e.target.value)} />
             <span style={{ fontSize: 15, fontWeight: 700 }}>jam</span>
             <input type="number" inputMode="numeric" min={0} max={59} style={kotak} placeholder="0" value={m} onChange={(e) => setM(e.target.value)} />
             <span style={{ fontSize: 15, fontWeight: 700 }}>menit</span>
           </div>
+          <div style={{ marginTop: 14, fontSize: 12, fontWeight: 700, color: "#475569", textAlign: "center" }}>Tanggal &amp; jam pengambilan</div>
+          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+            <button type="button" onClick={() => setManual(false)} style={pilihan(!manual)}>Otomatis</button>
+            <button type="button" onClick={() => { setManual(true); setTgl(tgl || isoHariIni()); setWkt(wkt || jamSekarang()); }} style={pilihan(manual)}>Isi manual</button>
+          </div>
+          {!manual ? (
+            <div style={{ fontSize: 12, color: C.tL, marginTop: 8, textAlign: "center" }}>Tanggal dan jam otomatis sesuai saat disimpan ({isoHariIni().split("-").reverse().join("-")} pukul {jamSekarang()})</div>
+          ) : (
+            <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+              <input type="date" min={minTgl} max={maxTgl} value={tgl} onChange={(e) => setTgl(e.target.value)} style={{ ...kotakWkt, flex: 2, minWidth: 140 }} />
+              <input type="time" value={wkt} onChange={(e) => setWkt(e.target.value)} style={{ ...kotakWkt, flex: 1, minWidth: 110 }} />
+            </div>
+          )}
           <input type="text" placeholder="Keperluan (boleh dikosongkan), mis: pulang awal" value={kep} onChange={(e) => setKep(e.target.value)} style={{ width: "100%", boxSizing: "border-box", marginTop: 12, padding: "12px", borderRadius: 12, border: "2px solid #CBD5E1", fontSize: 14 }} />
           {lebih && <div style={{ color: "#B91C1C", fontSize: 12, marginTop: 8, textAlign: "center" }}>Jumlah yang diambil melebihi tabungan lembur.</div>}
           {err && <div style={{ color: "#B91C1C", fontSize: 12, marginTop: 8, textAlign: "center" }}>{err}</div>}
